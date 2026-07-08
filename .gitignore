@@ -4,4 +4,5 @@ __pycache__/
 *.pyc
 raw_photos/
 offers/
+more_data_*.txt
 .~lock.*#
