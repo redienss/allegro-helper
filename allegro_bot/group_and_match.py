@@ -6,6 +6,11 @@ photos larger than SERIES_GAP_THRESHOLD_SECONDS marks the start of a new
 series (i.e. a new offer on the turntable). The number of detected series
 must match the number of rows in the CSV - otherwise we abort, to avoid
 assigning photos to the wrong offer.
+
+Optionally, a file named more_data_<N>.txt next to the CSV (N = 1-based row
+number) is copied into the matching offer directory as more_data.txt. This
+is for free-form extra information about an item that's too long to fit
+into a CSV column; generate_description.py picks it up if present.
 """
 import csv
 import json
@@ -80,7 +85,7 @@ def group_and_match() -> None:
 
     config.OFFERS_DIR.mkdir(parents=True, exist_ok=True)
 
-    for offer, cluster in zip(offers, clusters):
+    for index, (offer, cluster) in enumerate(zip(offers, clusters), start=1):
         if len(cluster) != config.PHOTOS_PER_OFFER:
             print(
                 f"Warning: the series for offer '{offer.get('name')}' has {len(cluster)} photos "
@@ -100,6 +105,11 @@ def group_and_match() -> None:
 
         for photo in cluster:
             shutil.move(str(photo), str(photos_dir / photo.name))
+
+        more_data_src = config.CSV_PATH.parent / f"more_data_{index}.txt"
+        if more_data_src.exists():
+            shutil.copy2(more_data_src, offer_dir / "more_data.txt")
+            print(f"Copied {more_data_src.name} -> {offer_dir_name}/more_data.txt")
 
         data = dict(offer)
         data["photo_count"] = len(cluster)

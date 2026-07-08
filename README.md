@@ -46,6 +46,10 @@ The project itself (code, docs, CLI output) is in English. The OpenAI prompt and
 
 Rows in the file must be in the same order in which the photo series were taken. Row values themselves stay in Polish, since that's the language of the actual listings.
 
+### Optional extra notes (`more_data_<N>.txt`)
+
+For information about an item that's too long or unstructured to fit in a CSV column (test results, usage history, what's included, etc.), place a file named `more_data_1.txt`, `more_data_2.txt`, etc. next to `offers.csv` — the number matches the 1-based row order in the CSV. During the `match` step, `more_data_<N>.txt` is copied into the corresponding offer directory as `more_data.txt`. If present, its content is passed to OpenAI as truthful, item-specific notes to be folded into the description (reformatted/shortened as needed, but not embellished with invented details).
+
 ### Source photos
 
 Phone (Samsung, MTP): `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Internal storage/DCIM/OpenCamera`
@@ -61,6 +65,7 @@ offers/20260708_0340/
   data.json      # data from the CSV row + list of photos
   photos/        # original photos of the series
   retouched/     # photos after auto white balance and auto-contrast
+  more_data.txt  # optional, copied from more_data_<N>.txt if present
   description.txt  # generated description + price (from the CSV)
 ```
 

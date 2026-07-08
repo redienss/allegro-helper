@@ -8,6 +8,11 @@ brand/model, as long as it's confident those specs are correct for that
 exact model rather than guessing. The price is taken directly from the CSV,
 with no computed price range.
 
+If the offer directory contains a more_data.txt file (see group_and_match.py),
+its free-form content is passed to the model as additional, truthful notes
+about that specific item, to be reformatted/edited into the description
+rather than taken as an invitation to invent further details.
+
 The prompt sent to OpenAI and the generated offer text are intentionally kept
 in Polish, since the listing is published on Allegro Lokalnie (Polish market).
 """
@@ -35,13 +40,18 @@ SYSTEM_PROMPT = (
     "specyfikacji, po prostu ją pomiń - nie pisz zdań w stylu 'wymiary nie zostały podane' ani "
     "innych wzmianek o brakujących danych. Te dane dotyczą produktu jako takiego, a nie stanu "
     "czy historii tego konkretnego egzemplarza - nie myl ich z polem 'Stan'.\n\n"
+    "Czasem otrzymasz też pole 'Dodatkowe informacje' z surową notatką o tym konkretnym "
+    "egzemplarzu (np. wynik testu, historia użytkowania, dodatkowe uwagi sprzedającego). "
+    "Potraktuj tę notatkę jako prawdziwą i wykorzystaj jej treść w opisie - możesz ją "
+    "przeredagować, skrócić lub dopasować stylistycznie do reszty tekstu, ale nie dodawaj "
+    "do niej własnych faktów ani nie zmieniaj jej znaczenia.\n\n"
     "Styl: konkretny, rzeczowy, bez marketingowego zachwytu - unikaj sformułowań typu 'idealny "
     "do', 'świetny wybór', 'gwarantuje najwyższą jakość', również przy opisywaniu specyfikacji "
     "technicznych. 3-6 zdań."
 )
 
 
-def build_user_prompt(data: dict) -> str:
+def build_user_prompt(data: dict, extra_notes: str = "") -> str:
     lines = [
         f"Nazwa: {data.get('name', '')}",
         f"Marka: {data.get('brand', '')}",
@@ -51,7 +61,10 @@ def build_user_prompt(data: dict) -> str:
         f"Ilość sztuk: {data.get('quantity', '')}",
         f"Gabaryt InPost: {data.get('inpost_size', '')}",
     ]
-    return "Napisz opis oferty na podstawie tych danych:\n" + "\n".join(lines)
+    prompt = "Napisz opis oferty na podstawie tych danych:\n" + "\n".join(lines)
+    if extra_notes:
+        prompt += f"\n\nDodatkowe informacje:\n{extra_notes}"
+    return prompt
 
 
 def generate_for_offer(client: OpenAI, offer_dir: Path) -> None:
@@ -67,11 +80,14 @@ def generate_for_offer(client: OpenAI, offer_dir: Path) -> None:
     with open(data_path, encoding="utf-8") as f:
         data = json.load(f)
 
+    more_data_path = offer_dir / "more_data.txt"
+    extra_notes = more_data_path.read_text(encoding="utf-8").strip() if more_data_path.exists() else ""
+
     response = client.chat.completions.create(
         model=config.OPENAI_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_prompt(data)},
+            {"role": "user", "content": build_user_prompt(data, extra_notes)},
         ],
         temperature=0.4,
     )
