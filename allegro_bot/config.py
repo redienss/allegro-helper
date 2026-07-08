@@ -35,6 +35,3 @@ SERIES_GAP_THRESHOLD_SECONDS = int(os.environ.get("SERIES_GAP_THRESHOLD_SECONDS"
 # Description generation settings.
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-
-# Suggested price range: +/- this percentage of the base price from the CSV.
-PRICE_RANGE_PERCENT = float(os.environ.get("PRICE_RANGE_PERCENT", "15"))

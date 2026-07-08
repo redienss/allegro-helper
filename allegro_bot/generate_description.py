@@ -2,7 +2,8 @@
 
 The description is generated EXCLUSIVELY from the data provided in offers.csv
 (brand, model, condition, damage, quantity, package size) - the model must not
-add its own, unconfirmed characteristics of the item.
+add its own, unconfirmed characteristics of the item. The price is taken
+directly from the CSV, with no computed price range.
 
 The prompt sent to OpenAI and the generated offer text are intentionally kept
 in Polish, since the listing is published on Allegro Lokalnie (Polish market).
@@ -40,11 +41,6 @@ def build_user_prompt(data: dict) -> str:
     return "Napisz opis oferty na podstawie tych danych:\n" + "\n".join(lines)
 
 
-def compute_price_range(price: float) -> tuple[int, int]:
-    margin = price * config.PRICE_RANGE_PERCENT / 100
-    return round(price - margin), round(price + margin)
-
-
 def generate_for_offer(client: OpenAI, offer_dir: Path) -> None:
     data_path = offer_dir / "data.json"
     description_path = offer_dir / "description.txt"
@@ -69,13 +65,11 @@ def generate_for_offer(client: OpenAI, offer_dir: Path) -> None:
     description_text = response.choices[0].message.content.strip()
 
     price = float(data.get("price", 0))
-    price_min, price_max = compute_price_range(price)
 
     content = (
         f"{description_text}\n\n"
         "---\n"
         f"Cena: {price:.0f} zł\n"
-        f"Widełki cenowe: {price_min}-{price_max} zł\n"
         f"Gabaryt InPost: {data.get('inpost_size', '')}\n"
     )
 

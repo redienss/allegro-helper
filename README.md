@@ -21,8 +21,7 @@ The project itself (code, docs, CLI output) is in English. The OpenAI prompt and
 3. **Match photos to CSV rows** — e.g. with 10 rows in `offers.csv` there should be 10 × 20 photos in the same order as the rows in the file.
 4. **Split into offer directories** — each photo series goes into its own directory named after the date and time of the first photo in the series, e.g. `20260708_0316`.
 5. **Retouch photos** — automatic white balance and contrast/brightness correction (gray-world + auto-contrast). Cropping remains manual for now — the risk of incorrectly auto-cropping the item across different shapes is too high.
-6. **Generate the offer description** — a text file per offer, e.g. `20260708_0316/description.txt`.
-7. **Pricing** — a suggested price range saved alongside the description.
+6. **Generate the offer description** — a text file per offer, e.g. `20260708_0316/description.txt`, including the price taken directly from the CSV.
 
 ## Steps that remain manual
 
@@ -62,7 +61,7 @@ offers/20260708_0340/
   data.json      # data from the CSV row + list of photos
   photos/        # original photos of the series
   retouched/     # photos after auto white balance and auto-contrast
-  description.txt  # generated description + price/price range
+  description.txt  # generated description + price (from the CSV)
 ```
 
 ## Technical requirements
