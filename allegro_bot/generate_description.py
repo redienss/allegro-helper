@@ -1,9 +1,12 @@
 """Generate the offer description (description.txt) from data.json, using the OpenAI API.
 
-The description is generated EXCLUSIVELY from the data provided in offers.csv
-(brand, model, condition, damage, quantity, package size) - the model must not
-add its own, unconfirmed characteristics of the item. The price is taken
-directly from the CSV, with no computed price range.
+Item-specific facts (condition, damage, quantity) come EXCLUSIVELY from the
+data in offers.csv - the model must not invent or embellish those. It may,
+however, supplement the description with general, well-known technical
+specs of the product (e.g. wattage, connector type, capacity) inferred from
+brand/model, as long as it's confident those specs are correct for that
+exact model rather than guessing. The price is taken directly from the CSV,
+with no computed price range.
 
 The prompt sent to OpenAI and the generated offer text are intentionally kept
 in Polish, since the listing is published on Allegro Lokalnie (Polish market).
@@ -18,13 +21,23 @@ from allegro_bot import config
 
 SYSTEM_PROMPT = (
     "Piszesz krótkie, rzeczowe opisy ofert sprzedaży używanych przedmiotów prywatnych "
-    "na Allegro Lokalnie, w języku polskim. Używaj WYŁĄCZNIE informacji podanych przez "
-    "użytkownika - nie zmyślaj cech, historii ani stanu przedmiotu, których nie podano. "
-    "Pole 'Stan' przepisz dokładnie tak, jak zostało podane - nie dodawaj własnej oceny "
-    "jakości (np. 'w bardzo dobrym stanie', 'świetny stan'), jeśli takiej oceny nie ma "
-    "w danych wejściowych. Styl: konkretny, bez marketingowego zachwytu, 3-5 zdań. Jeśli "
-    "podano uszkodzenia inne niż 'brak', wymień je wprost. Jeśli ilość sztuk > 1, zaznacz "
-    "to w opisie."
+    "na Allegro Lokalnie, w języku polskim.\n\n"
+    "Dane o KONKRETNYM egzemplarzu (stan, uszkodzenia, ilość) pochodzą WYŁĄCZNIE od "
+    "użytkownika - nie zmyślaj ani nie upiększaj tych informacji. Pole 'Stan' przepisz "
+    "dokładnie tak, jak zostało podane - nie dodawaj własnej oceny jakości (np. 'w bardzo "
+    "dobrym stanie', 'świetny stan'), jeśli takiej oceny nie ma w danych wejściowych. Jeśli "
+    "podano uszkodzenia inne niż 'brak', wymień je wprost. Jeśli ilość sztuk > 1, zaznacz to "
+    "w opisie.\n\n"
+    "Dodatkowo możesz uzupełnić opis o OGÓLNE, oficjalne dane techniczne produktu (np. moc, "
+    "napięcie, rodzaj złącza, pojemność, wymiary, kompatybilność), jeśli na podstawie marki "
+    "i modelu jesteś w stanie z dużą pewnością wskazać te dane - czyli są one publicznie znane "
+    "dla tego dokładnego modelu, a nie zgadywane. Jeśli nie masz pewności co do konkretnej "
+    "specyfikacji, po prostu ją pomiń - nie pisz zdań w stylu 'wymiary nie zostały podane' ani "
+    "innych wzmianek o brakujących danych. Te dane dotyczą produktu jako takiego, a nie stanu "
+    "czy historii tego konkretnego egzemplarza - nie myl ich z polem 'Stan'.\n\n"
+    "Styl: konkretny, rzeczowy, bez marketingowego zachwytu - unikaj sformułowań typu 'idealny "
+    "do', 'świetny wybór', 'gwarantuje najwyższą jakość', również przy opisywaniu specyfikacji "
+    "technicznych. 3-6 zdań."
 )
 
 
