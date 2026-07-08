@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""CLI do uruchamiania kroków pipeline'u AllegroBot.
+"""CLI for running the AllegroBot pipeline steps.
 
-Użycie:
-    python main.py import      - kopiuje zdjęcia z telefonu do raw_photos/
-    python main.py match       - dopasowuje zdjęcia z raw_photos/ do wierszy oferty.csv
-    python main.py retouch     - retusz zdjęć (balans bieli, auto-kontrast)
-    python main.py describe    - generuje opis.txt dla każdej oferty (wymaga OPENAI_API_KEY)
-    python main.py all         - wykonuje wszystkie kroki po kolei
+Usage:
+    python main.py import      - copies photos from the phone to raw_photos/
+    python main.py match       - matches photos from raw_photos/ to rows in offers.csv
+    python main.py retouch     - retouches photos (white balance, auto-contrast)
+    python main.py describe    - generates description.txt for each offer (requires OPENAI_API_KEY)
+    python main.py all         - runs all steps in sequence
 """
 import argparse
 import sys
@@ -22,7 +22,7 @@ STEPS = {
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="AllegroBot - pipeline przygotowania ofert")
+    parser = argparse.ArgumentParser(description="AllegroBot - offer preparation pipeline")
     parser.add_argument("step", choices=[*STEPS.keys(), "all"])
     args = parser.parse_args()
 
@@ -39,5 +39,5 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception as exc:
-        print(f"Błąd: {exc}", file=sys.stderr)
+        print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

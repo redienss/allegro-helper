@@ -1,8 +1,8 @@
-"""Retusz zdjęć ofert: automatyczny balans bieli (gray-world) + auto-kontrast/jasność.
+"""Photo retouching for offers: automatic white balance (gray-world) + auto-contrast/brightness.
 
-Świadomie NIE robimy automatycznego kadrowania/wycinania tła - ryzyko błędnego
-wykrycia krawędzi przy różnych kształtach przedmiotów jest zbyt duże, więc
-kadrowanie zostaje manualne.
+We deliberately do NOT do automatic cropping/background removal - the risk of
+incorrectly detecting edges across differently shaped items is too high, so
+cropping stays manual.
 """
 from pathlib import Path
 
@@ -35,27 +35,27 @@ def retouch_image(src: Path, dest: Path) -> None:
 
 
 def retouch_offer(offer_dir: Path) -> None:
-    photos_dir = offer_dir / "zdjecia"
-    retusz_dir = offer_dir / "retusz"
+    photos_dir = offer_dir / "photos"
+    retouched_dir = offer_dir / "retouched"
 
     photos = sorted(p for p in photos_dir.iterdir() if p.suffix.lower() in (".jpg", ".jpeg"))
     if not photos:
         return
 
-    if retusz_dir.exists() and len(list(retusz_dir.iterdir())) == len(photos):
-        print(f"{offer_dir.name}: retusz już wykonany, pomijam.")
+    if retouched_dir.exists() and len(list(retouched_dir.iterdir())) == len(photos):
+        print(f"{offer_dir.name}: retouching already done, skipping.")
         return
 
-    retusz_dir.mkdir(exist_ok=True)
+    retouched_dir.mkdir(exist_ok=True)
     for photo in photos:
-        retouch_image(photo, retusz_dir / photo.name)
+        retouch_image(photo, retouched_dir / photo.name)
 
-    print(f"{offer_dir.name}: zretuszowano {len(photos)} zdjęć.")
+    print(f"{offer_dir.name}: retouched {len(photos)} photos.")
 
 
 def retouch_all() -> None:
     if not config.OFFERS_DIR.exists():
-        print(f"Katalog {config.OFFERS_DIR} nie istnieje, brak ofert do retuszu.")
+        print(f"Directory {config.OFFERS_DIR} does not exist, no offers to retouch.")
         return
 
     for offer_dir in sorted(config.OFFERS_DIR.iterdir()):

@@ -1,91 +1,91 @@
 # AllegroBot
 
-Narzędzie wspomagające wyprzedaż prywatnych przedmiotów na **Allegro Lokalnie**. Celem projektu jest częściowa automatyzacja workflow od etapu robienia zdjęć aż po tworzenie opisów ofert — na tyle, na ile pozwala na to regulamin Allegro (samo wystawianie ofert pozostaje manualne).
+A tool that helps sell off private items on **Allegro Lokalnie**. The goal of the project is to partially automate the workflow from taking photos to writing offer descriptions — as much as possible while staying compliant with Allegro's rules (actually publishing the listing remains manual).
 
-Projekt jest w języku polskim, ponieważ Allegro Lokalnie działa w języku polskim (opisy ofert, nazwy, komunikacja z kupującymi).
+The project itself (code, docs, CLI output) is in English. The OpenAI prompt and the generated offer text stay in Polish, since Allegro Lokalnie is a Polish marketplace (listing descriptions, titles, communication with buyers).
 
-## Obecny workflow (manualny)
+## Current workflow (manual)
 
-1. Zdjęcia przedmiotu wykonywane są na obrotowym turntable, sterowanym pilotem, telefonem na statywie z aplikacją **OpenCamera** — seria 20 zdjęć, jedno co 5 sekund.
-2. Zdjęcia zgrywane są z telefonu na komputer.
-   Lokalizacja na telefonie: `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Pamięć wewnętrzna/DCIM/OpenCamera`
-3. Zdjęcia są poprawiane (balans bieli, jasność, kontrast) tak, żeby zachować dobrą jasność bez wypalania detali.
-4. Spisywane są podstawowe informacje o przedmiocie: model, ilość sztuk, stan, dodatkowe informacje, wielkość przesyłki (gabaryt InPost), cena.
-5. Tworzony/generowany jest opis oferty.
-6. Oferta jest ręcznie tworzona na Allegro Lokalnie z użyciem zdjęć i opisu.
+1. Item photos are taken on a rotating turntable, controlled by a remote, with a phone on a tripod running **OpenCamera** — a series of 20 photos, one every 5 seconds.
+2. Photos are transferred from the phone to the computer.
+   Location on the phone: `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Internal storage/DCIM/OpenCamera`
+3. Photos are touched up (white balance, brightness, contrast) to keep good brightness without blowing out details.
+4. Basic item information is written down: model, quantity, condition, extra info, parcel size (InPost size), price.
+5. An offer description is written/generated.
+6. The offer is manually created on Allegro Lokalnie using the photos and description.
 
-## Etapy do automatyzacji
+## Steps to automate
 
-1. **Wczytanie CSV** ze zbiorczą listą ofert do przygotowania (plik `oferty.csv`, kolumny: `nazwa | marka | model | stan | uszkodzenia | ilość | cena | gabaryt InPost`).
-2. **Import zdjęć** z telefonu (lokalizacja MTP jak wyżej) do katalogu roboczego projektu.
-3. **Dopasowanie zdjęć do wierszy CSV** — np. przy 10 wierszach w `oferty.csv` powinno być 10 × 20 zdjęć w tej samej kolejności co wiersze w pliku.
-4. **Podział na katalogi ofert** — każda seria zdjęć trafia do osobnego katalogu nazwanego wg daty i czasu pierwszego zdjęcia w serii, np. `20260708_0316`.
-5. **Retusz zdjęć** — automatyczna poprawa balansu bieli i kontrastu/jasności (gray-world + auto-kontrast). Kadrowanie pozostaje na razie manualne — ryzyko błędnego automatycznego wycięcia przedmiotu przy różnych kształtach jest zbyt duże.
-6. **Generowanie opisu oferty** — plik tekstowy per oferta, np. `20260708_0316/opis.txt`.
-7. **Wycena** — sugerowane widełki cenowe zapisywane razem z opisem.
+1. **Read the CSV** with the batch list of offers to prepare (file `offers.csv`, columns: `name | brand | model | condition | damage | quantity | price | inpost_size`).
+2. **Import photos** from the phone (MTP location as above) into the project's working directory.
+3. **Match photos to CSV rows** — e.g. with 10 rows in `offers.csv` there should be 10 × 20 photos in the same order as the rows in the file.
+4. **Split into offer directories** — each photo series goes into its own directory named after the date and time of the first photo in the series, e.g. `20260708_0316`.
+5. **Retouch photos** — automatic white balance and contrast/brightness correction (gray-world + auto-contrast). Cropping remains manual for now — the risk of incorrectly auto-cropping the item across different shapes is too high.
+6. **Generate the offer description** — a text file per offer, e.g. `20260708_0316/description.txt`.
+7. **Pricing** — a suggested price range saved alongside the description.
 
-## Etapy pozostające manualne
+## Steps that remain manual
 
-1. **Zdjęcia** — turntable i statyw działają pół-automatycznie (pilot), ale seria wymaga obecności i obsługi.
-2. **Przygotowanie pliku CSV** — musi być uzupełnione ręcznie (np. model przedmiotu), żeby dało się wygenerować sensowny opis.
-3. **Wystawienie oferty na Allegro Lokalnie** — na razie ręcznie, na podstawie wygenerowanych zdjęć i opisu.
+1. **Photos** — the turntable and tripod are semi-automatic (remote control), but the series still requires attendance and operation.
+2. **Preparing the CSV file** — must be filled in by hand (e.g. item model), so that a sensible description can be generated.
+3. **Publishing the offer on Allegro Lokalnie** — still manual for now, based on the generated photos and description.
 
-## Struktura danych wejściowych
+## Input data structure
 
-### `oferty.csv`
+### `offers.csv`
 
-| kolumna | opis | przykład |
+| column | description | example |
 |---|---|---|
-| nazwa | pełna nazwa oferty | Ładowarka ścienna Poss PSWCC-2.4WH-18 typu C – biała |
-| marka | marka produktu | Poss |
-| model | model produktu | PSWCC-2.4WH-18 |
-| stan | stan przedmiotu | używany |
-| uszkodzenia | opis uszkodzeń/wad | brak |
-| ilość | liczba sztuk | 1 |
-| cena | cena w PLN | 10 |
-| gabaryt InPost | rozmiar paczkomatowy | A |
+| name | full offer name | Ładowarka ścienna Poss PSWCC-2.4WH-18 typu C – biała |
+| brand | product brand | Poss |
+| model | product model | PSWCC-2.4WH-18 |
+| condition | item condition | używany |
+| damage | description of damage/defects | brak |
+| quantity | number of units | 1 |
+| price | price in PLN | 10 |
+| inpost_size | InPost locker size | A |
 
-Wiersze w pliku muszą być w tej samej kolejności, w jakiej wykonywane były serie zdjęć.
+Rows in the file must be in the same order in which the photo series were taken. Row values themselves stay in Polish, since that's the language of the actual listings.
 
-### Zdjęcia źródłowe
+### Source photos
 
-Telefon (Samsung, MTP): `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Pamięć wewnętrzna/DCIM/OpenCamera`
+Phone (Samsung, MTP): `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Internal storage/DCIM/OpenCamera`
 
-Nazwa pliku wg konwencji OpenCamera: `IMG_YYYYMMDD_HHMMSS.jpg`. Zdjęcia w obrębie jednej serii (jednej oferty) są rozdzielone ~5 sekundami; między seriami występuje wyraźnie dłuższa przerwa (czas potrzebny na podmianę przedmiotu na turntable) — to pozwala automatycznie wykryć granice serii.
+File name per OpenCamera convention: `IMG_YYYYMMDD_HHMMSS.jpg`. Photos within a single series (one offer) are ~5 seconds apart; there's a noticeably longer gap between series (time needed to swap the item on the turntable) — this makes it possible to automatically detect series boundaries.
 
-## Struktura danych wyjściowych
+## Output data structure
 
-Dla każdej oferty powstaje katalog `oferty/<YYYYMMDD_HHMM>/` (znacznik czasu pierwszego zdjęcia serii):
+For each offer a directory `offers/<YYYYMMDD_HHMM>/` is created (timestamp of the series' first photo):
 
 ```
-oferty/20260708_0340/
-  dane.json      # dane z wiersza CSV + lista zdjęć
-  zdjecia/       # oryginalne zdjęcia serii
-  retusz/        # zdjęcia po auto-balansie bieli i auto-kontraście
-  opis.txt       # wygenerowany opis + cena/widełki cenowe
+offers/20260708_0340/
+  data.json      # data from the CSV row + list of photos
+  photos/        # original photos of the series
+  retouched/     # photos after auto white balance and auto-contrast
+  description.txt  # generated description + price/price range
 ```
 
-## Wymagania techniczne
+## Technical requirements
 
-- Python 3 (środowisko: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`).
-- Pillow — przetwarzanie zdjęć.
-- `gio` (GVFS) do odczytu plików z telefonu podłączonego po MTP (montowane w `/run/user/<uid>/gvfs/mtp:host=...`).
-- Klucz OpenAI API (zmienna `OPENAI_API_KEY` w pliku `.env`, patrz `.env.example`) — potrzebny tylko do generowania opisów.
+- Python 3 (environment: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`).
+- Pillow — photo processing.
+- `gio` (GVFS) to read files from the phone connected via MTP (mounted at `/run/user/<uid>/gvfs/mtp:host=...`).
+- OpenAI API key (`OPENAI_API_KEY` variable in the `.env` file, see `.env.example`) — only needed for generating descriptions.
 
-## Instalacja i użycie
+## Installation and usage
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env   # i uzupełnij OPENAI_API_KEY
+cp .env.example .env   # then fill in OPENAI_API_KEY
 
-.venv/bin/python main.py import    # kopiuje zdjęcia z telefonu do raw_photos/ (oryginały zostają na telefonie)
-.venv/bin/python main.py match     # dopasowuje zdjęcia do wierszy oferty.csv, tworzy katalogi w oferty/
-.venv/bin/python main.py retouch   # auto-balans bieli + auto-kontrast dla każdej oferty
-.venv/bin/python main.py describe  # generuje opis.txt (wymaga OPENAI_API_KEY)
+.venv/bin/python main.py import    # copies photos from the phone to raw_photos/ (originals stay on the phone)
+.venv/bin/python main.py match     # matches photos to rows in offers.csv, creates directories in offers/
+.venv/bin/python main.py retouch   # auto white balance + auto-contrast for each offer
+.venv/bin/python main.py describe  # generates description.txt (requires OPENAI_API_KEY)
 
-# albo wszystko na raz:
+# or all at once:
 .venv/bin/python main.py all
 ```
 
-Każdy krok jest bezpieczny do wielokrotnego uruchomienia — już przetworzone oferty/zdjęcia są pomijane.
+Every step is safe to run repeatedly — already processed offers/photos are skipped.

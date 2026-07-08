@@ -1,11 +1,11 @@
-"""Dopasowanie zaimportowanych zdjęć (raw_photos/) do wierszy w oferty.csv.
+"""Match imported photos (raw_photos/) to rows in offers.csv.
 
-Zdjęcia są grupowane w serie na podstawie znacznika czasu w nazwie pliku
-(konwencja OpenCamera: IMG_YYYYMMDD_HHMMSS.jpg). Przerwa czasowa między
-zdjęciami większa niż SERIES_GAP_THRESHOLD_SECONDS oznacza początek nowej
-serii (czyli nowej oferty na turntable). Liczba wykrytych serii musi się
-zgadzać z liczbą wierszy w CSV - w przeciwnym razie przerywamy, żeby nie
-przypisać zdjęć do złej oferty.
+Photos are grouped into series based on the timestamp encoded in the
+filename (OpenCamera convention: IMG_YYYYMMDD_HHMMSS.jpg). A gap between
+photos larger than SERIES_GAP_THRESHOLD_SECONDS marks the start of a new
+series (i.e. a new offer on the turntable). The number of detected series
+must match the number of rows in the CSV - otherwise we abort, to avoid
+assigning photos to the wrong offer.
 """
 import csv
 import json
@@ -24,7 +24,7 @@ def parse_timestamp(path: Path) -> datetime:
     match = FILENAME_RE.search(path.name)
     if not match:
         raise ValueError(
-            f"Nazwa pliku {path.name} nie pasuje do wzorca IMG_YYYYMMDD_HHMMSS.jpg"
+            f"File name {path.name} does not match the IMG_YYYYMMDD_HHMMSS.jpg pattern"
         )
     return datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
 
@@ -34,7 +34,7 @@ def load_offers(csv_path: Path) -> list[dict]:
         reader = csv.DictReader(f, delimiter="\t")
         rows = [row for row in reader]
     if not rows:
-        raise ValueError(f"Plik {csv_path} nie zawiera żadnych wierszy z ofertami.")
+        raise ValueError(f"File {csv_path} contains no offer rows.")
     return rows
 
 
@@ -54,7 +54,7 @@ def group_and_match() -> None:
     photos = sorted(p for p in config.RAW_PHOTOS_DIR.iterdir() if p.suffix.lower() in (".jpg", ".jpeg"))
 
     if not photos:
-        print(f"Brak zdjęć w {config.RAW_PHOTOS_DIR} do dopasowania.")
+        print(f"No photos in {config.RAW_PHOTOS_DIR} to match.")
         return
 
     gap = timedelta(seconds=config.SERIES_GAP_THRESHOLD_SECONDS)
@@ -62,18 +62,18 @@ def group_and_match() -> None:
 
     if len(clusters) != len(offers):
         print(
-            f"Liczba wykrytych serii zdjęć ({len(clusters)}) nie zgadza się z liczbą "
-            f"wierszy w {config.CSV_PATH} ({len(offers)}). Nic nie zostało przeniesione.\n"
-            "Wykryte serie:",
+            f"The number of detected photo series ({len(clusters)}) does not match the "
+            f"number of rows in {config.CSV_PATH} ({len(offers)}). Nothing was moved.\n"
+            "Detected series:",
             file=sys.stderr,
         )
         for i, cluster in enumerate(clusters, start=1):
             start = parse_timestamp(cluster[0])
             end = parse_timestamp(cluster[-1])
-            print(f"  seria {i}: {len(cluster)} zdjęć, {start} -> {end}", file=sys.stderr)
+            print(f"  series {i}: {len(cluster)} photos, {start} -> {end}", file=sys.stderr)
         print(
-            "Sprawdź SERIES_GAP_THRESHOLD_SECONDS (obecnie "
-            f"{config.SERIES_GAP_THRESHOLD_SECONDS}s) albo kolejność/liczbę wierszy w CSV.",
+            "Check SERIES_GAP_THRESHOLD_SECONDS (currently "
+            f"{config.SERIES_GAP_THRESHOLD_SECONDS}s) or the order/count of rows in the CSV.",
             file=sys.stderr,
         )
         raise SystemExit(1)
@@ -83,8 +83,8 @@ def group_and_match() -> None:
     for offer, cluster in zip(offers, clusters):
         if len(cluster) != config.PHOTOS_PER_OFFER:
             print(
-                f"Uwaga: seria dla oferty '{offer.get('nazwa')}' ma {len(cluster)} zdjęć "
-                f"(oczekiwano {config.PHOTOS_PER_OFFER})."
+                f"Warning: the series for offer '{offer.get('name')}' has {len(cluster)} photos "
+                f"(expected {config.PHOTOS_PER_OFFER})."
             )
 
         offer_timestamp = parse_timestamp(cluster[0])
@@ -92,24 +92,24 @@ def group_and_match() -> None:
         offer_dir = config.OFFERS_DIR / offer_dir_name
 
         if offer_dir.exists():
-            print(f"Katalog {offer_dir} już istnieje, pomijam (uznaję za już przetworzony).")
+            print(f"Directory {offer_dir} already exists, skipping (assuming already processed).")
             continue
 
-        photos_dir = offer_dir / "zdjecia"
+        photos_dir = offer_dir / "photos"
         photos_dir.mkdir(parents=True)
 
         for photo in cluster:
             shutil.move(str(photo), str(photos_dir / photo.name))
 
-        dane = dict(offer)
-        dane["liczba_zdjec"] = len(cluster)
-        dane["zdjecia"] = [p.name for p in cluster]
-        dane["utworzono"] = datetime.now().isoformat(timespec="seconds")
+        data = dict(offer)
+        data["photo_count"] = len(cluster)
+        data["photos"] = [p.name for p in cluster]
+        data["created_at"] = datetime.now().isoformat(timespec="seconds")
 
-        with open(offer_dir / "dane.json", "w", encoding="utf-8") as f:
-            json.dump(dane, f, ensure_ascii=False, indent=2)
+        with open(offer_dir / "data.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
-        print(f"Utworzono ofertę {offer_dir_name} ({len(cluster)} zdjęć) dla '{offer.get('nazwa')}'.")
+        print(f"Created offer {offer_dir_name} ({len(cluster)} photos) for '{offer.get('name')}'.")
 
 
 if __name__ == "__main__":
