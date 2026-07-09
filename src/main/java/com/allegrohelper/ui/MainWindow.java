@@ -131,6 +131,8 @@ public final class MainWindow {
     private final JCheckBox describeBox = new JCheckBox("Describe", true);
 
     private final JButton startButton = new JButton("Start");
+    private final JButton deleteOutputsButton = new JButton("Delete Output Files");
+    private final JButton cleanRestartButton = new JButton("Clean & Restart");
     private final JButton refreshPhotosButton = new JButton("Refresh");
     private final JProgressBar progressBar = new JProgressBar(0, 100);
     private final JTextArea logArea = new JTextArea();
@@ -456,9 +458,19 @@ public final class MainWindow {
         boxes.add(describeBox);
         panel.add(boxes, BorderLayout.CENTER);
 
-        JPanel startRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        // Start on the left; the destructive buttons on the far right so a quick
+        // reach for Start cannot land on them.
+        JPanel startRow = new JPanel(new BorderLayout());
+        JPanel startSide = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         startButton.addActionListener(e -> startWorkflow());
-        startRow.add(startButton);
+        startSide.add(startButton);
+        JPanel cleanSide = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
+        deleteOutputsButton.addActionListener(e -> deleteOutputs(false));
+        cleanRestartButton.addActionListener(e -> deleteOutputs(true));
+        cleanSide.add(deleteOutputsButton);
+        cleanSide.add(cleanRestartButton);
+        startRow.add(startSide, BorderLayout.WEST);
+        startRow.add(cleanSide, BorderLayout.EAST);
         panel.add(startRow, BorderLayout.SOUTH);
         return panel;
     }
@@ -1279,6 +1291,73 @@ public final class MainWindow {
         }, "phone-scan").start();
     }
 
+    /**
+     * Deletes every entry under the offers directory — all generated files —
+     * after confirmation, keeping the sources (photos on the phone, offers.csv,
+     * more_data_&lt;N&gt;.txt, raw_photos/). With {@code restart} it then presses
+     * Start. Note the offer photos live under offers/ too (Match moves them
+     * there), so a full re-run needs the phone connected to re-import them.
+     */
+    private void deleteOutputs(boolean restart) {
+        if (running) {
+            return;
+        }
+        Config cfg = currentConfig();
+        Path offersDir = cfg.offersDir.toAbsolutePath().normalize();
+
+        // A misconfigured OFFERS_DIR could put the sources inside the deletion
+        // root (e.g. OFFERS_DIR=.). Refuse rather than guess.
+        Path csv = cfg.csvPath.toAbsolutePath().normalize();
+        Path raw = cfg.rawPhotosDir.toAbsolutePath().normalize();
+        if (csv.startsWith(offersDir) || raw.startsWith(offersDir)) {
+            error("Refusing to delete " + offersDir
+                    + ": it contains offers.csv or raw_photos (check OFFERS_DIR).");
+            return;
+        }
+
+        String title = restart ? "Clean & Restart" : "Delete Output Files";
+        int choice = JOptionPane.showConfirmDialog(frame,
+                "This deletes all generated offer directories under:\n" + offersDir
+                        + "\n\nSources are kept: photos on the phone, offers.csv, more_data_<N>.txt."
+                        + "\nRe-importing the photos requires the phone to be connected."
+                        + (restart ? "\n\nDelete and start the selected workflow steps?" : "\n\nDelete?"),
+                title, JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        if (Files.isDirectory(offersDir)) {
+            int deleted = 0;
+            try {
+                try (var stream = Files.list(offersDir)) {
+                    for (Path entry : stream.toList()) {
+                        deleteRecursively(entry);
+                        deleted++;
+                    }
+                }
+            } catch (IOException e) {
+                error("Failed to delete output files: " + e.getMessage());
+                return; // don't restart on a half-finished clean
+            }
+            appendLog("Deleted " + deleted + " entries under " + offersDir);
+        } else {
+            appendLog("Nothing to delete: " + offersDir + " does not exist.");
+        }
+        loadSelectedOffer(); // the selected offer's files are gone; refresh the right panel
+
+        if (restart) {
+            startWorkflow();
+        }
+    }
+
+    private static void deleteRecursively(Path root) throws IOException {
+        try (var stream = Files.walk(root)) {
+            for (Path p : stream.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(p);
+            }
+        }
+    }
+
     private void startWorkflow() {
         if (running) {
             return;
@@ -1365,6 +1444,8 @@ public final class MainWindow {
         running = value;
         startButton.setEnabled(!value);
         startButton.setText(value ? "Running…" : "Start");
+        deleteOutputsButton.setEnabled(!value);
+        cleanRestartButton.setEnabled(!value);
     }
 
     private void stopCellEditing() {

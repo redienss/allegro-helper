@@ -83,6 +83,11 @@ selected offer on the right.
   pipeline — including either retouching step on its own — can be run.
 - **Start** — runs the selected steps in order. If `Match` is selected, the grid
   is written to `offers.csv` first (that step's input).
+- **Delete Output Files** / **Clean & Restart** — delete everything under
+  `offers/` (after a confirmation), keeping the sources: the photos on the
+  phone, `offers.csv` and the `more_data_<N>.txt` files. **Clean & Restart**
+  then presses **Start** for you. Since Match moves photos into `offers/`, a
+  full re-run needs the phone connected to re-import them.
 - **Progress** — overall progress across the selected steps.
 - **Log** — the run log (`== import ==`, `== match ==`, …).
 
