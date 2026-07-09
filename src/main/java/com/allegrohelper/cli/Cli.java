@@ -10,8 +10,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Headless command-line entry point:
- * {@code import | match | retouch | describe | all}. Useful for scripting and
- * for running the pipeline without a display.
+ * {@code import | match | retouch | autocrop | describe | all}. Useful for
+ * scripting and for running the pipeline without a display.
  */
 public final class Cli {
 
@@ -20,7 +20,8 @@ public final class Cli {
 
     public static int run(String[] args) {
         if (args.length == 0) {
-            System.err.println("Usage: allegro-helper --cli <import|match|retouch|describe|all> [baseDir]");
+            System.err.println(
+                    "Usage: allegro-helper --cli <import|match|retouch|autocrop|describe|all> [baseDir]");
             return 2;
         }
         String step = args[0].toLowerCase();
@@ -31,9 +32,10 @@ public final class Cli {
             case "import" -> List.of(Workflow.Step.IMPORT);
             case "match" -> List.of(Workflow.Step.MATCH);
             case "retouch" -> List.of(Workflow.Step.RETOUCH);
+            case "autocrop", "auto-crop" -> List.of(Workflow.Step.AUTOCROP);
             case "describe" -> List.of(Workflow.Step.DESCRIBE);
             case "all" -> List.of(Workflow.Step.IMPORT, Workflow.Step.MATCH,
-                    Workflow.Step.RETOUCH, Workflow.Step.DESCRIBE);
+                    Workflow.Step.RETOUCH, Workflow.Step.AUTOCROP, Workflow.Step.DESCRIBE);
             default -> null;
         };
         if (steps == null) {

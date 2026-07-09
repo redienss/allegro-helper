@@ -109,6 +109,7 @@ public final class MainWindow {
     private final JCheckBox importBox = new JCheckBox("Import", true);
     private final JCheckBox matchBox = new JCheckBox("Match", true);
     private final JCheckBox retouchBox = new JCheckBox("Retouch", true);
+    private final JCheckBox autoCropBox = new JCheckBox("Auto-crop", true);
     private final JCheckBox describeBox = new JCheckBox("Describe", true);
 
     private final JButton startButton = new JButton("Start");
@@ -432,6 +433,7 @@ public final class MainWindow {
         boxes.add(importBox);
         boxes.add(matchBox);
         boxes.add(retouchBox);
+        boxes.add(autoCropBox);
         boxes.add(describeBox);
         panel.add(boxes, BorderLayout.CENTER);
 
@@ -552,9 +554,18 @@ public final class MainWindow {
             return null;
         }
         Path dir = rightTabs.getSelectedIndex() == TAB_PHOTOS_OUTPUT
-                ? currentOfferDir.resolve("retouched")
+                ? outputPhotoDir(currentOfferDir)
                 : currentOfferDir.resolve("photos");
         return Files.isDirectory(dir) ? dir : null;
+    }
+
+    /**
+     * The final photos of an offer: the auto-cropped ones when that step has run,
+     * otherwise the merely retouched ones.
+     */
+    private static Path outputPhotoDir(Path offerDir) {
+        Path cropped = offerDir.resolve("cropped");
+        return Files.isDirectory(cropped) ? cropped : offerDir.resolve("retouched");
     }
 
     private boolean isEditorTab() {
@@ -704,7 +715,7 @@ public final class MainWindow {
             detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
                     + " — " + escapeHtml(offerDir.getFileName().toString()) + "</html>");
             photosInputGallery.show(offerDir.resolve("photos"));
-            photosOutputGallery.show(offerDir.resolve("retouched"));
+            photosOutputGallery.show(outputPhotoDir(offerDir));
         }
         detailsArea.setCaretPosition(0);
         updateBottomBar();
@@ -1128,6 +1139,9 @@ public final class MainWindow {
         }
         if (retouchBox.isSelected()) {
             steps.add(Workflow.Step.RETOUCH);
+        }
+        if (autoCropBox.isSelected()) {
+            steps.add(Workflow.Step.AUTOCROP);
         }
         if (describeBox.isSelected()) {
             steps.add(Workflow.Step.DESCRIBE);

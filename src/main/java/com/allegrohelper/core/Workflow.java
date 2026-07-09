@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Runs the enabled pipeline steps in sequence (import → match → retouch →
- * describe), emitting a section header per step and reporting overall progress
+ * auto-crop → describe), emitting a section header per step and reporting overall progress
  * as {@code (completedSteps + currentStepFraction) / totalSteps}.
  */
 public final class Workflow {
@@ -16,6 +16,7 @@ public final class Workflow {
         IMPORT("import"),
         MATCH("match"),
         RETOUCH("retouch"),
+        AUTOCROP("auto-crop"),
         DESCRIBE("describe");
 
         public final String label;
@@ -93,6 +94,7 @@ public final class Workflow {
             case IMPORT -> ImportPhotos.run(cfg, reporter);
             case MATCH -> GroupAndMatch.run(cfg, reporter);
             case RETOUCH -> Retouch.runAll(cfg, reporter);
+            case AUTOCROP -> AutoCrop.runAll(cfg, reporter);
             case DESCRIBE -> GenerateDescription.runAll(cfg, reporter);
         }
     }

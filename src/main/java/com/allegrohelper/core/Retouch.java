@@ -16,7 +16,8 @@ import java.util.List;
 /**
  * Photo retouching: automatic gray-world white balance followed by
  * per-channel auto-contrast with a 1% cutoff, saved as JPEG quality 90.
- * Cropping/background removal is deliberately left manual.
+ * Cropping is a separate step ({@link AutoCrop}); background removal is
+ * deliberately left manual.
  */
 public final class Retouch {
 
@@ -195,7 +196,8 @@ public final class Retouch {
         return lut;
     }
 
-    private static void writeJpeg(BufferedImage img, Path dest) throws IOException {
+    /** Writes {@code img} as JPEG at the pipeline's quality. Shared with {@link AutoCrop}. */
+    static void writeJpeg(BufferedImage img, Path dest) throws IOException {
         ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
         ImageWriteParam param = writer.getDefaultWriteParam();
         param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);

@@ -26,14 +26,26 @@ marketplace.
    and matched to the rows of `offers.csv`, one series per row, in order. Each
    series is moved into its own directory named after its first photo,
    e.g. `offers/20260708_0340/`.
-4. **Retouch** — automatic gray-world white balance and auto-contrast. Cropping
-   stays manual: auto-cropping items of different shapes is too error-prone.
-5. **Describe** — an offer description is generated per offer via the OpenAI
+4. **Retouch** — automatic gray-world white balance and auto-contrast.
+5. **Auto-crop** — each series is cropped to the item. Because the item rotates
+   on the turntable while the background and table stay still, the item is
+   simply the part of the frame that changes across the series. That is what the
+   step measures, so it works even for a white item on a light background, where
+   brightness thresholding and edge detection both fail. One crop box is used
+   for the whole series (the item does not jump between frames), grown by a
+   small margin and kept at the source aspect ratio. Results go to `cropped/`;
+   `retouched/` is left untouched.
+6. **Describe** — an offer description is generated per offer via the OpenAI
    API, including the price taken directly from the CSV.
-6. The offer is then created on Allegro Lokalnie by hand, using the retouched
+7. The offer is then created on Allegro Lokalnie by hand, using the cropped
    photos and the generated description.
 
 Every step is safe to re-run — already processed offers and photos are skipped.
+
+Auto-crop is deliberately cautious. If the series is too short to show movement,
+the detected item is implausibly small, or the crop would keep nearly the whole
+frame, it says so in the log and leaves that offer uncropped rather than
+cropping it wrongly.
 
 ### What stays manual
 
@@ -58,8 +70,8 @@ selected offer on the right.
   Quantity | Price | InPost Size`). Loaded from `offers.csv` in the base
   directory if present; otherwise empty and fillable by hand. You can also
   **Load CSV…** from anywhere, **Save CSV**, and add/remove rows.
-- **Workflow** — checkboxes `Import`, `Match`, `Retouch`, `Describe` (all
-  checked by default).
+- **Workflow** — checkboxes `Import`, `Match`, `Retouch`, `Auto-crop`,
+  `Describe` (all checked by default).
 - **Start** — runs the selected steps in order. If `Match` is selected, the grid
   is written to `offers.csv` first (that step's input).
 - **Progress** — overall progress across the selected steps.
@@ -77,8 +89,9 @@ to each offer's `data.json`, falling back to row position) in four tabs:
   directory: the generated description; edit and save to tweak it.
 - **Photos (Input)** — thumbnail gallery of the original photos
   (`offers/<id>/photos/`).
-- **Photos (Output)** — thumbnail gallery of the retouched photos
-  (`offers/<id>/retouched/`).
+- **Photos (Output)** — thumbnail gallery of the finished photos: the
+  auto-cropped ones (`offers/<id>/cropped/`) once that step has run, otherwise
+  the merely retouched ones (`offers/<id>/retouched/`).
 
 ![The Description (Output) tab, showing a generated description](screenshots/002.png)
 
@@ -144,7 +157,7 @@ GNOME shows this icon for the running window too.
 The same pipeline runs without a UI:
 
 ```bash
-./run.sh --cli import      # or match | retouch | describe | all
+./run.sh --cli import      # or match | retouch | autocrop | describe | all
 ./run.sh --cli all /path/to/base-dir
 ```
 
@@ -206,6 +219,7 @@ offers/20260708_0340/
   data.json        # data from the CSV row + list of photos
   photos/          # original photos of the series
   retouched/       # photos after auto white balance and auto-contrast
+  cropped/         # retouched photos cropped to the item (Auto-crop)
   more_data.txt    # optional, copied from more_data_<N>.txt if present
   description.txt  # generated description + price (from the CSV)
 ```
