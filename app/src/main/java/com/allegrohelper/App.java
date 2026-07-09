@@ -6,6 +6,8 @@ import com.allegrohelper.ui.MainWindow;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.awt.GraphicsEnvironment;
+import java.awt.Toolkit;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 
 /**
@@ -17,6 +19,9 @@ import java.nio.file.Path;
  */
 public final class App {
 
+    /** WM class advertised on X11 so a .desktop launcher's StartupWMClass can match this window. */
+    public static final String WM_CLASS = "AllegroHelper";
+
     private App() {
     }
 
@@ -26,6 +31,8 @@ public final class App {
             System.arraycopy(args, 1, rest, 0, rest.length);
             System.exit(Cli.run(rest));
         }
+
+        setLinuxWmClass(WM_CLASS);
 
         if (GraphicsEnvironment.isHeadless()) {
             System.err.println("No display available. Run headlessly with:");
@@ -42,5 +49,24 @@ public final class App {
             }
             new MainWindow(baseDir).show();
         });
+    }
+
+    /**
+     * On Linux/X11 the window's WM_CLASS defaults to the main class name, which
+     * prevents a desktop launcher from matching the running window (so the dock
+     * shows a generic icon). Override it to {@link #WM_CLASS}. Best-effort: this
+     * reflects into the X11 toolkit and needs
+     * {@code --add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED} (see run.sh); it
+     * is a no-op on other platforms/toolkits.
+     */
+    private static void setLinuxWmClass(String name) {
+        try {
+            Toolkit toolkit = Toolkit.getDefaultToolkit();
+            Field field = toolkit.getClass().getDeclaredField("awtAppClassName");
+            field.setAccessible(true);
+            field.set(null, name);
+        } catch (Throwable ignored) {
+            // Not X11, or reflective access denied: fall back to the default WM class.
+        }
     }
 }

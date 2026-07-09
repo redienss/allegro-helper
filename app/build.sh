@@ -47,10 +47,15 @@ find "$SRC_DIR" -name '*.java' > "$BUILD_DIR/sources.txt"
 if [[ -d "src/main/resources" ]]; then
   cp -r src/main/resources/. "$CLASSES_DIR"/
 fi
+mkdir -p "$CLASSES_DIR/com/allegrohelper/ui"
 if [[ -f "../logo/logo.png" ]]; then
-  mkdir -p "$CLASSES_DIR/com/allegrohelper/ui"
   cp "../logo/logo.png" "$CLASSES_DIR/com/allegrohelper/ui/logo.png"
   echo "Bundled logo -> $CLASSES_DIR/com/allegrohelper/ui/logo.png"
+fi
+# Window/taskbar icon (rounded app icon).
+if [[ -f "../icons/AllegroHelper-icon-full-logo-1024.png" ]]; then
+  cp "../icons/AllegroHelper-icon-full-logo-1024.png" "$CLASSES_DIR/com/allegrohelper/ui/app-icon.png"
+  echo "Bundled app icon -> $CLASSES_DIR/com/allegrohelper/ui/app-icon.png"
 fi
 
 if JAR="$(find_tool jar "${JAR:-}")"; then

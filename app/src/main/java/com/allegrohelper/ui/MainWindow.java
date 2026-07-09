@@ -164,6 +164,8 @@ public final class MainWindow {
         split.setResizeWeight(0.5); // keep the two halves equal-width on resize
         frame.add(split, BorderLayout.CENTER);
 
+        setWindowIcon();
+
         // Enlarge and unify fonts across the whole window before measuring, so the
         // fixed-height sections are sized for the final (larger) text.
         standardizeFonts(frame.getRootPane());
@@ -255,7 +257,6 @@ public final class MainWindow {
             return label; // logo not bundled; leave an empty spacer
         }
         ImageIcon original = new ImageIcon(url);
-        frame.setIconImage(original.getImage());
 
         int w = original.getIconWidth();
         int h = original.getIconHeight();
@@ -267,6 +268,21 @@ public final class MainWindow {
             label.setIcon(original);
         }
         return label;
+    }
+
+    /** Sets the window/taskbar icon from the bundled app icon, at several sizes. */
+    private void setWindowIcon() {
+        URL url = getClass().getResource("app-icon.png");
+        if (url == null) {
+            return;
+        }
+        Image source = new ImageIcon(url).getImage();
+        List<Image> images = new ArrayList<>();
+        for (int size : new int[]{16, 24, 32, 48, 64, 128, 256}) {
+            images.add(source.getScaledInstance(size, size, Image.SCALE_SMOOTH));
+        }
+        images.add(source); // full resolution for high-DPI
+        frame.setIconImages(images);
     }
 
     private JPanel buildBaseDirPanel() {

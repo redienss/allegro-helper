@@ -19,8 +19,12 @@ if [[ ! -f "$JAR_PATH" && ! -d "$CLASSES_DIR" ]]; then
   ./build.sh
 fi
 
+# Allow the app to set its X11 WM_CLASS (so a desktop launcher's StartupWMClass
+# matches the running window). Harmless on non-X11 platforms.
+ADD_OPENS="--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"
+
 if [[ -f "$JAR_PATH" ]]; then
-  exec "$JAVA" -jar "$JAR_PATH" "$@"
+  exec "$JAVA" $ADD_OPENS -jar "$JAR_PATH" "$@"
 else
-  exec "$JAVA" -cp "$CLASSES_DIR" com.allegrohelper.App "$@"
+  exec "$JAVA" $ADD_OPENS -cp "$CLASSES_DIR" com.allegrohelper.App "$@"
 fi

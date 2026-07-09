@@ -74,6 +74,22 @@ cd app
 `build.sh` finds `javac` on `PATH`, then `$JAVA_HOME`, then common JVM install
 locations; override with `JAVAC=/path/to/javac ./build.sh` if needed.
 
+### Desktop shortcut
+
+The window/taskbar icon is the app icon (`icons/AllegroHelper-icon-full-logo-1024.png`),
+bundled onto the classpath at build time. To add a launcher to the application
+menu and Desktop:
+
+```bash
+cd app
+./install-desktop-entry.sh
+```
+
+This installs `~/.local/share/applications/allegro-helper.desktop` (plus a copy
+on the Desktop) and the icon under the hicolor theme. The launcher sets
+`StartupWMClass=AllegroHelper`, which the app advertises as its X11 WM class, so
+GNOME shows this icon for the running window too.
+
 ### Headless / scripting
 
 The same pipeline can run without a UI, mirroring `python main.py <step>`:
