@@ -47,6 +47,9 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Image;
+import java.awt.Rectangle;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.net.URL;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -708,21 +711,28 @@ public final class MainWindow {
                     : "That photo directory does not exist yet.");
             return;
         }
-        // Launching the file manager can block briefly; keep it off the EDT.
+        openInSystem(dir);
+    }
+
+    /**
+     * Opens a file or directory with the system default handler (the image viewer
+     * or file manager). Launching it can block briefly, so it runs off the EDT.
+     */
+    private void openInSystem(Path target) {
         new Thread(() -> {
             try {
                 if (Desktop.isDesktopSupported()
                         && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-                    Desktop.getDesktop().open(dir.toFile());
+                    Desktop.getDesktop().open(target.toFile());
                 } else {
-                    new ProcessBuilder("xdg-open", dir.toString()).start();
+                    new ProcessBuilder("xdg-open", target.toString()).start();
                 }
-                SwingUtilities.invokeLater(() -> appendLog("Opened " + dir));
+                SwingUtilities.invokeLater(() -> appendLog("Opened " + target));
             } catch (Exception e) {
                 SwingUtilities.invokeLater(() ->
-                        error("Could not open " + dir + ": " + e.getMessage()));
+                        error("Could not open " + target + ": " + e.getMessage()));
             }
-        }, "open-photo-dir").start();
+        }, "open-in-system").start();
     }
 
     /** Clears the active editor only; the file is unchanged until Save is clicked. */
@@ -804,6 +814,8 @@ public final class MainWindow {
         private final JList<Object> list = new JList<>(model);
         private final JScrollPane scroll = new JScrollPane(list);
         private final AtomicInteger token = new AtomicInteger();
+        /** Files behind the thumbnails, kept index-aligned with {@link #model}. */
+        private final List<Path> loadedFiles = new ArrayList<>();
 
         Gallery() {
             list.setLayoutOrientation(JList.HORIZONTAL_WRAP);
@@ -811,6 +823,23 @@ public final class MainWindow {
             list.setFixedCellWidth(THUMB_SIZE + 16);
             list.setFixedCellHeight(THUMB_SIZE + 16);
             scroll.getVerticalScrollBar().setUnitIncrement(16);
+            list.setToolTipText("Double-click a photo to open it in the default viewer.");
+            list.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) {
+                        return;
+                    }
+                    int index = list.locationToIndex(e.getPoint());
+                    if (index < 0 || index >= loadedFiles.size()) {
+                        return; // no thumbnails (e.g. a status message is shown)
+                    }
+                    Rectangle cell = list.getCellBounds(index, index);
+                    if (cell != null && cell.contains(e.getPoint())) {
+                        openInSystem(loadedFiles.get(index));
+                    }
+                }
+            });
         }
 
         JScrollPane component() {
@@ -821,6 +850,7 @@ public final class MainWindow {
         void message(String text) {
             token.incrementAndGet();
             model.clear();
+            loadedFiles.clear();
             model.addElement(text);
         }
 
@@ -828,6 +858,7 @@ public final class MainWindow {
         void show(Path dir) {
             int my = token.incrementAndGet();
             model.clear();
+            loadedFiles.clear();
             if (dir == null || !Files.isDirectory(dir)) {
                 model.addElement("Not available yet.");
                 return;
@@ -863,6 +894,7 @@ public final class MainWindow {
                         }
                         if (icon != null) {
                             model.addElement(icon);
+                            loadedFiles.add(file); // stays index-aligned with the model
                         }
                     });
                 }
