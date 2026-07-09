@@ -13,6 +13,7 @@ import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -28,13 +29,19 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.WindowConstants;
+import javax.swing.border.Border;
+import javax.swing.border.CompoundBorder;
+import javax.swing.border.TitledBorder;
 import javax.swing.table.TableColumn;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -52,6 +59,9 @@ public final class MainWindow {
 
     /** Text caret color — white so it's visible against the dark theme. */
     private static final Color CARET_COLOR = Color.WHITE;
+
+    /** One font size for the whole window, so all text reads at a similar (larger) size. */
+    private static final int UI_FONT_SIZE = 15;
 
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
@@ -105,18 +115,20 @@ public final class MainWindow {
 
     private void build() {
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        frame.setPreferredSize(new Dimension(1600, 880));
+        frame.setPreferredSize(new Dimension(1600, 920));
         frame.setLayout(new BorderLayout(8, 8));
 
         // Left panel: the full control stack on top (each section keeps its
         // preferred height but fills the available width) with the log below.
+        List<JPanel> sections = List.of(
+                buildBaseDirPanel(), buildPhotosPanel(), buildOfferPanel(),
+                buildWorkflowPanel(), buildProgressPanel());
         JPanel controls = new JPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
-        controls.add(fixHeight(buildBaseDirPanel()));
-        controls.add(fixHeight(buildPhotosPanel()));
-        controls.add(fixHeight(buildOfferPanel()));
-        controls.add(fixHeight(buildWorkflowPanel()));
-        controls.add(fixHeight(buildProgressPanel()));
+        for (JPanel section : sections) {
+            section.setAlignmentX(Component.LEFT_ALIGNMENT);
+            controls.add(section);
+        }
 
         JPanel left = new JPanel(new BorderLayout(8, 8));
         left.add(controls, BorderLayout.NORTH);
@@ -129,17 +141,77 @@ public final class MainWindow {
         split.setResizeWeight(0.5); // keep the two halves equal-width on resize
         frame.add(split, BorderLayout.CENTER);
 
+        // Enlarge and unify fonts across the whole window before measuring, so the
+        // fixed-height sections are sized for the final (larger) text.
+        standardizeFonts(frame.getRootPane());
+        offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
+        for (JPanel section : sections) {
+            capHeight(section);
+        }
+
         frame.pack();
         frame.setLocationRelativeTo(null);
         SwingUtilities.invokeLater(() -> split.setDividerLocation(0.5));
     }
 
     /** Caps a section's height at its preferred size so it fills width but not extra vertical space. */
-    private static JPanel fixHeight(JPanel panel) {
+    private static void capHeight(JPanel panel) {
         Dimension pref = panel.getPreferredSize();
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return panel;
+    }
+
+    /** Sets every component (and titled-border header) in the tree to {@link #UI_FONT_SIZE}, keeping family/style. */
+    private void standardizeFonts(Component c) {
+        Font font = c.getFont();
+        if (font != null) {
+            c.setFont(font.deriveFont((float) UI_FONT_SIZE));
+        }
+        if (c instanceof JComponent jc) {
+            resizeTitledBorderFont(jc.getBorder());
+        }
+        // The table's in-cell editors are not in the visible tree, so size them explicitly.
+        if (c instanceof JTable table) {
+            resizeCellEditorFont(table.getDefaultEditor(Object.class));
+            for (int col = 0; col < table.getColumnCount(); col++) {
+                resizeCellEditorFont(table.getColumnModel().getColumn(col).getCellEditor());
+            }
+        }
+        if (c instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                standardizeFonts(child);
+            }
+        }
+    }
+
+    private void resizeTitledBorderFont(Border border) {
+        if (border instanceof TitledBorder tb) {
+            Font f = tb.getTitleFont();
+            if (f == null) {
+                f = UIManager.getFont("TitledBorder.font");
+            }
+            if (f == null) {
+                f = new Font(Font.DIALOG, Font.BOLD, UI_FONT_SIZE);
+            }
+            tb.setTitleFont(f.deriveFont((float) UI_FONT_SIZE));
+        } else if (border instanceof CompoundBorder cb) {
+            resizeTitledBorderFont(cb.getOutsideBorder());
+            resizeTitledBorderFont(cb.getInsideBorder());
+        }
+    }
+
+    private void resizeCellEditorFont(javax.swing.table.TableCellEditor editor) {
+        if (editor instanceof javax.swing.DefaultCellEditor dce) {
+            Component comp = dce.getComponent();
+            if (comp != null && comp.getFont() != null) {
+                comp.setFont(comp.getFont().deriveFont((float) UI_FONT_SIZE));
+            }
+            if (comp instanceof JComboBox<?> combo
+                    && combo.getEditor().getEditorComponent() instanceof JTextField field
+                    && field.getFont() != null) {
+                field.setFont(field.getFont().deriveFont((float) UI_FONT_SIZE));
+            }
+        }
     }
 
     private JPanel buildBaseDirPanel() {
