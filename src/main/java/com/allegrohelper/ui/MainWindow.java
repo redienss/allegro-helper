@@ -39,6 +39,7 @@ import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.TransferHandler;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 import javax.swing.border.Border;
@@ -56,9 +57,13 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Image;
 import java.awt.Rectangle;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.net.URL;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -892,6 +897,12 @@ public final class MainWindow {
      * horizontal-wrap mode). Thumbnails are loaded off the EDT; a token guards
      * against a slower load from a previously selected offer overwriting a newer
      * one.
+     *
+     * <p>Thumbnails can be dragged out of the app — e.g. onto a browser's upload
+     * form. The drag exports the underlying files as
+     * {@link DataFlavor#javaFileListFlavor}, which AWT translates to a native
+     * {@code text/uri-list} drag on Linux, so a drop target sees the same thing
+     * a file-manager drag would give it.
      */
     private final class Gallery {
         private final DefaultListModel<Object> model = new DefaultListModel<>();
@@ -907,7 +918,26 @@ public final class MainWindow {
             list.setFixedCellWidth(THUMB_SIZE + 16);
             list.setFixedCellHeight(THUMB_SIZE + 16);
             scroll.getVerticalScrollBar().setUnitIncrement(16);
-            list.setToolTipText("Double-click a photo to open it in the default viewer.");
+            list.setToolTipText("Double-click a photo to open it in the default viewer. "
+                    + "Drag photos onto another app (e.g. a browser upload form); Ctrl/Shift-click selects several.");
+            list.setDragEnabled(true);
+            list.setTransferHandler(new TransferHandler() {
+                @Override
+                public int getSourceActions(JComponent c) {
+                    return COPY;
+                }
+
+                @Override
+                protected Transferable createTransferable(JComponent c) {
+                    List<File> files = new ArrayList<>();
+                    for (int index : list.getSelectedIndices()) {
+                        if (index < loadedFiles.size()) { // skip the status/"Loading…" element
+                            files.add(loadedFiles.get(index).toFile());
+                        }
+                    }
+                    return files.isEmpty() ? null : new FileListTransferable(files);
+                }
+            });
             list.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
@@ -983,6 +1013,33 @@ public final class MainWindow {
                     });
                 }
             });
+        }
+    }
+
+    /** A drag payload of files, exposed only as {@link DataFlavor#javaFileListFlavor}. */
+    private static final class FileListTransferable implements Transferable {
+        private final List<File> files;
+
+        FileListTransferable(List<File> files) {
+            this.files = files;
+        }
+
+        @Override
+        public DataFlavor[] getTransferDataFlavors() {
+            return new DataFlavor[] {DataFlavor.javaFileListFlavor};
+        }
+
+        @Override
+        public boolean isDataFlavorSupported(DataFlavor flavor) {
+            return DataFlavor.javaFileListFlavor.equals(flavor);
+        }
+
+        @Override
+        public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
+            if (!isDataFlavorSupported(flavor)) {
+                throw new UnsupportedFlavorException(flavor);
+            }
+            return files;
         }
     }
 
