@@ -21,7 +21,7 @@ import java.util.Map;
  * Generates {@code description.txt} for each offer from {@code data.json} using
  * the OpenAI Chat Completions API. Item-specific facts (condition, damage,
  * quantity) come exclusively from the CSV data; the price is taken directly
- * from the CSV. Mirrors {@code allegro_bot/generate_description.py}.
+ * from the CSV.
  *
  * <p>The prompt and generated text are intentionally kept in Polish, since the
  * listing is published on Allegro Lokalnie (Polish market).

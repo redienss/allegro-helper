@@ -10,10 +10,9 @@ import java.util.Map;
  *
  * <p>Parsing produces {@link Map} (objects, insertion-ordered), {@link List}
  * (arrays), {@link String}, {@link Double} (numbers), {@link Boolean} and
- * {@code null}. Writing accepts the same types and mirrors Python's
- * {@code json.dumps(..., ensure_ascii=False, indent=2)}: non-ASCII characters
- * are emitted literally and integral numbers are printed without a decimal
- * point.
+ * {@code null}. Writing accepts the same types and produces two-space indented
+ * output: non-ASCII characters are emitted literally and integral numbers are
+ * printed without a decimal point.
  */
 public final class Json {
 

@@ -17,8 +17,7 @@ import java.util.Map;
 
 /**
  * Matches imported photos ({@code raw_photos/}) to rows in {@code offers.csv},
- * splitting them into per-offer directories. Mirrors
- * {@code allegro_bot/group_and_match.py}.
+ * splitting them into per-offer directories.
  */
 public final class GroupAndMatch {
 

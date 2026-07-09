@@ -16,8 +16,7 @@ import java.util.List;
 /**
  * Photo retouching: automatic gray-world white balance followed by
  * per-channel auto-contrast with a 1% cutoff, saved as JPEG quality 90.
- * Cropping/background removal is deliberately left manual. Mirrors
- * {@code allegro_bot/retouch.py} (Pillow's gray-world + {@code ImageOps.autocontrast}).
+ * Cropping/background removal is deliberately left manual.
  */
 public final class Retouch {
 

@@ -13,8 +13,7 @@ import java.util.regex.Pattern;
 /**
  * Groups photos into series based on the timestamp encoded in the filename
  * (OpenCamera convention: {@code IMG_YYYYMMDD_HHMMSS.jpg}). A gap larger than
- * the threshold marks the start of a new series. Mirrors the clustering in
- * {@code allegro_bot/group_and_match.py}.
+ * the threshold marks the start of a new series.
  */
 public final class Clustering {
 

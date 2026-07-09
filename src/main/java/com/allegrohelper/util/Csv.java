@@ -12,11 +12,10 @@ import java.util.Map;
 /**
  * Reader/writer for the offers table.
  *
- * <p>The canonical {@code offers.csv} is tab-delimited (matching the Python
- * pipeline). On load the delimiter is auto-detected (tab if the header
- * contains one, otherwise comma) so an arbitrary CSV can be imported; on save
- * the file is always written tab-delimited so the match step reads it the same
- * way the Python code did.
+ * <p>The canonical {@code offers.csv} is tab-delimited. On load the delimiter
+ * is auto-detected (tab if the header contains one, otherwise comma) so an
+ * arbitrary CSV can be imported; on save the file is always written
+ * tab-delimited, which is what the match step expects.
  */
 public final class Csv {
 

@@ -14,8 +14,7 @@ import java.nio.file.Path;
  * Entry point for Allegro Helper.
  *
  * <p>With no arguments (or a directory argument) it launches the Swing desktop
- * UI. With {@code --cli <step> [baseDir]} it runs the pipeline headlessly,
- * mirroring the Python {@code main.py}.
+ * UI. With {@code --cli <step> [baseDir]} it runs the pipeline headlessly.
  */
 public final class App {
 

@@ -11,7 +11,7 @@ import java.util.List;
 /**
  * Imports photos from the phone (mounted via gvfs-mtp) into the local working
  * directory. Files are only copied - the originals on the phone are left
- * untouched. Mirrors {@code allegro_bot/import_photos.py}.
+ * untouched.
  */
 public final class ImportPhotos {
 

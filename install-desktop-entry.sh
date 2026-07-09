@@ -5,10 +5,9 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-APP_DIR="$(pwd)"
-REPO_DIR="$(cd .. && pwd)"
-RUN="$APP_DIR/run.sh"
-ICON_SRC="$REPO_DIR/icons/AllegroHelper-icon-full-logo-1024.png"
+ROOT_DIR="$(pwd)"
+RUN="$ROOT_DIR/run.sh"
+ICON_SRC="$ROOT_DIR/icons/AllegroHelper-icon-full-logo-1024.png"
 
 if [[ ! -f "$ICON_SRC" ]]; then
   echo "error: icon not found: $ICON_SRC" >&2
@@ -36,7 +35,7 @@ Type=Application
 Version=1.0
 Name=Allegro Helper
 Comment=Prepare Allegro Lokalnie offers (import, match, retouch, describe)
-Exec="$RUN" "$REPO_DIR"
+Exec="$RUN" "$ROOT_DIR"
 Icon=$ICON_DIR/$ICON_NAME.png
 Terminal=false
 Categories=Utility;

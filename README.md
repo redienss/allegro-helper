@@ -1,49 +1,162 @@
-# AllegroBot
+# Allegro Helper
 
 <p align="center">
   <img src="logo/logo.png" alt="Allegro Helper logo" width="320">
 </p>
 
-A tool that helps sell off private items on **Allegro Lokalnie**. The goal of the project is to partially automate the workflow from taking photos to writing offer descriptions — as much as possible while staying compliant with Allegro's rules (actually publishing the listing remains manual).
+A Java desktop application that helps sell off private items on **Allegro
+Lokalnie**. It automates the workflow from taking photos to writing offer
+descriptions, as far as Allegro's rules allow.
 
-The project itself (code, docs, CLI output) is in English. The OpenAI prompt and the generated offer text stay in Polish, since Allegro Lokalnie is a Polish marketplace (listing descriptions, titles, communication with buyers).
+It is a *helper*, not a bot — it does not click on Allegro. Publishing the
+listing stays manual.
 
-## Desktop app (Allegro Helper)
+The project itself (code, docs, log output) is in English. The OpenAI prompt and
+the generated offer text stay in Polish, since Allegro Lokalnie is a Polish
+marketplace.
 
-There is also a Java desktop application, **Allegro Helper**, in [`app/`](app/) —
-a GUI front-end over the same pipeline (import → match → retouch → describe),
-with an editable offer grid, workflow checkboxes, a progress bar and a log. It
-has no external dependencies (pure JDK); build and run it with `cd app &&
-./build.sh && ./run.sh`. See [`app/README.md`](app/README.md).
+## The workflow
 
-## Current workflow (manual)
+1. Item photos are taken on a rotating turntable, controlled by a remote, with a
+   phone on a tripod running **OpenCamera** — a series of 20 photos, one every
+   5 seconds.
+2. **Import** — photos are copied from the phone (mounted via MTP) into
+   `raw_photos/`. The originals stay on the phone.
+3. **Match** — photos are grouped into series by the timestamp in their filename
+   and matched to the rows of `offers.csv`, one series per row, in order. Each
+   series is moved into its own directory named after its first photo,
+   e.g. `offers/20260708_0340/`.
+4. **Retouch** — automatic gray-world white balance and auto-contrast. Cropping
+   stays manual: auto-cropping items of different shapes is too error-prone.
+5. **Describe** — an offer description is generated per offer via the OpenAI
+   API, including the price taken directly from the CSV.
+6. The offer is then created on Allegro Lokalnie by hand, using the retouched
+   photos and the generated description.
 
-1. Item photos are taken on a rotating turntable, controlled by a remote, with a phone on a tripod running **OpenCamera** — a series of 20 photos, one every 5 seconds.
-2. Photos are transferred from the phone to the computer.
-   Location on the phone: `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Internal storage/DCIM/OpenCamera`
-3. Photos are touched up (white balance, brightness, contrast) to keep good brightness without blowing out details.
-4. Basic item information is written down: model, quantity, condition, extra info, parcel size (InPost size), price.
-5. An offer description is written/generated.
-6. The offer is manually created on Allegro Lokalnie using the photos and description.
+Every step is safe to re-run — already processed offers and photos are skipped.
 
-## Steps to automate
+### What stays manual
 
-1. **Read the CSV** with the batch list of offers to prepare (file `offers.csv`, columns: `name | brand | model | condition | damage | quantity | price | inpost_size`).
-2. **Import photos** from the phone (MTP location as above) into the project's working directory.
-3. **Match photos to CSV rows** — e.g. with 10 rows in `offers.csv` there should be 10 × 20 photos in the same order as the rows in the file.
-4. **Split into offer directories** — each photo series goes into its own directory named after the date and time of the first photo in the series, e.g. `20260708_0316`.
-5. **Retouch photos** — automatic white balance and contrast/brightness correction (gray-world + auto-contrast). Cropping remains manual for now — the risk of incorrectly auto-cropping the item across different shapes is too high.
-6. **Generate the offer description** — a text file per offer, e.g. `20260708_0316/description.txt`, including the price taken directly from the CSV.
+- Shooting the photos (the turntable and remote are only semi-automatic).
+- Filling in `offers.csv` (e.g. the item model), so a sensible description can
+  be generated.
+- Publishing the offer on Allegro Lokalnie.
 
-## Steps that remain manual
+## The window
 
-1. **Photos** — the turntable and tripod are semi-automatic (remote control), but the series still requires attendance and operation.
-2. **Preparing the CSV file** — must be filled in by hand (e.g. item model), so that a sensible description can be generated.
-3. **Publishing the offer on Allegro Lokalnie** — still manual for now, based on the generated photos and description.
+The window is split into two equal-width halves.
 
-## Input data structure
+### Left: controls
+
+- **Photos** — photo series detected on the connected phone (before import),
+  e.g. `20260708_0340 | 20x series of photos to import`. Scanned automatically
+  on launch; click **Refresh** to rescan.
+- **Offer Data** — an editable grid (`Name | Brand | Model | Condition | Damage |
+  Quantity | Price | InPost Size`). Loaded from `offers.csv` in the base
+  directory if present; otherwise empty and fillable by hand. You can also
+  **Load CSV…** from anywhere, **Save CSV**, and add/remove rows.
+- **Workflow** — checkboxes `Import`, `Match`, `Retouch`, `Describe` (all
+  checked by default).
+- **Start** — runs the selected steps in order. If `Match` is selected, the grid
+  is written to `offers.csv` first (that step's input).
+- **Progress** — overall progress across the selected steps.
+- **Log** — the run log (`== import ==`, `== match ==`, …).
+
+### Right: the selected offer
+
+Clicking a row in the grid shows that offer (resolved by matching the row's name
+to each offer's `data.json`, falling back to row position) in four tabs:
+
+- **Photos (Input)** — thumbnail gallery of the original photos
+  (`offers/<id>/photos/`).
+- **Photos (Output)** — thumbnail gallery of the retouched photos
+  (`offers/<id>/retouched/`).
+- **Description (Input)** — editor for `more_data_<N>.txt` next to `offers.csv`
+  (N = the row's 1-based number): extra free-form notes folded into the
+  description by the Describe step. Editable and saveable even before Match.
+- **Description (Output)** — editor for `description.txt` in the offer
+  directory: the generated description; edit and save to tweak it.
+
+Thumbnails load upright (EXIF-corrected) off the UI thread; double-click one to
+open it in the system image viewer. The Photos tabs have an **Open photo dir**
+button in the lower-right.
+
+The Description tabs have a bottom bar with **Delete** and **Clear** in the
+lower-left corner (away from **Save** in the lower-right, to avoid accidental
+clicks), all acting on the active tab's file:
+
+- **Save** writes the editor to the file.
+- **Clear** empties the editor only — the file is unchanged until you Save.
+- **Delete** removes the file from disk (after a confirmation dialog) and clears
+  the editor.
+
+Emoji in the descriptions are drawn as color images. Java2D cannot rasterize
+color fonts, so the app reads the PNG bitmaps embedded in Noto Color Emoji's
+`CBDT`/`CBLC` tables and paints those instead of the monochrome glyph. The
+document text is untouched, so saving still writes the original emoji
+characters. Without a color emoji font the text falls back to the normal glyphs
+(set `ALLEGRO_EMOJI_FONT` to point at one explicitly).
+
+## Requirements
+
+- A JDK (Java 17+; developed and tested on Java 25). No Maven/Gradle and **no
+  external dependencies** — only the JDK standard library (Swing,
+  `java.net.http`, `javax.imageio`).
+- `gio` (GVFS) to read photos from a phone connected via MTP (mounted at
+  `/run/user/<uid>/gvfs/mtp:host=...`).
+- An OpenAI API key for the *Describe* step (`OPENAI_API_KEY`), read from the
+  environment or a `.env` file in the base directory (see `.env.example`).
+
+## Build & run
+
+```bash
+./build.sh        # compiles to build/classes (and build/allegro-helper.jar if the `jar` tool is present)
+./run.sh          # launches the desktop UI
+```
+
+`build.sh` finds `javac` on `PATH`, then `$JAVA_HOME`, then common JVM install
+locations; override with `JAVAC=/path/to/javac ./build.sh` if needed.
+
+### Desktop shortcut
+
+The window/taskbar icon is the app icon
+(`icons/AllegroHelper-icon-full-logo-1024.png`), bundled onto the classpath at
+build time. To add a launcher to the application menu and Desktop:
+
+```bash
+./install-desktop-entry.sh
+```
+
+This installs `~/.local/share/applications/allegro-helper.desktop` (plus a copy
+on the Desktop) and the icon under the hicolor theme. The launcher sets
+`StartupWMClass=AllegroHelper`, which the app advertises as its X11 WM class, so
+GNOME shows this icon for the running window too.
+
+### Headless / scripting
+
+The same pipeline runs without a UI:
+
+```bash
+./run.sh --cli import      # or match | retouch | describe | all
+./run.sh --cli all /path/to/base-dir
+```
+
+## Configuration
+
+The base directory (chosen at the top of the window, default: the launch
+directory) determines `offers.csv`, `raw_photos/` and `offers/`. These
+environment variables are honored, from the environment or `.env`:
+`CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
+`PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `OPENAI_API_KEY`,
+`OPENAI_MODEL`, and `OPENAI_BASE_URL` (for an OpenAI-compatible endpoint). A
+real environment variable takes precedence over a value in `.env`.
+
+## Data layout
 
 ### `offers.csv`
+
+Tab-delimited. Rows must be in the same order in which the photo series were
+taken. Values stay in Polish, since that's the language of the actual listings.
 
 | column | description | example |
 |---|---|---|
@@ -56,52 +169,36 @@ has no external dependencies (pure JDK); build and run it with `cd app &&
 | price | price in PLN | 10 |
 | inpost_size | InPost locker size | A |
 
-Rows in the file must be in the same order in which the photo series were taken. Row values themselves stay in Polish, since that's the language of the actual listings.
-
 ### Optional extra notes (`more_data_<N>.txt`)
 
-For information about an item that's too long or unstructured to fit in a CSV column (test results, usage history, what's included, etc.), place a file named `more_data_1.txt`, `more_data_2.txt`, etc. next to `offers.csv` — the number matches the 1-based row order in the CSV. During the `match` step, `more_data_<N>.txt` is copied into the corresponding offer directory as `more_data.txt`. If present, its content is passed to OpenAI as truthful, item-specific notes to be folded into the description (reformatted/shortened as needed, but not embellished with invented details).
+For information too long or unstructured for a CSV column (test results, usage
+history, what's included, …), place `more_data_1.txt`, `more_data_2.txt`, … next
+to `offers.csv` — the number matches the 1-based row order. During **Match**
+each is copied into the matching offer directory as `more_data.txt`, and
+**Describe** passes it to OpenAI as truthful, item-specific notes to be folded
+into the description (reformatted or shortened, never embellished with invented
+details).
 
 ### Source photos
 
-Phone (Samsung, MTP): `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Internal storage/DCIM/OpenCamera`
+Phone (Samsung, MTP):
+`mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Internal storage/DCIM/OpenCamera`
 
-File name per OpenCamera convention: `IMG_YYYYMMDD_HHMMSS.jpg`. Photos within a single series (one offer) are ~5 seconds apart; there's a noticeably longer gap between series (time needed to swap the item on the turntable) — this makes it possible to automatically detect series boundaries.
+Filenames follow the OpenCamera convention `IMG_YYYYMMDD_HHMMSS.jpg`. Photos
+within one series are ~5 seconds apart, with a noticeably longer gap between
+series (time to swap the item on the turntable) — which is how series boundaries
+are detected.
 
-## Output data structure
+### Output
 
-For each offer a directory `offers/<YYYYMMDD_HHMM>/` is created (timestamp of the series' first photo):
+For each offer a directory `offers/<YYYYMMDD_HHMM>/` is created (timestamp of
+the series' first photo):
 
 ```
 offers/20260708_0340/
-  data.json      # data from the CSV row + list of photos
-  photos/        # original photos of the series
-  retouched/     # photos after auto white balance and auto-contrast
-  more_data.txt  # optional, copied from more_data_<N>.txt if present
+  data.json        # data from the CSV row + list of photos
+  photos/          # original photos of the series
+  retouched/       # photos after auto white balance and auto-contrast
+  more_data.txt    # optional, copied from more_data_<N>.txt if present
   description.txt  # generated description + price (from the CSV)
 ```
-
-## Technical requirements
-
-- Python 3 (environment: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`).
-- Pillow — photo processing.
-- `gio` (GVFS) to read files from the phone connected via MTP (mounted at `/run/user/<uid>/gvfs/mtp:host=...`).
-- OpenAI API key (`OPENAI_API_KEY` variable in the `.env` file, see `.env.example`) — only needed for generating descriptions.
-
-## Installation and usage
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp .env.example .env   # then fill in OPENAI_API_KEY
-
-.venv/bin/python main.py import    # copies photos from the phone to raw_photos/ (originals stay on the phone)
-.venv/bin/python main.py match     # matches photos to rows in offers.csv, creates directories in offers/
-.venv/bin/python main.py retouch   # auto white balance + auto-contrast for each offer
-.venv/bin/python main.py describe  # generates description.txt (requires OPENAI_API_KEY)
-
-# or all at once:
-.venv/bin/python main.py all
-```
-
-Every step is safe to run repeatedly — already processed offers/photos are skipped.

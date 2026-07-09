@@ -9,12 +9,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Project configuration, mirroring {@code allegro_bot/config.py}.
+ * Project configuration.
  *
  * <p>Every value is derived from the base directory but can be overridden via
- * environment variables or a {@code .env} file in the base directory. As in
- * python-dotenv, a real environment variable takes precedence over a value in
- * {@code .env}.
+ * environment variables or a {@code .env} file in the base directory. A real
+ * environment variable takes precedence over a value in {@code .env}.
  */
 public final class Config {
 
@@ -55,7 +54,7 @@ public final class Config {
     public static Config forBaseDir(Path baseDir) {
         Path base = baseDir.toAbsolutePath().normalize();
         Map<String, String> env = new HashMap<>(loadDotenv(base.resolve(".env")));
-        // Real environment variables win over .env, matching python-dotenv defaults.
+        // Real environment variables win over .env.
         env.putAll(System.getenv());
         return new Config(base, env);
     }

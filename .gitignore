@@ -1,7 +1,5 @@
 .env
-.venv/
-__pycache__/
-*.pyc
+build/
 raw_photos/
 offers/
 more_data_*.txt

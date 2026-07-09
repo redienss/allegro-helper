@@ -41,20 +41,20 @@ echo "Compiling sources…"
 find "$SRC_DIR" -name '*.java' > "$BUILD_DIR/sources.txt"
 "$JAVAC" -encoding UTF-8 -d "$CLASSES_DIR" @"$BUILD_DIR/sources.txt"
 
-# Bundle resources onto the classpath. The application logo lives at the repo
-# root (../logo/logo.png) so it stays a single source of truth; copy it next to
-# the UI classes so it loads via getResource("logo.png") regardless of cwd.
+# Bundle resources onto the classpath. The images live in logo/ and icons/ so
+# they stay a single source of truth; copy them next to the UI classes so they
+# load via getResource(...) regardless of the working directory.
 if [[ -d "src/main/resources" ]]; then
   cp -r src/main/resources/. "$CLASSES_DIR"/
 fi
 mkdir -p "$CLASSES_DIR/com/allegrohelper/ui"
-if [[ -f "../logo/logo.png" ]]; then
-  cp "../logo/logo.png" "$CLASSES_DIR/com/allegrohelper/ui/logo.png"
+if [[ -f "logo/logo.png" ]]; then
+  cp "logo/logo.png" "$CLASSES_DIR/com/allegrohelper/ui/logo.png"
   echo "Bundled logo -> $CLASSES_DIR/com/allegrohelper/ui/logo.png"
 fi
 # Window/taskbar icon (rounded app icon).
-if [[ -f "../icons/AllegroHelper-icon-full-logo-1024.png" ]]; then
-  cp "../icons/AllegroHelper-icon-full-logo-1024.png" "$CLASSES_DIR/com/allegrohelper/ui/app-icon.png"
+if [[ -f "icons/AllegroHelper-icon-full-logo-1024.png" ]]; then
+  cp "icons/AllegroHelper-icon-full-logo-1024.png" "$CLASSES_DIR/com/allegrohelper/ui/app-icon.png"
   echo "Bundled app icon -> $CLASSES_DIR/com/allegrohelper/ui/app-icon.png"
 fi
 

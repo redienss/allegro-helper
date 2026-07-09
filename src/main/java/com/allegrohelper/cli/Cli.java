@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Headless command-line entry point, mirroring the Python {@code main.py}:
+ * Headless command-line entry point:
  * {@code import | match | retouch | describe | all}. Useful for scripting and
  * for running the pipeline without a display.
  */
