@@ -67,15 +67,15 @@ The window is split into two equal-width halves.
 Clicking a row in the grid shows that offer (resolved by matching the row's name
 to each offer's `data.json`, falling back to row position) in four tabs:
 
-- **Photos (Input)** — thumbnail gallery of the original photos
-  (`offers/<id>/photos/`).
-- **Photos (Output)** — thumbnail gallery of the retouched photos
-  (`offers/<id>/retouched/`).
 - **Description (Input)** — editor for `more_data_<N>.txt` next to `offers.csv`
   (N = the row's 1-based number): extra free-form notes folded into the
   description by the Describe step. Editable and saveable even before Match.
 - **Description (Output)** — editor for `description.txt` in the offer
   directory: the generated description; edit and save to tweak it.
+- **Photos (Input)** — thumbnail gallery of the original photos
+  (`offers/<id>/photos/`).
+- **Photos (Output)** — thumbnail gallery of the retouched photos
+  (`offers/<id>/retouched/`).
 
 Thumbnails load upright (EXIF-corrected) off the UI thread; double-click one to
 open it in the system image viewer. The Photos tabs have an **Open photo dir**

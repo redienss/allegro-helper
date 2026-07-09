@@ -92,10 +92,10 @@ public final class MainWindow {
     private static final int LOGO_HEIGHT = 150;
 
     /** Right-panel tab indices. */
-    private static final int TAB_PHOTOS_INPUT = 0;   // original photos gallery
-    private static final int TAB_PHOTOS_OUTPUT = 1;  // retouched photos gallery
-    private static final int TAB_DESCRIPTION_INPUT = 2;   // more_data_<N>.txt editor
-    private static final int TAB_DESCRIPTION_OUTPUT = 3;  // description.txt editor
+    private static final int TAB_DESCRIPTION_INPUT = 0;   // more_data_<N>.txt editor
+    private static final int TAB_DESCRIPTION_OUTPUT = 1;  // description.txt editor
+    private static final int TAB_PHOTOS_INPUT = 2;   // original photos gallery
+    private static final int TAB_PHOTOS_OUTPUT = 3;  // retouched photos gallery
 
     /** Thumbnail box size (px) for the photo galleries. */
     private static final int THUMB_SIZE = 140;
@@ -479,10 +479,10 @@ public final class MainWindow {
             pane.setCaretColor(CARET_COLOR);
             installEmojiRendering(pane);
         }
-        rightTabs.addTab("Photos (Input)", photosInputGallery.component());
-        rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
         rightTabs.addTab("Description (Input)", new JScrollPane(moreDataArea));
         rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
+        rightTabs.addTab("Photos (Input)", photosInputGallery.component());
+        rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
         // Render tab titles as custom labels we fully control, so the selected tab
         // stays clearly highlighted regardless of the (dark) look and feel.
         for (int i = 0; i < rightTabs.getTabCount(); i++) {
