@@ -22,6 +22,7 @@ import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -65,7 +66,14 @@ public final class MainWindow {
     private final JTextArea logArea = new JTextArea();
 
     private final JLabel detailsHeader = new JLabel();
-    private final JTextArea detailsArea = new JTextArea();
+    private final JTabbedPane rightTabs = new JTabbedPane();
+    private final JTextArea moreDataArea = new JTextArea();   // More Data (Input) -> more_data_<N>.txt
+    private final JTextArea detailsArea = new JTextArea();    // Offer Details (Output) -> description.txt
+
+    // Save targets for the currently selected offer row (null when nothing is selected /
+    // no offer directory exists yet).
+    private Path moreDataTarget;
+    private Path descriptionTarget;
 
     private volatile boolean running = false;
 
@@ -168,7 +176,7 @@ public final class MainWindow {
         offerTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         offerTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                showSelectedOfferDetails();
+                loadSelectedOffer();
             }
         });
         configureInpostColumn();
@@ -242,18 +250,31 @@ public final class MainWindow {
     }
 
     private JPanel buildDetailsPanel() {
-        JPanel panel = titled("Offer Details");
-        panel.setLayout(new BorderLayout(6, 6));
+        JPanel panel = new JPanel(new BorderLayout(6, 6));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEmptyBorder(6, 8, 8, 8),
+                BorderFactory.createTitledBorder("Selected Offer")));
 
-        detailsHeader.setText("Select an offer in the grid to see its description.");
+        detailsHeader.setText("Select an offer in the grid.");
         detailsHeader.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
         panel.add(detailsHeader, BorderLayout.NORTH);
 
-        detailsArea.setEditable(false);
-        detailsArea.setLineWrap(true);
-        detailsArea.setWrapStyleWord(true);
-        detailsArea.setFont(new java.awt.Font("monospaced", java.awt.Font.PLAIN, 13));
-        panel.add(new JScrollPane(detailsArea), BorderLayout.CENTER);
+        java.awt.Font mono = new java.awt.Font("monospaced", java.awt.Font.PLAIN, 13);
+        for (JTextArea area : new JTextArea[]{moreDataArea, detailsArea}) {
+            area.setEditable(true);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            area.setFont(mono);
+        }
+        rightTabs.addTab("More Data (Input)", new JScrollPane(moreDataArea));
+        rightTabs.addTab("Offer Details (Output)", new JScrollPane(detailsArea));
+        panel.add(rightTabs, BorderLayout.CENTER);
+
+        JButton save = new JButton("Save");
+        save.addActionListener(e -> saveActiveTab());
+        JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+        south.add(save);
+        panel.add(south, BorderLayout.SOUTH);
         return panel;
     }
 
@@ -266,39 +287,85 @@ public final class MainWindow {
         return panel;
     }
 
-    /** Loads the selected offer's description.txt into the right-hand details panel. */
-    private void showSelectedOfferDetails() {
+    /**
+     * Loads the selected offer's files into the two editor tabs:
+     * More Data (Input) from {@code more_data_<N>.txt} next to offers.csv, and
+     * Offer Details (Output) from {@code description.txt} in the offer directory.
+     */
+    private void loadSelectedOffer() {
         int viewRow = offerTable.getSelectedRow();
         if (viewRow < 0) {
-            detailsHeader.setText("Select an offer in the grid to see its description.");
+            detailsHeader.setText("Select an offer in the grid.");
+            moreDataArea.setText("");
             detailsArea.setText("");
+            moreDataTarget = null;
+            descriptionTarget = null;
             return;
         }
         int modelRow = offerTable.convertRowIndexToModel(viewRow);
+        int rowNumber = modelRow + 1; // 1-based, as in more_data_<N>.txt
         String name = String.valueOf(offerModel.getValueAt(modelRow, 0));
+        Config cfg = currentConfig();
 
-        Path offerDir = resolveOfferDir(currentConfig(), name, modelRow);
+        // More Data (Input): more_data_<N>.txt next to offers.csv.
+        Path csvParent = cfg.csvPath.getParent();
+        moreDataTarget = (csvParent == null ? Path.of(".") : csvParent)
+                .resolve("more_data_" + rowNumber + ".txt");
+        moreDataArea.setText(readIfExists(moreDataTarget));
+        moreDataArea.setCaretPosition(0);
+
+        // Offer Details (Output): description.txt in the resolved offer directory.
+        Path offerDir = resolveOfferDir(cfg, name, modelRow);
         if (offerDir == null) {
-            detailsHeader.setText("<html><b>" + escapeHtml(name)
-                    + "</b><br><i>No matching offer directory yet — run Match.</i></html>");
+            descriptionTarget = null;
             detailsArea.setText("");
-            return;
-        }
-
-        detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>"
-                + escapeHtml(offerDir.getFileName().toString()) + "</html>");
-
-        Path description = offerDir.resolve("description.txt");
-        if (Files.isRegularFile(description)) {
-            try {
-                detailsArea.setText(Files.readString(description, StandardCharsets.UTF_8));
-            } catch (IOException e) {
-                detailsArea.setText("Could not read description.txt: " + e.getMessage());
-            }
+            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
+                    + " — <i>not matched yet (Offer Details saves after Match)</i></html>");
         } else {
-            detailsArea.setText("No description.txt yet — run Describe for this offer.");
+            descriptionTarget = offerDir.resolve("description.txt");
+            detailsArea.setText(readIfExists(descriptionTarget));
+            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
+                    + " — " + escapeHtml(offerDir.getFileName().toString()) + "</html>");
         }
         detailsArea.setCaretPosition(0);
+    }
+
+    /** Saves the currently active editor tab to its backing file. */
+    private void saveActiveTab() {
+        if (offerTable.getSelectedRow() < 0 || moreDataTarget == null) {
+            error("Select an offer in the grid first.");
+            return;
+        }
+        boolean moreDataTab = rightTabs.getSelectedIndex() == 0;
+        Path target = moreDataTab ? moreDataTarget : descriptionTarget;
+        String content = moreDataTab ? moreDataArea.getText() : detailsArea.getText();
+
+        if (target == null) {
+            // Only reachable for the Offer Details tab before the offer is matched.
+            error("No offer directory yet — run Match first, then Describe.");
+            return;
+        }
+        try {
+            Path parent = target.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Files.writeString(target, content, StandardCharsets.UTF_8);
+            appendLog("Saved " + target);
+        } catch (IOException e) {
+            error("Failed to save " + target + ": " + e.getMessage());
+        }
+    }
+
+    private static String readIfExists(Path file) {
+        if (file != null && Files.isRegularFile(file)) {
+            try {
+                return Files.readString(file, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                return "Could not read " + file + ": " + e.getMessage();
+            }
+        }
+        return "";
     }
 
     /**
@@ -363,7 +430,7 @@ public final class MainWindow {
         } catch (IOException e) {
             appendLog("Could not read " + cfg.csvPath + ": " + e.getMessage());
         }
-        showSelectedOfferDetails();
+        loadSelectedOffer();
     }
 
     private void loadCsvViaChooser() {
@@ -372,7 +439,7 @@ public final class MainWindow {
             try {
                 offerModel.loadFromCsv(chooser.getSelectedFile().toPath());
                 appendLog("Loaded offers from " + chooser.getSelectedFile());
-                showSelectedOfferDetails();
+                loadSelectedOffer();
             } catch (IOException e) {
                 error("Failed to load CSV: " + e.getMessage());
             }
@@ -480,7 +547,7 @@ public final class MainWindow {
                     appendLog(success ? "== done ==" : "== stopped ==");
                     setRunning(false);
                     // A run may have created/updated the selected offer's files.
-                    showSelectedOfferDetails();
+                    loadSelectedOffer();
                 });
             }
         }), "workflow").start();

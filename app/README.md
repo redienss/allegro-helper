@@ -11,10 +11,16 @@ listing stays manual.
 ## What it does
 
 The window is split into two equal-width halves: the **left** holds all the
-controls (below); the **right** is an **Offer Details** panel that shows the
-`description.txt` of whichever offer is selected in the grid (resolved by
-matching the row's name to each offer's `data.json`, falling back to row
-position). If that offer hasn't been matched/described yet, the panel says so.
+controls (below); the **right** shows the offer selected in the grid (resolved
+by matching the row's name to each offer's `data.json`, falling back to row
+position) in two editable tabs, with a **Save** button at the bottom that
+writes the active tab:
+
+- **More Data (Input)** ↔ `more_data_<N>.txt` next to `offers.csv` (N = the
+  row's 1-based number) — extra free-form notes folded into the description by
+  the Describe step. Editable/saveable even before Match.
+- **Offer Details (Output)** ↔ `description.txt` in the offer directory — the
+  generated description; edit and save to tweak it. Available after Match.
 
 The left side has the sections from the spec:
 
