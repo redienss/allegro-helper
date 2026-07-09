@@ -32,6 +32,13 @@ Description tab's file and are disabled while a Photos gallery is shown:
 - **Delete** removes the file from disk (after a confirmation dialog) and
   clears the editor.
 
+Emoji in the descriptions are drawn as color images. Java2D cannot rasterize
+color fonts, so the app reads the PNG bitmaps embedded in Noto Color Emoji's
+`CBDT`/`CBLC` tables and paints those instead of the monochrome glyph. The
+document text is untouched, so saving still writes the original emoji
+characters. If no color emoji font is found, the text simply falls back to the
+normal glyphs (set `ALLEGRO_EMOJI_FONT` to point at one explicitly).
+
 The two editor tabs in detail:
 
 - **Description (Input)** ↔ `more_data_<N>.txt` next to `offers.csv` (N = the

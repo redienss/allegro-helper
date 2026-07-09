@@ -28,7 +28,15 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.JTextPane;
 import javax.swing.ListSelectionModel;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.text.AbstractDocument;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -110,8 +118,9 @@ public final class MainWindow {
 
     private final JLabel detailsHeader = new JLabel();
     private final JTabbedPane rightTabs = new JTabbedPane();
-    private final JTextArea moreDataArea = new JTextArea();   // Description (Input) -> more_data_<N>.txt
-    private final JTextArea detailsArea = new JTextArea();    // Description (Output) -> description.txt
+    // Styled panes (not JTextArea) so emoji can be painted as color images.
+    private final JTextPane moreDataArea = new JTextPane();   // Description (Input) -> more_data_<N>.txt
+    private final JTextPane detailsArea = new JTextPane();    // Description (Output) -> description.txt
 
     // Photo galleries; a single background thread loads their thumbnails.
     private final ExecutorService galleryLoader = Executors.newSingleThreadExecutor(r -> {
@@ -464,12 +473,11 @@ public final class MainWindow {
         panel.add(detailsHeader, BorderLayout.NORTH);
 
         java.awt.Font mono = new java.awt.Font("monospaced", java.awt.Font.PLAIN, 13);
-        for (JTextArea area : new JTextArea[]{moreDataArea, detailsArea}) {
-            area.setEditable(true);
-            area.setLineWrap(true);
-            area.setWrapStyleWord(true);
-            area.setFont(mono);
-            area.setCaretColor(CARET_COLOR);
+        for (JTextPane pane : new JTextPane[]{moreDataArea, detailsArea}) {
+            pane.setEditable(true); // JTextPane wraps by default
+            pane.setFont(mono);
+            pane.setCaretColor(CARET_COLOR);
+            installEmojiRendering(pane);
         }
         rightTabs.addTab("Photos (Input)", photosInputGallery.component());
         rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
@@ -556,6 +564,71 @@ public final class MainWindow {
 
     private boolean isDescriptionInputTab() {
         return rightTabs.getSelectedIndex() == TAB_DESCRIPTION_INPUT;
+    }
+
+    /** Repaints emoji as color images whenever the pane's text changes. */
+    private void installEmojiRendering(JTextPane pane) {
+        pane.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                schedule();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                schedule();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                // Attribute-only change (that's us) - nothing to do.
+            }
+
+            private void schedule() {
+                // A document must not be restyled from inside its own notification.
+                SwingUtilities.invokeLater(() -> restyleEmoji(pane));
+            }
+        });
+    }
+
+    /**
+     * Replaces each emoji codepoint's glyph with a color image, by marking that
+     * text run as an icon element. The document text itself is untouched, so
+     * {@code getText()} (and therefore Save) still yields the original emoji.
+     * Java2D cannot rasterize color fonts, hence {@link ColorEmoji}.
+     */
+    private void restyleEmoji(JTextPane pane) {
+        StyledDocument doc = pane.getStyledDocument();
+        int length = doc.getLength();
+        if (length == 0) {
+            return;
+        }
+        String text;
+        try {
+            text = doc.getText(0, length);
+        } catch (BadLocationException e) {
+            return;
+        }
+        // Reset first, so text typed next to an emoji doesn't inherit its icon.
+        doc.setCharacterAttributes(0, length, SimpleAttributeSet.EMPTY, true);
+
+        int iconHeight = Math.round(pane.getFont().getSize() * 1.25f);
+        int i = 0;
+        while (i < text.length()) {
+            int codePoint = text.codePointAt(i);
+            int run = Character.charCount(codePoint);
+            if (i + run < text.length() && text.charAt(i + run) == '\uFE0F') {
+                run++; // fold the variation selector (U+FE0F) into the same run
+            }
+            ImageIcon icon = ColorEmoji.icon(codePoint, iconHeight);
+            if (icon != null) {
+                SimpleAttributeSet attrs = new SimpleAttributeSet();
+                attrs.addAttribute(AbstractDocument.ElementNameAttribute, StyleConstants.IconElementName);
+                StyleConstants.setIcon(attrs, icon);
+                doc.setCharacterAttributes(i, run, attrs, false);
+            }
+            i += run;
+        }
     }
 
     /** Highlights the selected tab (bold, bright, accent underline) and dims the rest. */
