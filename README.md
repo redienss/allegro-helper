@@ -44,7 +44,10 @@ Every step is safe to re-run — already processed offers and photos are skipped
 
 ## The window
 
-The window is split into two equal-width halves.
+The window is split into two equal-width halves: controls on the left, the
+selected offer on the right.
+
+![The main window, on the Description (Input) tab](screenshots/001.png)
 
 ### Left: controls
 
@@ -77,9 +80,13 @@ to each offer's `data.json`, falling back to row position) in four tabs:
 - **Photos (Output)** — thumbnail gallery of the retouched photos
   (`offers/<id>/retouched/`).
 
+![The Description (Output) tab, showing a generated description](screenshots/002.png)
+
 Thumbnails load upright (EXIF-corrected) off the UI thread; double-click one to
 open it in the system image viewer. The Photos tabs have an **Open photo dir**
 button in the lower-right.
+
+![The Photos (Input) tab, showing the thumbnail gallery](screenshots/003.png)
 
 The Description tabs have a bottom bar with **Delete** and **Clear** in the
 lower-left corner (away from **Save** in the lower-right, to avoid accidental
