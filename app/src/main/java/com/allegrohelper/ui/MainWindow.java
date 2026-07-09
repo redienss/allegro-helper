@@ -61,7 +61,7 @@ public final class MainWindow {
     private static final Color CARET_COLOR = Color.WHITE;
 
     /** One font size for the whole window, so all text reads at a similar (larger) size. */
-    private static final int UI_FONT_SIZE = 15;
+    private static final int UI_FONT_SIZE = 16;
 
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
@@ -170,8 +170,15 @@ public final class MainWindow {
         if (c instanceof JComponent jc) {
             resizeTitledBorderFont(jc.getBorder());
         }
-        // The table's in-cell editors are not in the visible tree, so size them explicitly.
+        // The table header and in-cell editors aren't in the tree yet at this point
+        // (the header is attached to the scroll pane on addNotify), so size them explicitly.
         if (c instanceof JTable table) {
+            if (table.getTableHeader() != null) {
+                Font hf = table.getTableHeader().getFont();
+                if (hf != null) {
+                    table.getTableHeader().setFont(hf.deriveFont((float) UI_FONT_SIZE));
+                }
+            }
             resizeCellEditorFont(table.getDefaultEditor(Object.class));
             for (int col = 0; col < table.getColumnCount(); col++) {
                 resizeCellEditorFont(table.getColumnModel().getColumn(col).getCellEditor());
