@@ -31,6 +31,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import javax.swing.table.TableColumn;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -48,6 +49,9 @@ import java.util.Map;
  * editable offer grid, the workflow selector, a progress bar and a log.
  */
 public final class MainWindow {
+
+    /** Text caret color — white so it's visible against the dark theme. */
+    private static final Color CARET_COLOR = Color.WHITE;
 
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
@@ -142,6 +146,7 @@ public final class MainWindow {
         JPanel panel = new JPanel(new BorderLayout(6, 0));
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 0, 8));
         panel.add(new JLabel("Base directory:"), BorderLayout.WEST);
+        baseDirField.setCaretColor(CARET_COLOR);
         panel.add(baseDirField, BorderLayout.CENTER);
         JButton browse = new JButton("Browse…");
         browse.addActionListener(e -> chooseBaseDir());
@@ -180,6 +185,11 @@ public final class MainWindow {
             }
         });
         configureInpostColumn();
+        // White caret for the default in-cell text editor.
+        if (offerTable.getDefaultEditor(Object.class) instanceof javax.swing.DefaultCellEditor editor
+                && editor.getComponent() instanceof JTextField field) {
+            field.setCaretColor(CARET_COLOR);
+        }
         JScrollPane scroll = new JScrollPane(offerTable);
         scroll.setPreferredSize(new Dimension(880, 150));
         panel.add(scroll, BorderLayout.CENTER);
@@ -209,6 +219,9 @@ public final class MainWindow {
         TableColumn column = offerTable.getColumnModel().getColumn(col);
         JComboBox<String> combo = new JComboBox<>(new DefaultComboBoxModel<>(new String[]{"A", "B", "C"}));
         combo.setEditable(true);
+        if (combo.getEditor().getEditorComponent() instanceof JTextField field) {
+            field.setCaretColor(CARET_COLOR);
+        }
         column.setCellEditor(new javax.swing.DefaultCellEditor(combo));
     }
 
@@ -245,6 +258,7 @@ public final class MainWindow {
         logArea.setLineWrap(true);
         logArea.setWrapStyleWord(true);
         logArea.setFont(new java.awt.Font("monospaced", java.awt.Font.PLAIN, 12));
+        logArea.setCaretColor(CARET_COLOR);
         panel.add(new JScrollPane(logArea), BorderLayout.CENTER);
         return panel;
     }
@@ -265,6 +279,7 @@ public final class MainWindow {
             area.setLineWrap(true);
             area.setWrapStyleWord(true);
             area.setFont(mono);
+            area.setCaretColor(CARET_COLOR);
         }
         rightTabs.addTab("More Data (Input)", new JScrollPane(moreDataArea));
         rightTabs.addTab("Offer Details (Output)", new JScrollPane(detailsArea));
