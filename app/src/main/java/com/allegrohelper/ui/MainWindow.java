@@ -21,6 +21,7 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.ImageIcon;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
@@ -28,6 +29,7 @@ import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
@@ -42,6 +44,8 @@ import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Image;
+import java.net.URL;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -62,6 +66,9 @@ public final class MainWindow {
 
     /** One font size for the whole window, so all text reads at a similar (larger) size. */
     private static final int UI_FONT_SIZE = 16;
+
+    /** Height the logo is scaled to (aspect ratio preserved). */
+    private static final int LOGO_HEIGHT = 150;
 
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
@@ -120,12 +127,28 @@ public final class MainWindow {
 
         // Left panel: the full control stack on top (each section keeps its
         // preferred height but fills the available width) with the log below.
-        List<JPanel> sections = List.of(
-                buildBaseDirPanel(), buildPhotosPanel(), buildOfferPanel(),
-                buildWorkflowPanel(), buildProgressPanel());
+        JPanel baseDirPanel = buildBaseDirPanel();
+        JPanel photosPanel = buildPhotosPanel();
+        JPanel offerPanel = buildOfferPanel();
+        JPanel workflowPanel = buildWorkflowPanel();
+        JPanel progressPanel = buildProgressPanel();
+
+        // Top area: the application logo in the upper-left corner, with the base
+        // directory and Photos section shifted to its right.
+        JPanel topRight = new JPanel();
+        topRight.setLayout(new BoxLayout(topRight, BoxLayout.Y_AXIS));
+        baseDirPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        photosPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        topRight.add(baseDirPanel);
+        topRight.add(photosPanel);
+
+        JPanel topArea = new JPanel(new BorderLayout());
+        topArea.add(buildLogoLabel(), BorderLayout.WEST);
+        topArea.add(topRight, BorderLayout.CENTER);
+
         JPanel controls = new JPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
-        for (JPanel section : sections) {
+        for (JPanel section : List.of(topArea, offerPanel, workflowPanel, progressPanel)) {
             section.setAlignmentX(Component.LEFT_ALIGNMENT);
             controls.add(section);
         }
@@ -145,7 +168,7 @@ public final class MainWindow {
         // fixed-height sections are sized for the final (larger) text.
         standardizeFonts(frame.getRootPane());
         offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
-        for (JPanel section : sections) {
+        for (JPanel section : List.of(baseDirPanel, photosPanel, topArea, offerPanel, workflowPanel, progressPanel)) {
             capHeight(section);
         }
 
@@ -219,6 +242,31 @@ public final class MainWindow {
                 field.setFont(field.getFont().deriveFont((float) UI_FONT_SIZE));
             }
         }
+    }
+
+    /** The application logo (top-left), scaled to {@link #LOGO_HEIGHT}; also sets the window icon. */
+    private JLabel buildLogoLabel() {
+        JLabel label = new JLabel();
+        label.setVerticalAlignment(SwingConstants.TOP);
+        label.setBorder(BorderFactory.createEmptyBorder(8, 8, 0, 8));
+
+        URL url = getClass().getResource("logo.png");
+        if (url == null) {
+            return label; // logo not bundled; leave an empty spacer
+        }
+        ImageIcon original = new ImageIcon(url);
+        frame.setIconImage(original.getImage());
+
+        int w = original.getIconWidth();
+        int h = original.getIconHeight();
+        if (h > 0) {
+            int scaledWidth = Math.round(w * (LOGO_HEIGHT / (float) h));
+            Image scaled = original.getImage().getScaledInstance(scaledWidth, LOGO_HEIGHT, Image.SCALE_SMOOTH);
+            label.setIcon(new ImageIcon(scaled));
+        } else {
+            label.setIcon(original);
+        }
+        return label;
     }
 
     private JPanel buildBaseDirPanel() {

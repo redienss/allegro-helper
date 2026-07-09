@@ -1,5 +1,9 @@
 # AllegroBot
 
+<p align="center">
+  <img src="logo/logo.png" alt="Allegro Helper logo" width="320">
+</p>
+
 A tool that helps sell off private items on **Allegro Lokalnie**. The goal of the project is to partially automate the workflow from taking photos to writing offer descriptions — as much as possible while staying compliant with Allegro's rules (actually publishing the listing remains manual).
 
 The project itself (code, docs, CLI output) is in English. The OpenAI prompt and the generated offer text stay in Polish, since Allegro Lokalnie is a Polish marketplace (listing descriptions, titles, communication with buyers).

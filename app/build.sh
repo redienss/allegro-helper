@@ -41,6 +41,18 @@ echo "Compiling sources…"
 find "$SRC_DIR" -name '*.java' > "$BUILD_DIR/sources.txt"
 "$JAVAC" -encoding UTF-8 -d "$CLASSES_DIR" @"$BUILD_DIR/sources.txt"
 
+# Bundle resources onto the classpath. The application logo lives at the repo
+# root (../logo/logo.png) so it stays a single source of truth; copy it next to
+# the UI classes so it loads via getResource("logo.png") regardless of cwd.
+if [[ -d "src/main/resources" ]]; then
+  cp -r src/main/resources/. "$CLASSES_DIR"/
+fi
+if [[ -f "../logo/logo.png" ]]; then
+  mkdir -p "$CLASSES_DIR/com/allegrohelper/ui"
+  cp "../logo/logo.png" "$CLASSES_DIR/com/allegrohelper/ui/logo.png"
+  echo "Bundled logo -> $CLASSES_DIR/com/allegrohelper/ui/logo.png"
+fi
+
 if JAR="$(find_tool jar "${JAR:-}")"; then
   echo "Packaging jar with: $JAR"
   "$JAR" --create --file "$JAR_PATH" --main-class "$MAIN_CLASS" -C "$CLASSES_DIR" .
