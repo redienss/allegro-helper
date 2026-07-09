@@ -125,7 +125,8 @@ public final class MainWindow {
 
     private final JCheckBox importBox = new JCheckBox("Import", true);
     private final JCheckBox matchBox = new JCheckBox("Match", true);
-    private final JCheckBox retouchBox = new JCheckBox("Retouch", true);
+    private final JCheckBox whiteBalanceBox = new JCheckBox("White balance", true);
+    private final JCheckBox autoContrastBox = new JCheckBox("Auto-contrast", true);
     private final JCheckBox autoCropBox = new JCheckBox("Auto-crop", true);
     private final JCheckBox describeBox = new JCheckBox("Describe", true);
 
@@ -449,7 +450,8 @@ public final class MainWindow {
         JPanel boxes = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 2));
         boxes.add(importBox);
         boxes.add(matchBox);
-        boxes.add(retouchBox);
+        boxes.add(whiteBalanceBox);
+        boxes.add(autoContrastBox);
         boxes.add(autoCropBox);
         boxes.add(describeBox);
         panel.add(boxes, BorderLayout.CENTER);
@@ -577,12 +579,19 @@ public final class MainWindow {
     }
 
     /**
-     * The final photos of an offer: the auto-cropped ones when that step has run,
-     * otherwise the merely retouched ones.
+     * The final photos of an offer: the output of the latest pipeline step that
+     * has run — cropped, else auto-contrasted, else white-balanced, else the
+     * pre-split {@code retouched/} kept for offers processed before the retouch
+     * step was split in two.
      */
     private static Path outputPhotoDir(Path offerDir) {
-        Path cropped = offerDir.resolve("cropped");
-        return Files.isDirectory(cropped) ? cropped : offerDir.resolve("retouched");
+        for (String dirName : new String[] {"cropped", "contrasted", "white_balanced", "retouched"}) {
+            Path dir = offerDir.resolve(dirName);
+            if (Files.isDirectory(dir)) {
+                return dir;
+            }
+        }
+        return offerDir.resolve("contrasted"); // nonexistent: the gallery shows "Not available yet."
     }
 
     private boolean isEditorTab() {
@@ -725,7 +734,7 @@ public final class MainWindow {
             detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
                     + " — <i>not matched yet (photos and Description output appear after Match)</i></html>");
             photosInputGallery.message("Not matched yet — run Match.");
-            photosOutputGallery.message("Not retouched yet — run Retouch.");
+            photosOutputGallery.message("Not retouched yet — run White balance or Auto-contrast.");
         } else {
             descriptionTarget = offerDir.resolve("description.txt");
             detailsArea.setText(readIfExists(descriptionTarget));
@@ -1333,8 +1342,11 @@ public final class MainWindow {
         if (matchBox.isSelected()) {
             steps.add(Workflow.Step.MATCH);
         }
-        if (retouchBox.isSelected()) {
-            steps.add(Workflow.Step.RETOUCH);
+        if (whiteBalanceBox.isSelected()) {
+            steps.add(Workflow.Step.WHITE_BALANCE);
+        }
+        if (autoContrastBox.isSelected()) {
+            steps.add(Workflow.Step.AUTO_CONTRAST);
         }
         if (autoCropBox.isSelected()) {
             steps.add(Workflow.Step.AUTOCROP);

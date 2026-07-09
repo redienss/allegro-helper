@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 ./build.sh                 # javac -> build/classes (+ build/allegro-helper.jar if the `jar` tool exists)
 ./run.sh                   # desktop UI
-./run.sh --cli all         # headless: import | match | retouch | autocrop | describe | all
-./run.sh --cli retouch /path/to/base-dir
+./run.sh --cli all         # headless: import | match | whitebalance | autocontrast | autocrop | describe | all
+./run.sh --cli retouch /path/to/base-dir   # retouch = alias for whitebalance + autocontrast
 ```
 
 `build.sh` resolves `javac` via `$JAVAC` → `PATH` → `$JAVA_HOME/bin` → `/usr/lib/jvm/*`, `/opt/*/bin`, `/snap/*/*/jbr/bin`. Override with `JAVAC=/path/to/javac ./build.sh`. If `jar` is missing (as on this machine), the jar step is skipped and `run.sh` runs from `build/classes` — that is a supported path, not a failure.
@@ -39,7 +39,7 @@ Java 25, Swing, **zero external dependencies** — JDK standard library only (Sw
 
 ### The pipeline
 
-`core/Workflow` is the spine. It runs an ordered `List<Step>` (`IMPORT → MATCH → RETOUCH → AUTOCROP → DESCRIBE`), logging a `== <label> ==` header per step and translating each step's 0..1 `stepProgress` into overall progress. Both front ends (`ui/MainWindow`, `cli/Cli`) do nothing but choose steps and supply a `Workflow.Listener`; all pipeline logic lives in `core/`.
+`core/Workflow` is the spine. It runs an ordered `List<Step>` (`IMPORT → MATCH → WHITE_BALANCE → AUTO_CONTRAST → AUTOCROP → DESCRIBE`), logging a `== <label> ==` header per step and translating each step's 0..1 `stepProgress` into overall progress. Both front ends (`ui/MainWindow`, `cli/Cli`) do nothing but choose steps and supply a `Workflow.Listener`; all pipeline logic lives in `core/`.
 
 Each step is a static `run`/`runAll(Config, Reporter)` and talks to the outside world only through `Reporter` (log lines + progress). That indirection is why the same code serves the UI and the CLI — don't print to stdout from `core/`.
 
@@ -47,13 +47,22 @@ Data flows through the filesystem, not in memory. A step reads the previous step
 
 ```
 offers/<YYYYMMDD_HHMM>/
-  data.json      # CSV row + photo list        (match)
-  photos/        # originals                   (match)
-  retouched/     # white balance + contrast    (retouch)
-  cropped/       # cropped to the item         (auto-crop)
-  more_data.txt  # copied from more_data_<N>.txt
-  description.txt                              (describe)
+  data.json       # CSV row + photo list        (match)
+  photos/         # originals                   (match)
+  white_balanced/ # gray-world white balance    (white balance)
+  contrasted/     # per-channel auto-contrast   (auto-contrast)
+  cropped/        # cropped to the item         (auto-crop)
+  more_data.txt   # copied from more_data_<N>.txt
+  description.txt                               (describe)
 ```
+
+Because either retouching step can be unticked, downstream steps take the
+most-processed input available: auto-contrast reads `white_balanced/` else
+`photos/`; auto-crop reads `contrasted/` else `white_balanced/` else the
+legacy `retouched/` (the pre-split combined output — still recognized so old
+offers keep working, but never written anymore). Auto-crop deliberately never
+reads `photos/`: originals still carry EXIF orientation, which its decoding
+ignores.
 
 **Two invariants hold across every step, and new code must preserve them:**
 
@@ -63,7 +72,7 @@ offers/<YYYYMMDD_HHMM>/
 ### Notable step internals
 
 - **`Clustering`** derives timestamps from OpenCamera filenames (`IMG_YYYYMMDD_HHMMSS.jpg`); a gap > `SERIES_GAP_THRESHOLD_SECONDS` starts a new series. Series are matched to CSV rows **by position**, so row order is load-bearing.
-- **`Retouch`** reproduces PIL's `ImageOps.autocontrast(cutoff=1)` after a gray-world white balance. `Exif` reproduces `ImageOps.exif_transpose` because ImageIO ignores orientation. Deviating from PIL's semantics here is a behavior change, not a cleanup.
+- **`Retouch`** backs both retouching steps (`Retouch.Mode.WHITE_BALANCE` / `AUTO_CONTRAST`): a gray-world white balance and a reproduction of PIL's `ImageOps.autocontrast(cutoff=1)`. `Exif` reproduces `ImageOps.exif_transpose` because ImageIO ignores orientation. Deviating from PIL's semantics here is a behavior change, not a cleanup.
 - **`AutoCrop`** separates item from background by *time*, not brightness or edges: on a turntable only the item's pixels change, so the mask is the per-pixel luminance range over the series, Otsu-thresholded, reduced to the largest connected blob. One box per series, grown by a margin and expanded to the source aspect ratio. It decodes via `ImageReadParam.setSourceSubsampling` (point-sampled — Pillow's smoothed resize gives a slightly different Otsu threshold, so Java boxes are tighter than a Python prototype's).
 - **`GenerateDescription`** posts to OpenAI Chat Completions. Price and `inpost_size` are appended from the CSV, never generated. Skips offers that already have `description.txt`.
 

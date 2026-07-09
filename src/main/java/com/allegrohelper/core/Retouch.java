@@ -14,12 +14,32 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Photo retouching: automatic gray-world white balance followed by
- * per-channel auto-contrast with a 1% cutoff, saved as JPEG quality 90.
+ * The two photo-retouching steps: gray-world white balance and per-channel
+ * auto-contrast with a 1% cutoff, each saved as JPEG quality 90. They are
+ * separate pipeline steps so either can run without the other; auto-contrast
+ * reads the white-balanced photos when that step has run, the originals
+ * otherwise. Running both re-encodes the JPEG twice — at quality 90 the extra
+ * generation loss is negligible, and it buys per-step control.
  * Cropping is a separate step ({@link AutoCrop}); background removal is
  * deliberately left manual.
  */
 public final class Retouch {
+
+    /** One retouching operation; each writes its own directory in the offer. */
+    public enum Mode {
+        WHITE_BALANCE("white_balanced", "white balance"),
+        AUTO_CONTRAST("contrasted", "auto-contrast");
+
+        /** Output directory name inside the offer directory. */
+        public final String dirName;
+        /** Human-readable name for log lines. */
+        public final String label;
+
+        Mode(String dirName, String label) {
+            this.dirName = dirName;
+            this.label = label;
+        }
+    }
 
     private static final float JPEG_QUALITY = 0.90f;
     private static final int AUTOCONTRAST_CUTOFF = 1;
@@ -27,7 +47,7 @@ public final class Retouch {
     private Retouch() {
     }
 
-    public static void runAll(Config cfg, Reporter reporter) throws IOException {
+    public static void runAll(Config cfg, Mode mode, Reporter reporter) throws IOException {
         if (!Files.isDirectory(cfg.offersDir)) {
             reporter.log("Directory " + cfg.offersDir + " does not exist, no offers to retouch.");
             reporter.stepProgress(1.0);
@@ -38,7 +58,7 @@ public final class Retouch {
         int total = offerDirs.size();
         int index = 0;
         for (Path offerDir : offerDirs) {
-            retouchOffer(offerDir, reporter);
+            retouchOffer(offerDir, mode, reporter);
             reporter.stepProgress(total == 0 ? 1.0 : (double) (++index) / total);
         }
         if (total == 0) {
@@ -46,37 +66,47 @@ public final class Retouch {
         }
     }
 
-    public static void retouchOffer(Path offerDir, Reporter reporter) throws IOException {
-        Path photosDir = offerDir.resolve("photos");
-        Path retouchedDir = offerDir.resolve("retouched");
+    public static void retouchOffer(Path offerDir, Mode mode, Reporter reporter) throws IOException {
+        Path inputDir = inputDir(offerDir, mode);
+        Path outputDir = offerDir.resolve(mode.dirName);
 
-        List<Path> photos = ImportPhotos.listJpegs(photosDir);
+        List<Path> photos = ImportPhotos.listJpegs(inputDir);
         if (photos.isEmpty()) {
             return;
         }
 
-        if (Files.isDirectory(retouchedDir) && countEntries(retouchedDir) == photos.size()) {
-            reporter.log(offerDir.getFileName() + ": retouching already done, skipping.");
+        if (Files.isDirectory(outputDir) && countEntries(outputDir) == photos.size()) {
+            reporter.log(offerDir.getFileName() + ": " + mode.label + " already done, skipping.");
             return;
         }
 
-        Files.createDirectories(retouchedDir);
+        Files.createDirectories(outputDir);
         for (Path photo : photos) {
-            retouchImage(photo, retouchedDir.resolve(photo.getFileName().toString()));
+            writeJpeg(process(photo, mode), outputDir.resolve(photo.getFileName().toString()));
         }
 
-        reporter.log(offerDir.getFileName() + ": retouched " + photos.size() + " photos.");
+        reporter.log(offerDir.getFileName() + ": " + mode.label + " applied to "
+                + photos.size() + " photos.");
     }
 
-    static void retouchImage(Path src, Path dest) throws IOException {
-        writeJpeg(process(src), dest);
+    /** Each step's input: the previous step's output when it has run, the originals otherwise. */
+    private static Path inputDir(Path offerDir, Mode mode) {
+        if (mode == Mode.AUTO_CONTRAST) {
+            Path whiteBalanced = offerDir.resolve(Mode.WHITE_BALANCE.dirName);
+            if (Files.isDirectory(whiteBalanced)) {
+                return whiteBalanced;
+            }
+        }
+        return offerDir.resolve("photos");
     }
 
     /**
-     * Reads {@code src}, applies EXIF orientation, gray-world white balance and
-     * auto-contrast, and returns the resulting image (before JPEG encoding).
+     * Reads {@code src}, applies EXIF orientation and the mode's operation, and
+     * returns the resulting image (before JPEG encoding). Pipeline-written
+     * inputs carry no EXIF metadata, so the orientation step is a no-op for
+     * them — the call stays unconditional.
      */
-    public static BufferedImage process(Path src) throws IOException {
+    public static BufferedImage process(Path src, Mode mode) throws IOException {
         BufferedImage img = ImageIO.read(src.toFile());
         if (img == null) {
             throw new IOException("Could not read image " + src);
@@ -88,8 +118,10 @@ public final class Retouch {
         int n = w * h;
         int[] px = img.getRGB(0, 0, w, h, null, 0, w);
 
-        grayWorldWhiteBalance(px, n);
-        autoContrast(px, n);
+        switch (mode) {
+            case WHITE_BALANCE -> grayWorldWhiteBalance(px, n);
+            case AUTO_CONTRAST -> autoContrast(px, n);
+        }
 
         BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
         out.setRGB(0, 0, w, h, px, 0, w);

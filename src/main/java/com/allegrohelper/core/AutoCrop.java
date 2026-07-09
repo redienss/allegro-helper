@@ -76,13 +76,13 @@ public final class AutoCrop {
 
     /** Crops one offer's retouched photos into its {@code cropped/} directory. */
     public static void cropOffer(Path offerDir, Reporter reporter) throws IOException {
-        Path retouchedDir = offerDir.resolve("retouched");
+        Path inputDir = retouchInput(offerDir);
         Path croppedDir = offerDir.resolve("cropped");
         String name = offerDir.getFileName().toString();
 
-        List<Path> photos = ImportPhotos.listJpegs(retouchedDir);
+        List<Path> photos = inputDir == null ? List.of() : ImportPhotos.listJpegs(inputDir);
         if (photos.isEmpty()) {
-            reporter.log(name + ": no retouched photos, run Retouch first.");
+            reporter.log(name + ": no retouched photos, run White balance or Auto-contrast first.");
             return;
         }
         if (Files.isDirectory(croppedDir) && countEntries(croppedDir) == photos.size()) {
@@ -112,6 +112,24 @@ public final class AutoCrop {
         }
         reporter.log(name + ": cropped " + photos.size() + " photos to "
                 + box.w + "x" + box.h + ".");
+    }
+
+    /**
+     * The most-processed retouch output available: auto-contrasted, else
+     * white-balanced, else the pre-split {@code retouched/}. The originals in
+     * {@code photos/} are not eligible — they still carry EXIF orientation,
+     * which this step's decoding ignores, so cropping them directly could cut
+     * a sideways box out of an upright scene.
+     */
+    private static Path retouchInput(Path offerDir) {
+        for (String dirName : new String[] {
+                Retouch.Mode.AUTO_CONTRAST.dirName, Retouch.Mode.WHITE_BALANCE.dirName, "retouched"}) {
+            Path dir = offerDir.resolve(dirName);
+            if (Files.isDirectory(dir)) {
+                return dir;
+            }
+        }
+        return null;
     }
 
     /** The crop rectangle in full-resolution source pixels. */

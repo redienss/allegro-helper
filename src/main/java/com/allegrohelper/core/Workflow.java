@@ -5,9 +5,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Runs the enabled pipeline steps in sequence (import → match → retouch →
- * auto-crop → describe), emitting a section header per step and reporting overall progress
- * as {@code (completedSteps + currentStepFraction) / totalSteps}.
+ * Runs the enabled pipeline steps in sequence (import → match → white balance →
+ * auto-contrast → auto-crop → describe), emitting a section header per step and
+ * reporting overall progress as
+ * {@code (completedSteps + currentStepFraction) / totalSteps}.
  */
 public final class Workflow {
 
@@ -15,7 +16,8 @@ public final class Workflow {
     public enum Step {
         IMPORT("import"),
         MATCH("match"),
-        RETOUCH("retouch"),
+        WHITE_BALANCE("white balance"),
+        AUTO_CONTRAST("auto-contrast"),
         AUTOCROP("auto-crop"),
         DESCRIBE("describe");
 
@@ -93,7 +95,8 @@ public final class Workflow {
         switch (step) {
             case IMPORT -> ImportPhotos.run(cfg, reporter);
             case MATCH -> GroupAndMatch.run(cfg, reporter);
-            case RETOUCH -> Retouch.runAll(cfg, reporter);
+            case WHITE_BALANCE -> Retouch.runAll(cfg, Retouch.Mode.WHITE_BALANCE, reporter);
+            case AUTO_CONTRAST -> Retouch.runAll(cfg, Retouch.Mode.AUTO_CONTRAST, reporter);
             case AUTOCROP -> AutoCrop.runAll(cfg, reporter);
             case DESCRIBE -> GenerateDescription.runAll(cfg, reporter);
         }
