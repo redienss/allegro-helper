@@ -38,9 +38,11 @@ import javax.swing.border.CompoundBorder;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.TableColumn;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -120,7 +122,14 @@ public final class MainWindow {
     private JButton deleteButton;
     private JButton clearButton;
     private JButton saveButton;
-    private JPanel editorButtonBar;
+    private JButton openPhotoDirButton;
+    /** Bottom bar swapped per tab: editor buttons vs. the photo-gallery button. */
+    private JPanel bottomBars;
+    private static final String CARD_EDITOR = "editor";
+    private static final String CARD_PHOTOS = "photos";
+
+    /** Offer directory of the selected row, or null when none / not matched yet. */
+    private Path currentOfferDir;
 
     // Save targets for the currently selected offer row (null when nothing is selected /
     // no offer directory exists yet).
@@ -470,14 +479,13 @@ public final class MainWindow {
         }
         rightTabs.addChangeListener(e -> {
             updateTabStyles();
-            updateEditorButtons();
+            updateBottomBar();
         });
         updateTabStyles();
         panel.add(rightTabs, BorderLayout.CENTER);
 
-        // Destructive actions (Delete/Clear) sit in the lower-left corner, away from
-        // Save in the lower-right, to avoid accidental clicks. They act on the active
-        // Description tab, so they're disabled while a Photos gallery is shown.
+        // Description tabs: destructive actions (Delete/Clear) sit in the lower-left
+        // corner, away from Save in the lower-right, to avoid accidental clicks.
         deleteButton = new JButton("Delete");
         deleteButton.addActionListener(e -> deleteActiveFile());
         clearButton = new JButton("Clear");
@@ -491,23 +499,51 @@ public final class MainWindow {
         JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
         rightButtons.add(saveButton);
 
-        editorButtonBar = new JPanel(new BorderLayout());
+        JPanel editorButtonBar = new JPanel(new BorderLayout());
         editorButtonBar.add(leftButtons, BorderLayout.WEST);
         editorButtonBar.add(rightButtons, BorderLayout.EAST);
-        panel.add(editorButtonBar, BorderLayout.SOUTH);
 
-        updateEditorButtons();
+        // Photos tabs: a single button in the lower-right corner.
+        openPhotoDirButton = new JButton("Open photo dir");
+        openPhotoDirButton.addActionListener(e -> openActivePhotoDir());
+        JPanel openRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+        openRow.add(openPhotoDirButton);
+        JPanel photoButtonBar = new JPanel(new BorderLayout());
+        photoButtonBar.add(openRow, BorderLayout.EAST);
+
+        bottomBars = new JPanel(new CardLayout());
+        bottomBars.add(editorButtonBar, CARD_EDITOR);
+        bottomBars.add(photoButtonBar, CARD_PHOTOS);
+        panel.add(bottomBars, BorderLayout.SOUTH);
+
+        updateBottomBar();
         return panel;
     }
 
-    /** Shows the Delete/Clear/Save bar only while a Description (editor) tab is active. */
-    private void updateEditorButtons() {
-        if (editorButtonBar == null) {
+    /**
+     * Swaps the bottom bar for the active tab: Delete/Clear/Save on the Description
+     * tabs, "Open photo dir" on the Photos tabs (disabled when there's no directory).
+     */
+    private void updateBottomBar() {
+        if (bottomBars == null) {
             return;
         }
-        editorButtonBar.setVisible(isEditorTab());
-        editorButtonBar.revalidate();
-        editorButtonBar.repaint();
+        ((CardLayout) bottomBars.getLayout())
+                .show(bottomBars, isEditorTab() ? CARD_EDITOR : CARD_PHOTOS);
+        if (openPhotoDirButton != null) {
+            openPhotoDirButton.setEnabled(activePhotoDir() != null);
+        }
+    }
+
+    /** The directory shown by the active Photos tab, or null if it doesn't exist yet. */
+    private Path activePhotoDir() {
+        if (currentOfferDir == null) {
+            return null;
+        }
+        Path dir = rightTabs.getSelectedIndex() == TAB_PHOTOS_OUTPUT
+                ? currentOfferDir.resolve("retouched")
+                : currentOfferDir.resolve("photos");
+        return Files.isDirectory(dir) ? dir : null;
     }
 
     private boolean isEditorTab() {
@@ -558,8 +594,10 @@ public final class MainWindow {
             detailsArea.setText("");
             moreDataTarget = null;
             descriptionTarget = null;
+            currentOfferDir = null;
             photosInputGallery.message("Select an offer in the grid.");
             photosOutputGallery.message("Select an offer in the grid.");
+            updateBottomBar();
             return;
         }
         int modelRow = offerTable.convertRowIndexToModel(viewRow);
@@ -576,6 +614,7 @@ public final class MainWindow {
 
         // Description (Output) + galleries live in the resolved offer directory.
         Path offerDir = resolveOfferDir(cfg, name, modelRow);
+        currentOfferDir = offerDir;
         if (offerDir == null) {
             descriptionTarget = null;
             detailsArea.setText("");
@@ -592,6 +631,7 @@ public final class MainWindow {
             photosOutputGallery.show(offerDir.resolve("retouched"));
         }
         detailsArea.setCaretPosition(0);
+        updateBottomBar();
     }
 
     /** Saves the currently active editor tab to its backing file. */
@@ -657,6 +697,32 @@ public final class MainWindow {
         } catch (IOException e) {
             error("Failed to delete " + target + ": " + e.getMessage());
         }
+    }
+
+    /** Opens the directory backing the active Photos tab in the system file manager. */
+    private void openActivePhotoDir() {
+        Path dir = activePhotoDir();
+        if (dir == null) {
+            error(currentOfferDir == null
+                    ? "No offer directory yet — run Match first."
+                    : "That photo directory does not exist yet.");
+            return;
+        }
+        // Launching the file manager can block briefly; keep it off the EDT.
+        new Thread(() -> {
+            try {
+                if (Desktop.isDesktopSupported()
+                        && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                    Desktop.getDesktop().open(dir.toFile());
+                } else {
+                    new ProcessBuilder("xdg-open", dir.toString()).start();
+                }
+                SwingUtilities.invokeLater(() -> appendLog("Opened " + dir));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() ->
+                        error("Could not open " + dir + ": " + e.getMessage()));
+            }
+        }, "open-photo-dir").start();
     }
 
     /** Clears the active editor only; the file is unchanged until Save is clicked. */
