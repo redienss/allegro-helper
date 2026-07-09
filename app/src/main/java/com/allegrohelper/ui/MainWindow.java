@@ -64,6 +64,11 @@ public final class MainWindow {
     /** Text caret color — white so it's visible against the dark theme. */
     private static final Color CARET_COLOR = Color.WHITE;
 
+    /** Tab title colors: the selected tab is bright with an accent underline, others are dimmed. */
+    private static final Color TAB_SELECTED_FG = Color.WHITE;
+    private static final Color TAB_UNSELECTED_FG = new Color(0x9E, 0x9E, 0x9E);
+    private static final Color TAB_ACCENT = new Color(0xF2, 0x6B, 0x1F); // orange, from the logo
+
     /** One font size for the whole window, so all text reads at a similar (larger) size. */
     private static final int UI_FONT_SIZE = 16;
 
@@ -169,6 +174,7 @@ public final class MainWindow {
         // Enlarge and unify fonts across the whole window before measuring, so the
         // fixed-height sections are sized for the final (larger) text.
         standardizeFonts(frame.getRootPane());
+        updateTabStyles(); // re-assert tab bold/dim after fonts are standardized
         offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
         for (JPanel section : List.of(baseDirPanel, photosPanel, topArea, offerPanel, workflowPanel, progressPanel)) {
             capHeight(section);
@@ -426,6 +432,13 @@ public final class MainWindow {
         }
         rightTabs.addTab("More Data (Input)", new JScrollPane(moreDataArea));
         rightTabs.addTab("Offer Details (Output)", new JScrollPane(detailsArea));
+        // Render tab titles as custom labels we fully control, so the selected tab
+        // stays clearly highlighted regardless of the (dark) look and feel.
+        for (int i = 0; i < rightTabs.getTabCount(); i++) {
+            rightTabs.setTabComponentAt(i, new JLabel(rightTabs.getTitleAt(i)));
+        }
+        rightTabs.addChangeListener(e -> updateTabStyles());
+        updateTabStyles();
         panel.add(rightTabs, BorderLayout.CENTER);
 
         // Destructive actions (Delete/Clear) sit in the lower-left corner, away from
@@ -448,6 +461,23 @@ public final class MainWindow {
         south.add(rightButtons, BorderLayout.EAST);
         panel.add(south, BorderLayout.SOUTH);
         return panel;
+    }
+
+    /** Highlights the selected tab (bold, bright, accent underline) and dims the rest. */
+    private void updateTabStyles() {
+        int selected = rightTabs.getSelectedIndex();
+        for (int i = 0; i < rightTabs.getTabCount(); i++) {
+            if (!(rightTabs.getTabComponentAt(i) instanceof JLabel label)) {
+                continue;
+            }
+            boolean active = i == selected;
+            label.setFont(label.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN));
+            label.setForeground(active ? TAB_SELECTED_FG : TAB_UNSELECTED_FG);
+            // Accent underline on the active tab; matching padding keeps heights equal.
+            label.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, active ? 2 : 0, 0, TAB_ACCENT),
+                    BorderFactory.createEmptyBorder(3, 8, active ? 3 : 5, 8)));
+        }
     }
 
     private JPanel titled(String title) {
