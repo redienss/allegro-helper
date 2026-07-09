@@ -364,10 +364,24 @@ public final class MainWindow {
         rightTabs.addTab("Offer Details (Output)", new JScrollPane(detailsArea));
         panel.add(rightTabs, BorderLayout.CENTER);
 
+        // Destructive actions (Delete/Clear) sit in the lower-left corner, away from
+        // Save in the lower-right, to avoid accidental clicks.
+        JButton delete = new JButton("Delete");
+        delete.addActionListener(e -> deleteActiveFile());
+        JButton clear = new JButton("Clear");
+        clear.addActionListener(e -> clearActiveEditor());
+        JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        leftButtons.add(delete);
+        leftButtons.add(clear);
+
         JButton save = new JButton("Save");
         save.addActionListener(e -> saveActiveTab());
-        JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
-        south.add(save);
+        JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+        rightButtons.add(save);
+
+        JPanel south = new JPanel(new BorderLayout());
+        south.add(leftButtons, BorderLayout.WEST);
+        south.add(rightButtons, BorderLayout.EAST);
         panel.add(south, BorderLayout.SOUTH);
         return panel;
     }
@@ -449,6 +463,43 @@ public final class MainWindow {
         } catch (IOException e) {
             error("Failed to save " + target + ": " + e.getMessage());
         }
+    }
+
+    /** Deletes the file backing the active tab, after confirmation, and clears its editor. */
+    private void deleteActiveFile() {
+        if (offerTable.getSelectedRow() < 0 || moreDataTarget == null) {
+            error("Select an offer in the grid first.");
+            return;
+        }
+        boolean moreDataTab = rightTabs.getSelectedIndex() == 0;
+        Path target = moreDataTab ? moreDataTarget : descriptionTarget;
+        if (target == null) {
+            error("No offer directory yet — run Match first, then Describe.");
+            return;
+        }
+        if (!Files.exists(target)) {
+            JOptionPane.showMessageDialog(frame, "There is no file to delete yet:\n" + target,
+                    "Allegro Helper", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        int choice = JOptionPane.showConfirmDialog(frame,
+                "Delete this file? This cannot be undone.\n\n" + target,
+                "Delete file", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+        try {
+            Files.delete(target);
+            (moreDataTab ? moreDataArea : detailsArea).setText("");
+            appendLog("Deleted " + target);
+        } catch (IOException e) {
+            error("Failed to delete " + target + ": " + e.getMessage());
+        }
+    }
+
+    /** Clears the active editor only; the file is unchanged until Save is clicked. */
+    private void clearActiveEditor() {
+        (rightTabs.getSelectedIndex() == 0 ? moreDataArea : detailsArea).setText("");
     }
 
     private static String readIfExists(Path file) {

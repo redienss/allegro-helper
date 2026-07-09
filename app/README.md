@@ -13,8 +13,16 @@ listing stays manual.
 The window is split into two equal-width halves: the **left** holds all the
 controls (below); the **right** shows the offer selected in the grid (resolved
 by matching the row's name to each offer's `data.json`, falling back to row
-position) in two editable tabs, with a **Save** button at the bottom that
-writes the active tab:
+position) in two editable tabs. A bottom bar has **Delete** and **Clear** in
+the lower-left corner (away from **Save** in the lower-right, to avoid
+accidental clicks), all acting on the active tab's file:
+
+- **Save** writes the editor to the file.
+- **Clear** empties the editor only — the file is unchanged until you Save.
+- **Delete** removes the file from disk (after a confirmation dialog) and
+  clears the editor.
+
+The two tabs:
 
 - **More Data (Input)** ↔ `more_data_<N>.txt` next to `offers.csv` (N = the
   row's 1-based number) — extra free-form notes folded into the description by
