@@ -4,6 +4,14 @@ A tool that helps sell off private items on **Allegro Lokalnie**. The goal of th
 
 The project itself (code, docs, CLI output) is in English. The OpenAI prompt and the generated offer text stay in Polish, since Allegro Lokalnie is a Polish marketplace (listing descriptions, titles, communication with buyers).
 
+## Desktop app (Allegro Helper)
+
+There is also a Java desktop application, **Allegro Helper**, in [`app/`](app/) —
+a GUI front-end over the same pipeline (import → match → retouch → describe),
+with an editable offer grid, workflow checkboxes, a progress bar and a log. It
+has no external dependencies (pure JDK); build and run it with `cd app &&
+./build.sh && ./run.sh`. See [`app/README.md`](app/README.md).
+
 ## Current workflow (manual)
 
 1. Item photos are taken on a rotating turntable, controlled by a remote, with a phone on a tripod running **OpenCamera** — a series of 20 photos, one every 5 seconds.
