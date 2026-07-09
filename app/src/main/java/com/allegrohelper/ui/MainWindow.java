@@ -120,6 +120,7 @@ public final class MainWindow {
     private JButton deleteButton;
     private JButton clearButton;
     private JButton saveButton;
+    private JPanel editorButtonBar;
 
     // Save targets for the currently selected offer row (null when nothing is selected /
     // no offer directory exists yet).
@@ -490,27 +491,23 @@ public final class MainWindow {
         JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
         rightButtons.add(saveButton);
 
-        JPanel south = new JPanel(new BorderLayout());
-        south.add(leftButtons, BorderLayout.WEST);
-        south.add(rightButtons, BorderLayout.EAST);
-        panel.add(south, BorderLayout.SOUTH);
+        editorButtonBar = new JPanel(new BorderLayout());
+        editorButtonBar.add(leftButtons, BorderLayout.WEST);
+        editorButtonBar.add(rightButtons, BorderLayout.EAST);
+        panel.add(editorButtonBar, BorderLayout.SOUTH);
 
         updateEditorButtons();
         return panel;
     }
 
-    /** Enables the Delete/Clear/Save buttons only while a Description (editor) tab is active. */
+    /** Shows the Delete/Clear/Save bar only while a Description (editor) tab is active. */
     private void updateEditorButtons() {
-        boolean editor = isEditorTab();
-        if (deleteButton != null) {
-            deleteButton.setEnabled(editor);
+        if (editorButtonBar == null) {
+            return;
         }
-        if (clearButton != null) {
-            clearButton.setEnabled(editor);
-        }
-        if (saveButton != null) {
-            saveButton.setEnabled(editor);
-        }
+        editorButtonBar.setVisible(isEditorTab());
+        editorButtonBar.revalidate();
+        editorButtonBar.repaint();
     }
 
     private boolean isEditorTab() {
