@@ -111,6 +111,9 @@ public final class MainWindow {
 
     public void show() {
         frame.setVisible(true);
+        // Scan the phone on launch so the Photos section is populated without
+        // the user having to click Refresh the first time.
+        refreshPhotos();
     }
 
     /** The underlying frame (exposed for embedding and for offscreen rendering in tests). */
