@@ -45,7 +45,13 @@ Every step is safe to re-run — already processed offers and photos are skipped
 Auto-crop is deliberately cautious. If the series is too short to show movement,
 the detected item is implausibly small, or the crop would keep nearly the whole
 frame, it says so in the log and leaves that offer uncropped rather than
-cropping it wrongly.
+cropping it wrongly. It reports the box it settled on:
+
+```
+== auto-crop ==
+20260708_0340: cropped 20 photos to 2225x1669.
+20260708_0349: cropped 20 photos to 2210x1658.
+```
 
 ### What stays manual
 
@@ -99,7 +105,12 @@ Thumbnails load upright (EXIF-corrected) off the UI thread; double-click one to
 open it in the system image viewer. The Photos tabs have an **Open photo dir**
 button in the lower-right.
 
-![The Photos (Input) tab, showing the thumbnail gallery](screenshots/003.png)
+![The Photos (Input) tab, showing the original photos](screenshots/003.png)
+
+Comparing the two galleries shows what Auto-crop did: the same series, framed to
+the item.
+
+![The Photos (Output) tab, showing the auto-cropped photos](screenshots/004.png)
 
 The Description tabs have a bottom bar with **Delete** and **Clear** in the
 lower-left corner (away from **Save** in the lower-right, to avoid accidental
