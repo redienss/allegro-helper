@@ -10,7 +10,13 @@ listing stays manual.
 
 ## What it does
 
-The window has the sections from the spec:
+The window is split into two equal-width halves: the **left** holds all the
+controls (below); the **right** is an **Offer Details** panel that shows the
+`description.txt` of whichever offer is selected in the grid (resolved by
+matching the row's name to each offer's `data.json`, falling back to row
+position). If that offer hasn't been matched/described yet, the panel says so.
+
+The left side has the sections from the spec:
 
 - **Photos** — photo series detected on the connected phone (before import),
   e.g. `20260708_0340 | 20x series of photos to import`. Click **Refresh** to

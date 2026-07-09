@@ -4,6 +4,7 @@ import com.allegrohelper.core.Config;
 import com.allegrohelper.core.PhoneScan;
 import com.allegrohelper.core.PhotoSeries;
 import com.allegrohelper.core.Workflow;
+import com.allegrohelper.util.Json;
 
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -20,9 +21,11 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import javax.swing.table.TableColumn;
@@ -31,9 +34,13 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The Allegro Helper main window: photo series detected on the phone, the
@@ -57,6 +64,9 @@ public final class MainWindow {
     private final JProgressBar progressBar = new JProgressBar(0, 100);
     private final JTextArea logArea = new JTextArea();
 
+    private final JLabel detailsHeader = new JLabel();
+    private final JTextArea detailsArea = new JTextArea();
+
     private volatile boolean running = false;
 
     public MainWindow(Path initialBaseDir) {
@@ -74,13 +84,20 @@ public final class MainWindow {
         return frame;
     }
 
+    /** Selects the given offer row (0-based), updating the details panel. */
+    public void selectOfferRow(int index) {
+        if (index >= 0 && index < offerModel.getRowCount()) {
+            offerTable.setRowSelectionInterval(index, index);
+        }
+    }
+
     private void build() {
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        frame.setPreferredSize(new Dimension(940, 880));
+        frame.setPreferredSize(new Dimension(1600, 880));
         frame.setLayout(new BorderLayout(8, 8));
 
-        // Fixed control stack on top; each section keeps its preferred height but
-        // fills the available width. The log fills the remaining space below.
+        // Left panel: the full control stack on top (each section keeps its
+        // preferred height but fills the available width) with the log below.
         JPanel controls = new JPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
         controls.add(fixHeight(buildBaseDirPanel()));
@@ -89,11 +106,20 @@ public final class MainWindow {
         controls.add(fixHeight(buildWorkflowPanel()));
         controls.add(fixHeight(buildProgressPanel()));
 
-        frame.add(controls, BorderLayout.NORTH);
-        frame.add(buildLogPanel(), BorderLayout.CENTER);
+        JPanel left = new JPanel(new BorderLayout(8, 8));
+        left.add(controls, BorderLayout.NORTH);
+        left.add(buildLogPanel(), BorderLayout.CENTER);
+
+        // Right panel: details of the offer selected in the grid.
+        JPanel right = buildDetailsPanel();
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
+        split.setResizeWeight(0.5); // keep the two halves equal-width on resize
+        frame.add(split, BorderLayout.CENTER);
 
         frame.pack();
         frame.setLocationRelativeTo(null);
+        SwingUtilities.invokeLater(() -> split.setDividerLocation(0.5));
     }
 
     /** Caps a section's height at its preferred size so it fills width but not extra vertical space. */
@@ -139,6 +165,12 @@ public final class MainWindow {
         offerTable.setFillsViewportHeight(true);
         offerTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
         offerTable.getTableHeader().setReorderingAllowed(false);
+        offerTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        offerTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                showSelectedOfferDetails();
+            }
+        });
         configureInpostColumn();
         JScrollPane scroll = new JScrollPane(offerTable);
         scroll.setPreferredSize(new Dimension(880, 150));
@@ -209,6 +241,22 @@ public final class MainWindow {
         return panel;
     }
 
+    private JPanel buildDetailsPanel() {
+        JPanel panel = titled("Offer Details");
+        panel.setLayout(new BorderLayout(6, 6));
+
+        detailsHeader.setText("Select an offer in the grid to see its description.");
+        detailsHeader.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+        panel.add(detailsHeader, BorderLayout.NORTH);
+
+        detailsArea.setEditable(false);
+        detailsArea.setLineWrap(true);
+        detailsArea.setWrapStyleWord(true);
+        detailsArea.setFont(new java.awt.Font("monospaced", java.awt.Font.PLAIN, 13));
+        panel.add(new JScrollPane(detailsArea), BorderLayout.CENTER);
+        return panel;
+    }
+
     private JPanel titled(String title) {
         JPanel panel = new JPanel();
         panel.setBorder(BorderFactory.createCompoundBorder(
@@ -216,6 +264,85 @@ public final class MainWindow {
                 BorderFactory.createTitledBorder(title)));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         return panel;
+    }
+
+    /** Loads the selected offer's description.txt into the right-hand details panel. */
+    private void showSelectedOfferDetails() {
+        int viewRow = offerTable.getSelectedRow();
+        if (viewRow < 0) {
+            detailsHeader.setText("Select an offer in the grid to see its description.");
+            detailsArea.setText("");
+            return;
+        }
+        int modelRow = offerTable.convertRowIndexToModel(viewRow);
+        String name = String.valueOf(offerModel.getValueAt(modelRow, 0));
+
+        Path offerDir = resolveOfferDir(currentConfig(), name, modelRow);
+        if (offerDir == null) {
+            detailsHeader.setText("<html><b>" + escapeHtml(name)
+                    + "</b><br><i>No matching offer directory yet — run Match.</i></html>");
+            detailsArea.setText("");
+            return;
+        }
+
+        detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>"
+                + escapeHtml(offerDir.getFileName().toString()) + "</html>");
+
+        Path description = offerDir.resolve("description.txt");
+        if (Files.isRegularFile(description)) {
+            try {
+                detailsArea.setText(Files.readString(description, StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                detailsArea.setText("Could not read description.txt: " + e.getMessage());
+            }
+        } else {
+            detailsArea.setText("No description.txt yet — run Describe for this offer.");
+        }
+        detailsArea.setCaretPosition(0);
+    }
+
+    /**
+     * Finds the offer directory for a grid row: first by matching the
+     * {@code name} stored in each offer's data.json, then falling back to the
+     * row's position among the sorted offer directories (which is the order the
+     * match step assigns them).
+     */
+    private Path resolveOfferDir(Config cfg, String name, int index) {
+        if (!Files.isDirectory(cfg.offersDir)) {
+            return null;
+        }
+        List<Path> dirs = new ArrayList<>();
+        try (var stream = Files.list(cfg.offersDir)) {
+            stream.filter(Files::isDirectory).forEach(dirs::add);
+        } catch (IOException e) {
+            return null;
+        }
+        dirs.sort(Comparator.comparing(p -> p.getFileName().toString()));
+
+        String target = name == null ? "" : name.strip();
+        if (!target.isEmpty()) {
+            for (Path dir : dirs) {
+                Path dataJson = dir.resolve("data.json");
+                if (!Files.isRegularFile(dataJson)) {
+                    continue;
+                }
+                try {
+                    Map<String, Object> data = Json.parseObject(
+                            Files.readString(dataJson, StandardCharsets.UTF_8));
+                    Object nm = data.get("name");
+                    if (nm != null && nm.toString().strip().equals(target)) {
+                        return dir;
+                    }
+                } catch (Exception ignored) {
+                    // Skip unreadable/invalid data.json.
+                }
+            }
+        }
+        return index >= 0 && index < dirs.size() ? dirs.get(index) : null;
+    }
+
+    private static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     // ----------------------------------------------------------------- actions
@@ -236,6 +363,7 @@ public final class MainWindow {
         } catch (IOException e) {
             appendLog("Could not read " + cfg.csvPath + ": " + e.getMessage());
         }
+        showSelectedOfferDetails();
     }
 
     private void loadCsvViaChooser() {
@@ -244,6 +372,7 @@ public final class MainWindow {
             try {
                 offerModel.loadFromCsv(chooser.getSelectedFile().toPath());
                 appendLog("Loaded offers from " + chooser.getSelectedFile());
+                showSelectedOfferDetails();
             } catch (IOException e) {
                 error("Failed to load CSV: " + e.getMessage());
             }
@@ -350,6 +479,8 @@ public final class MainWindow {
                 SwingUtilities.invokeLater(() -> {
                     appendLog(success ? "== done ==" : "== stopped ==");
                     setRunning(false);
+                    // A run may have created/updated the selected offer's files.
+                    showSelectedOfferDetails();
                 });
             }
         }), "workflow").start();
