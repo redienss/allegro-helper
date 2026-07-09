@@ -54,6 +54,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The Allegro Helper main window: photo series detected on the phone, the
@@ -75,6 +78,15 @@ public final class MainWindow {
     /** Height the logo is scaled to (aspect ratio preserved). */
     private static final int LOGO_HEIGHT = 150;
 
+    /** Right-panel tab indices. */
+    private static final int TAB_PHOTOS_INPUT = 0;   // original photos gallery
+    private static final int TAB_PHOTOS_OUTPUT = 1;  // retouched photos gallery
+    private static final int TAB_DESCRIPTION_INPUT = 2;   // more_data_<N>.txt editor
+    private static final int TAB_DESCRIPTION_OUTPUT = 3;  // description.txt editor
+
+    /** Thumbnail box size (px) for the photo galleries. */
+    private static final int THUMB_SIZE = 140;
+
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
     private final DefaultListModel<String> photosModel = new DefaultListModel<>();
@@ -93,8 +105,21 @@ public final class MainWindow {
 
     private final JLabel detailsHeader = new JLabel();
     private final JTabbedPane rightTabs = new JTabbedPane();
-    private final JTextArea moreDataArea = new JTextArea();   // More Data (Input) -> more_data_<N>.txt
-    private final JTextArea detailsArea = new JTextArea();    // Offer Details (Output) -> description.txt
+    private final JTextArea moreDataArea = new JTextArea();   // Description (Input) -> more_data_<N>.txt
+    private final JTextArea detailsArea = new JTextArea();    // Description (Output) -> description.txt
+
+    // Photo galleries; a single background thread loads their thumbnails.
+    private final ExecutorService galleryLoader = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "gallery-loader");
+        t.setDaemon(true);
+        return t;
+    });
+    private final Gallery photosInputGallery = new Gallery();
+    private final Gallery photosOutputGallery = new Gallery();
+
+    private JButton deleteButton;
+    private JButton clearButton;
+    private JButton saveButton;
 
     // Save targets for the currently selected offer row (null when nothing is selected /
     // no offer directory exists yet).
@@ -433,37 +458,68 @@ public final class MainWindow {
             area.setFont(mono);
             area.setCaretColor(CARET_COLOR);
         }
-        rightTabs.addTab("More Data (Input)", new JScrollPane(moreDataArea));
-        rightTabs.addTab("Offer Details (Output)", new JScrollPane(detailsArea));
+        rightTabs.addTab("Photos (Input)", photosInputGallery.component());
+        rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
+        rightTabs.addTab("Description (Input)", new JScrollPane(moreDataArea));
+        rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
         // Render tab titles as custom labels we fully control, so the selected tab
         // stays clearly highlighted regardless of the (dark) look and feel.
         for (int i = 0; i < rightTabs.getTabCount(); i++) {
             rightTabs.setTabComponentAt(i, new JLabel(rightTabs.getTitleAt(i)));
         }
-        rightTabs.addChangeListener(e -> updateTabStyles());
+        rightTabs.addChangeListener(e -> {
+            updateTabStyles();
+            updateEditorButtons();
+        });
         updateTabStyles();
         panel.add(rightTabs, BorderLayout.CENTER);
 
         // Destructive actions (Delete/Clear) sit in the lower-left corner, away from
-        // Save in the lower-right, to avoid accidental clicks.
-        JButton delete = new JButton("Delete");
-        delete.addActionListener(e -> deleteActiveFile());
-        JButton clear = new JButton("Clear");
-        clear.addActionListener(e -> clearActiveEditor());
+        // Save in the lower-right, to avoid accidental clicks. They act on the active
+        // Description tab, so they're disabled while a Photos gallery is shown.
+        deleteButton = new JButton("Delete");
+        deleteButton.addActionListener(e -> deleteActiveFile());
+        clearButton = new JButton("Clear");
+        clearButton.addActionListener(e -> clearActiveEditor());
         JPanel leftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
-        leftButtons.add(delete);
-        leftButtons.add(clear);
+        leftButtons.add(deleteButton);
+        leftButtons.add(clearButton);
 
-        JButton save = new JButton("Save");
-        save.addActionListener(e -> saveActiveTab());
+        saveButton = new JButton("Save");
+        saveButton.addActionListener(e -> saveActiveTab());
         JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
-        rightButtons.add(save);
+        rightButtons.add(saveButton);
 
         JPanel south = new JPanel(new BorderLayout());
         south.add(leftButtons, BorderLayout.WEST);
         south.add(rightButtons, BorderLayout.EAST);
         panel.add(south, BorderLayout.SOUTH);
+
+        updateEditorButtons();
         return panel;
+    }
+
+    /** Enables the Delete/Clear/Save buttons only while a Description (editor) tab is active. */
+    private void updateEditorButtons() {
+        boolean editor = isEditorTab();
+        if (deleteButton != null) {
+            deleteButton.setEnabled(editor);
+        }
+        if (clearButton != null) {
+            clearButton.setEnabled(editor);
+        }
+        if (saveButton != null) {
+            saveButton.setEnabled(editor);
+        }
+    }
+
+    private boolean isEditorTab() {
+        int i = rightTabs.getSelectedIndex();
+        return i == TAB_DESCRIPTION_INPUT || i == TAB_DESCRIPTION_OUTPUT;
+    }
+
+    private boolean isDescriptionInputTab() {
+        return rightTabs.getSelectedIndex() == TAB_DESCRIPTION_INPUT;
     }
 
     /** Highlights the selected tab (bold, bright, accent underline) and dims the rest. */
@@ -505,6 +561,8 @@ public final class MainWindow {
             detailsArea.setText("");
             moreDataTarget = null;
             descriptionTarget = null;
+            photosInputGallery.message("Select an offer in the grid.");
+            photosOutputGallery.message("Select an offer in the grid.");
             return;
         }
         int modelRow = offerTable.convertRowIndexToModel(viewRow);
@@ -512,36 +570,43 @@ public final class MainWindow {
         String name = String.valueOf(offerModel.getValueAt(modelRow, 0));
         Config cfg = currentConfig();
 
-        // More Data (Input): more_data_<N>.txt next to offers.csv.
+        // Description (Input): more_data_<N>.txt next to offers.csv.
         Path csvParent = cfg.csvPath.getParent();
         moreDataTarget = (csvParent == null ? Path.of(".") : csvParent)
                 .resolve("more_data_" + rowNumber + ".txt");
         moreDataArea.setText(readIfExists(moreDataTarget));
         moreDataArea.setCaretPosition(0);
 
-        // Offer Details (Output): description.txt in the resolved offer directory.
+        // Description (Output) + galleries live in the resolved offer directory.
         Path offerDir = resolveOfferDir(cfg, name, modelRow);
         if (offerDir == null) {
             descriptionTarget = null;
             detailsArea.setText("");
             detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
-                    + " — <i>not matched yet (Offer Details saves after Match)</i></html>");
+                    + " — <i>not matched yet (photos and Description output appear after Match)</i></html>");
+            photosInputGallery.message("Not matched yet — run Match.");
+            photosOutputGallery.message("Not retouched yet — run Retouch.");
         } else {
             descriptionTarget = offerDir.resolve("description.txt");
             detailsArea.setText(readIfExists(descriptionTarget));
             detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
                     + " — " + escapeHtml(offerDir.getFileName().toString()) + "</html>");
+            photosInputGallery.show(offerDir.resolve("photos"));
+            photosOutputGallery.show(offerDir.resolve("retouched"));
         }
         detailsArea.setCaretPosition(0);
     }
 
     /** Saves the currently active editor tab to its backing file. */
     private void saveActiveTab() {
+        if (!isEditorTab()) {
+            return;
+        }
         if (offerTable.getSelectedRow() < 0 || moreDataTarget == null) {
             error("Select an offer in the grid first.");
             return;
         }
-        boolean moreDataTab = rightTabs.getSelectedIndex() == 0;
+        boolean moreDataTab = isDescriptionInputTab();
         Path target = moreDataTab ? moreDataTarget : descriptionTarget;
         String content = moreDataTab ? moreDataArea.getText() : detailsArea.getText();
 
@@ -564,11 +629,14 @@ public final class MainWindow {
 
     /** Deletes the file backing the active tab, after confirmation, and clears its editor. */
     private void deleteActiveFile() {
+        if (!isEditorTab()) {
+            return;
+        }
         if (offerTable.getSelectedRow() < 0 || moreDataTarget == null) {
             error("Select an offer in the grid first.");
             return;
         }
-        boolean moreDataTab = rightTabs.getSelectedIndex() == 0;
+        boolean moreDataTab = isDescriptionInputTab();
         Path target = moreDataTab ? moreDataTarget : descriptionTarget;
         if (target == null) {
             error("No offer directory yet — run Match first, then Describe.");
@@ -596,7 +664,10 @@ public final class MainWindow {
 
     /** Clears the active editor only; the file is unchanged until Save is clicked. */
     private void clearActiveEditor() {
-        (rightTabs.getSelectedIndex() == 0 ? moreDataArea : detailsArea).setText("");
+        if (!isEditorTab()) {
+            return;
+        }
+        (isDescriptionInputTab() ? moreDataArea : detailsArea).setText("");
     }
 
     private static String readIfExists(Path file) {
@@ -652,6 +723,88 @@ public final class MainWindow {
 
     private static String escapeHtml(String s) {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private static boolean isJpeg(Path p) {
+        String n = p.getFileName().toString().toLowerCase();
+        return n.endsWith(".jpg") || n.endsWith(".jpeg");
+    }
+
+    /**
+     * A scrollable, wrapping grid of photo thumbnails (a {@link JList} in
+     * horizontal-wrap mode). Thumbnails are loaded off the EDT; a token guards
+     * against a slower load from a previously selected offer overwriting a newer
+     * one.
+     */
+    private final class Gallery {
+        private final DefaultListModel<Object> model = new DefaultListModel<>();
+        private final JList<Object> list = new JList<>(model);
+        private final JScrollPane scroll = new JScrollPane(list);
+        private final AtomicInteger token = new AtomicInteger();
+
+        Gallery() {
+            list.setLayoutOrientation(JList.HORIZONTAL_WRAP);
+            list.setVisibleRowCount(0);
+            list.setFixedCellWidth(THUMB_SIZE + 16);
+            list.setFixedCellHeight(THUMB_SIZE + 16);
+            scroll.getVerticalScrollBar().setUnitIncrement(16);
+        }
+
+        JScrollPane component() {
+            return scroll;
+        }
+
+        /** Shows a single status line instead of thumbnails. */
+        void message(String text) {
+            token.incrementAndGet();
+            model.clear();
+            model.addElement(text);
+        }
+
+        /** Loads thumbnails for every JPEG in {@code dir}, progressively. */
+        void show(Path dir) {
+            int my = token.incrementAndGet();
+            model.clear();
+            if (dir == null || !Files.isDirectory(dir)) {
+                model.addElement("Not available yet.");
+                return;
+            }
+            List<Path> files;
+            try (var stream = Files.list(dir)) {
+                files = stream.filter(MainWindow::isJpeg)
+                        .sorted(Comparator.comparing(p -> p.getFileName().toString()))
+                        .toList();
+            } catch (IOException e) {
+                model.addElement("Could not read " + dir + ": " + e.getMessage());
+                return;
+            }
+            if (files.isEmpty()) {
+                model.addElement("No photos.");
+                return;
+            }
+            model.addElement("Loading " + files.size() + " thumbnails…");
+            galleryLoader.submit(() -> {
+                boolean[] cleared = {false};
+                for (Path file : files) {
+                    if (token.get() != my) {
+                        return; // a newer selection superseded this load
+                    }
+                    ImageIcon icon = Thumbnails.load(file, THUMB_SIZE);
+                    SwingUtilities.invokeLater(() -> {
+                        if (token.get() != my) {
+                            return;
+                        }
+                        if (!cleared[0]) {
+                            model.clear(); // drop the "Loading…" placeholder on first result
+                            cleared[0] = true;
+                        }
+                        if (icon != null) {
+                            model.addElement(icon);
+                        }
+                    });
+                }
+            });
+        }
     }
 
     // ----------------------------------------------------------------- actions

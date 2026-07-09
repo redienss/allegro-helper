@@ -13,21 +13,31 @@ listing stays manual.
 The window is split into two equal-width halves: the **left** holds all the
 controls (below); the **right** shows the offer selected in the grid (resolved
 by matching the row's name to each offer's `data.json`, falling back to row
-position) in two editable tabs. A bottom bar has **Delete** and **Clear** in
-the lower-left corner (away from **Save** in the lower-right, to avoid
-accidental clicks), all acting on the active tab's file:
+position) in four tabs:
+
+- **Photos (Input)** — a thumbnail gallery of the original photos
+  (`offers/<id>/photos/`).
+- **Photos (Output)** — a thumbnail gallery of the retouched photos
+  (`offers/<id>/retouched/`).
+- **Description (Input)** — editor for `more_data_<N>.txt`.
+- **Description (Output)** — editor for `description.txt`.
+
+Galleries load upright (EXIF-corrected) thumbnails off the UI thread. A bottom
+bar has **Delete** and **Clear** in the lower-left corner (away from **Save** in
+the lower-right, to avoid accidental clicks); these act on the active
+Description tab's file and are disabled while a Photos gallery is shown:
 
 - **Save** writes the editor to the file.
 - **Clear** empties the editor only — the file is unchanged until you Save.
 - **Delete** removes the file from disk (after a confirmation dialog) and
   clears the editor.
 
-The two tabs:
+The two editor tabs in detail:
 
-- **More Data (Input)** ↔ `more_data_<N>.txt` next to `offers.csv` (N = the
+- **Description (Input)** ↔ `more_data_<N>.txt` next to `offers.csv` (N = the
   row's 1-based number) — extra free-form notes folded into the description by
   the Describe step. Editable/saveable even before Match.
-- **Offer Details (Output)** ↔ `description.txt` in the offer directory — the
+- **Description (Output)** ↔ `description.txt` in the offer directory — the
   generated description; edit and save to tweak it. Available after Match.
 
 The left side has the sections from the spec:
