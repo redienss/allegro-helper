@@ -123,7 +123,7 @@ public final class GenerateDescription {
                 + "Gabaryt InPost: " + str(data, "inpost_size") + "\n";
 
         Files.writeString(descriptionPath, content, StandardCharsets.UTF_8);
-        reporter.log(offerDir.getFileName() + ": generated description.txt.");
+        reporter.log(offerDir.getFileName() + ": [" + apiLabel(cfg) + "] generated description.txt.");
     }
 
     static String buildOfferJson(Map<String, Object> data, String extraNotes) {
@@ -205,6 +205,15 @@ public final class GenerateDescription {
         m.put("role", role);
         m.put("content", content);
         return m;
+    }
+
+    /**
+     * Human-readable name of the description API, shown in the log. Currently the
+     * only backend is the OpenAI (Chat Completions) API; when API selection
+     * becomes configurable, switch on the config here.
+     */
+    private static String apiLabel(Config cfg) {
+        return "OpenAI API";
     }
 
     private static String str(Map<String, Object> data, String key) {
