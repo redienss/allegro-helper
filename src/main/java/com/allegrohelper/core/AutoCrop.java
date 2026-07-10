@@ -74,15 +74,15 @@ public final class AutoCrop {
         }
     }
 
-    /** Crops one offer's retouched photos into its {@code cropped/} directory. */
+    /** Crops one offer's photos into its {@code cropped/} directory. */
     public static void cropOffer(Path offerDir, Reporter reporter) throws IOException {
-        Path inputDir = retouchInput(offerDir);
+        Path inputDir = cropInput(offerDir);
         Path croppedDir = offerDir.resolve("cropped");
         String name = offerDir.getFileName().toString();
 
         List<Path> photos = inputDir == null ? List.of() : ImportPhotos.listJpegs(inputDir);
         if (photos.isEmpty()) {
-            reporter.log(name + ": no retouched photos, run White balance or Auto-contrast first.");
+            reporter.log(name + ": no photos to crop.");
             return;
         }
         if (Files.isDirectory(croppedDir) && countEntries(croppedDir) == photos.size()) {
@@ -107,6 +107,9 @@ public final class AutoCrop {
             if (img == null) {
                 throw new IOException("Could not read image " + photo);
             }
+            // Originals may carry EXIF orientation (retouch outputs never do);
+            // the box is in upright coordinates, so upright the pixels first.
+            img = Exif.applyOrientation(img, Exif.readOrientation(photo));
             BufferedImage cut = img.getSubimage(box.x, box.y, box.w, box.h);
             Retouch.writeJpeg(cut, croppedDir.resolve(photo.getFileName().toString()));
         }
@@ -115,15 +118,17 @@ public final class AutoCrop {
     }
 
     /**
-     * The most-processed retouch output available: auto-contrasted, else
-     * white-balanced, else the pre-split {@code retouched/}. The originals in
-     * {@code photos/} are not eligible — they still carry EXIF orientation,
-     * which this step's decoding ignores, so cropping them directly could cut
-     * a sideways box out of an upright scene.
+     * The most-processed input available: auto-contrasted, else white-balanced,
+     * else the pre-split {@code retouched/}, else the originals in
+     * {@code photos/}. The retouch outputs are already upright; the originals
+     * still carry EXIF orientation, which ImageIO ignores, so every decode in
+     * this step applies {@link Exif} orientation itself — otherwise a crop from
+     * an original could cut a sideways box out of an upright scene.
      */
-    private static Path retouchInput(Path offerDir) {
+    private static Path cropInput(Path offerDir) {
         for (String dirName : new String[] {
-                Retouch.Mode.AUTO_CONTRAST.dirName, Retouch.Mode.WHITE_BALANCE.dirName, "retouched"}) {
+                Retouch.Mode.AUTO_CONTRAST.dirName, Retouch.Mode.WHITE_BALANCE.dirName,
+                "retouched", "photos"}) {
             Path dir = offerDir.resolve(dirName);
             if (Files.isDirectory(dir)) {
                 return dir;
@@ -344,7 +349,9 @@ public final class AutoCrop {
 
     /**
      * Reads a JPEG downscaled to roughly {@link #WORK_WIDTH} wide, as luminance.
-     * Subsampling happens in the decoder, so the full image is never held.
+     * Subsampling happens in the decoder, so the full image is never held. EXIF
+     * orientation is applied to the downscaled frame (and the reported source
+     * size), so the mask and box live in upright coordinates even for originals.
      */
     private static Frame readLuma(Path file) throws IOException {
         try (ImageInputStream in = ImageIO.createImageInputStream(file.toFile())) {
@@ -365,6 +372,14 @@ public final class AutoCrop {
                 int sub = Math.max(1, srcW / WORK_WIDTH);
                 param.setSourceSubsampling(sub, sub, 0, 0);
                 BufferedImage img = reader.read(0, param);
+
+                int orientation = Exif.readOrientation(file);
+                img = Exif.applyOrientation(img, orientation);
+                if (orientation >= 5) { // the transform swapped width and height
+                    int t = srcW;
+                    srcW = srcH;
+                    srcH = t;
+                }
 
                 int w = img.getWidth();
                 int h = img.getHeight();

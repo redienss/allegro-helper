@@ -37,8 +37,10 @@ marketplace.
    step measures, so it works even for a white item on a light background, where
    brightness thresholding and edge detection both fail. One crop box is used
    for the whole series (the item does not jump between frames), grown by a
-   small margin and kept at the source aspect ratio. Results go to `cropped/`;
-   the retouched photos are left untouched.
+   small margin and kept at the source aspect ratio. Works on the most
+   processed photos available — auto-contrasted, white-balanced, or the
+   originals when no retouching step has run. Results go to `cropped/`; the
+   input photos are left untouched.
 7. **OCR** — the text visible on the item and its packaging (labels,
    nameplates, model numbers) is read off the finished photos into `ocr.txt`,
    using the [tesseract](https://github.com/tesseract-ocr/tesseract) CLI —

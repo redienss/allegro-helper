@@ -61,9 +61,10 @@ Because either retouching step can be unticked, downstream steps take the
 most-processed input available: auto-contrast reads `white_balanced/` else
 `photos/`; auto-crop reads `contrasted/` else `white_balanced/` else the
 legacy `retouched/` (the pre-split combined output — still recognized so old
-offers keep working, but never written anymore). Auto-crop deliberately never
-reads `photos/`: originals still carry EXIF orientation, which its decoding
-ignores.
+offers keep working, but never written anymore) else `photos/`. Originals
+still carry EXIF orientation, which ImageIO ignores, so auto-crop applies
+`Exif` orientation on every decode (detection and cropping) to work in
+upright coordinates.
 
 **Two invariants hold across every step, and new code must preserve them:**
 
