@@ -598,8 +598,9 @@ public final class MainWindow {
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 
         top.add(sectionLabel("Link to Allegro Lokalnie form"));
-        JLabel link = new JLabel("<html><a href=\"" + ALLEGRO_FORM_URL + "\">"
-                + ALLEGRO_FORM_URL + "</a></html>");
+        // The default <a> blue is unreadable on the dark theme, hence the explicit color.
+        JLabel link = new JLabel("<html><a href=\"" + ALLEGRO_FORM_URL
+                + "\"><font color=\"#FFD75E\">" + ALLEGRO_FORM_URL + "</font></a></html>");
         link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         link.addMouseListener(new MouseAdapter() {
             @Override
