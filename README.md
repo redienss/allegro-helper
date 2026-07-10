@@ -159,7 +159,14 @@ to each offer's `data.json`, falling back to row position) in six tabs:
   for copying: a link to the form, the finished photos in a compact grid
   (the first 16 — Allegro's limit — preselected; adjust the selection and drag
   it onto the form's photo dropzone), and the title and generated description
-  with copy-to-clipboard buttons.
+  with copy-to-clipboard buttons. **Copy all to Allegro** does all of it in
+  one go: it opens the form in a Chrome instance the app controls (via the
+  DevTools protocol) and fills in the selected photos, the title and the
+  description. The app never submits — you review the form, complete the
+  category and price, and click "Wystaw" yourself. Chrome runs on a dedicated
+  profile (`.chrome-profile/` in the base directory, kept out of git): the
+  first time, log in to Allegro in that window and the session sticks for
+  later runs.
 
 ![The Description (Output) tab, showing a generated description](screenshots/002.png)
 
@@ -188,8 +195,9 @@ plenty of true, item-specific material to work with.
 ![The OCR tab, showing the back-cover text read off the photos](screenshots/005.png)
 
 The last tab collects everything the Allegro Lokalnie listing form needs in one
-place: open the form with one click, drag the selected photos onto it, and copy
-the title and description into it.
+place: fill the form with one click (**Copy all to Allegro**), or do it by
+hand — open the form, drag the selected photos onto it, and copy the title and
+description into it.
 
 ![The Allegro Lokalnie Form tab, with the first 16 photos selected](screenshots/006.png)
 
@@ -267,8 +275,11 @@ environment variables are honored, from the environment or `.env`:
 `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION`
 (`auto` | `single` | `subfolders`, the CLI equivalent of the series
 recognition dropdown), `OCR_LANGUAGES` (tesseract languages, default
-`pol+eng`), `OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_BASE_URL` (for an
-OpenAI-compatible endpoint). A real environment variable takes precedence over
+`pol+eng`), `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` (for an
+OpenAI-compatible endpoint), `CHROME_BIN` and `CHROME_PROFILE_DIR` (the
+browser and profile used by **Copy all to Allegro**; by default Chrome is
+found on the PATH and the profile lives in `.chrome-profile/` under the base
+directory). A real environment variable takes precedence over
 a value in `.env`; the **Photo directory** field and the series recognition
 dropdown in the window take precedence over both.
 

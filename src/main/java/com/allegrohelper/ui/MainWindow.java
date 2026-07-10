@@ -1,7 +1,9 @@
 package com.allegrohelper.ui;
 
+import com.allegrohelper.core.AllegroForm;
 import com.allegrohelper.core.Config;
 import com.allegrohelper.core.PhoneScan;
+import com.allegrohelper.core.Reporter;
 import com.allegrohelper.core.PhotoSeries;
 import com.allegrohelper.core.SeriesRecognition;
 import com.allegrohelper.core.Workflow;
@@ -686,9 +688,14 @@ public final class MainWindow {
         });
         JButton openUrlButton = new JButton("Open URL");
         openUrlButton.addActionListener(e -> openFormUrl());
+        JButton copyAllButton = new JButton("Copy all to Allegro");
+        copyAllButton.setToolTipText("Open the form in Chrome and fill in the selected photos,"
+                + " the title and the description. You review and submit it yourself.");
+        copyAllButton.addActionListener(e -> copyAllToAllegro(copyAllButton));
         JPanel linkRow = flowRow();
         linkRow.add(link);
         linkRow.add(openUrlButton);
+        linkRow.add(copyAllButton);
         top.add(linkRow);
 
         top.add(sectionLabel("Photos"));
@@ -765,6 +772,46 @@ public final class MainWindow {
                         error("Could not open " + ALLEGRO_FORM_URL + ": " + e.getMessage()));
             }
         }, "open-url").start();
+    }
+
+    /**
+     * Opens the Allegro form in the app-driven Chrome and fills the selected
+     * photos, title and description into it ({@link AllegroForm}). Runs off
+     * the EDT; the button stays disabled until the fill finishes, since the
+     * wait for the form (and a possible manual login) can take minutes.
+     */
+    private void copyAllToAllegro(JButton button) {
+        List<Path> photos = formGallery.selectedFiles();
+        String title = formTitleField.getText().strip();
+        String description = formDescriptionArea.getText();
+        if (photos.isEmpty() && title.isBlank() && description.isBlank()) {
+            error("Nothing to copy: select an offer with photos, a title or a description first.");
+            return;
+        }
+        Config cfg = currentConfig();
+        button.setEnabled(false);
+        appendLog("== copy to Allegro ==");
+        new Thread(() -> {
+            try {
+                AllegroForm.fill(cfg, ALLEGRO_FORM_URL, photos, title, description,
+                        new Reporter() {
+                            @Override
+                            public void log(String line) {
+                                SwingUtilities.invokeLater(() -> appendLog(line));
+                            }
+
+                            @Override
+                            public void stepProgress(double fraction) {
+                                // No step progress for a single form fill.
+                            }
+                        });
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() ->
+                        error("Copy to Allegro failed: " + e.getMessage()));
+            } finally {
+                SwingUtilities.invokeLater(() -> button.setEnabled(true));
+            }
+        }, "allegro-form-fill").start();
     }
 
     private void copyToClipboard(String text, String what) {
@@ -1238,6 +1285,17 @@ public final class MainWindow {
 
         JScrollPane component() {
             return scroll;
+        }
+
+        /** The selected photos, in gallery order. */
+        List<Path> selectedFiles() {
+            List<Path> files = new ArrayList<>();
+            for (int index : list.getSelectedIndices()) {
+                if (index < loadedFiles.size()) { // skip the status/"Loading…" element
+                    files.add(loadedFiles.get(index));
+                }
+            }
+            return files;
         }
 
         /** Shows a single status line instead of thumbnails. */

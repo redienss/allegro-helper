@@ -30,6 +30,8 @@ public final class Config {
     public final String openaiApiKey;
     public final String openaiModel;
     public final String openaiBaseUrl;
+    public final String chromeBin;
+    public final Path chromeProfileDir;
 
     private Config(Path baseDir, Map<String, String> env) {
         this.baseDir = baseDir;
@@ -48,6 +50,11 @@ public final class Config {
         this.openaiModel = env.getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
         this.openaiBaseUrl = stripTrailingSlash(
                 env.getOrDefault("OPENAI_BASE_URL", "https://api.openai.com/v1"));
+        this.chromeBin = env.getOrDefault("CHROME_BIN", "");
+        // A dedicated profile: Chrome only exposes DevTools on a fresh instance,
+        // and the Allegro login session persists in it between runs.
+        this.chromeProfileDir =
+                pathOrDefault(env, "CHROME_PROFILE_DIR", baseDir.resolve(".chrome-profile"));
     }
 
     private static String stripTrailingSlash(String url) {

@@ -22,11 +22,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Compile check**: `./build.sh` (fast, no deps to resolve).
 - **Pipeline behavior**: run `--cli <step>` against a **copy** of a base directory, never the live one.
 - **Never make a live paid OpenAI call.** To exercise the `describe` step's plumbing, point it at a dead endpoint: `OPENAI_BASE_URL=http://127.0.0.1:9 OPENAI_API_KEY=dummy ./run.sh --cli describe <dir>`.
+- **Never drive the live Allegro site.** To exercise `AllegroForm`/`Cdp`, pre-launch a headless Chrome on a scratch profile (`google-chrome --headless=new --user-data-dir=<scratch> --remote-debugging-port=0 --no-first-run about:blank`) — `Cdp.ensureChrome` reuses it via `DevToolsActivePort` — and fill a `file://` URL of a saved copy of the form (the user keeps one in `allegro-form/`, gitignored). Verify with `eval` readbacks of the field values.
 - **Swing UI**: `java.awt.Robot` hangs under Wayland. Render offscreen instead — `frame.getRootPane().printAll(g2d)` after `addNotify()` + `validate()` — and assert on the component tree. `MainWindow` exposes `getFrame()` and `selectOfferRow(int)` for exactly this. Write throwaway probes under `$CLAUDE_JOB_DIR/tmp`, not in the repo.
 
 ## Working with the real data (read this before running anything)
 
-The repo root doubles as the default base directory, and it holds the user's real, unversioned data. `.gitignore` covers `.env`, `build/`, `raw_photos/`, `offers/`, `more_data_*.txt`.
+The repo root doubles as the default base directory, and it holds the user's real, unversioned data. `.gitignore` covers `.env`, `build/`, `raw_photos/`, `offers/`, `more_data_*.txt`, `.chrome-profile/` (the Allegro **login session** of the app-driven Chrome), and `allegro-form/` (a form page saved while logged in — embeds account data).
 
 - `.env` holds a **real** `OPENAI_API_KEY`. Never commit it; redact it whenever printing the file.
 - `offers/`, `raw_photos/`, and `more_data_*.txt` are user data, not fixtures. Run destructive or write-heavy steps against a copy in a scratch dir.
@@ -95,13 +96,14 @@ Four places, all of which must agree:
 - The right panel's six tabs are addressed exclusively through the `TAB_*` constants (`DESCRIPTION_INPUT=0`, `DESCRIPTION_OUTPUT=1`, `PHOTOS_INPUT=2`, `PHOTOS_OUTPUT=3`, `OCR=4`, `ALLEGRO_FORM=5`). Every tab-dependent branch routes through them, which is why reordering tabs is a small change — keep it that way, never compare raw indices.
 - A `CardLayout` (`CARD_EDITOR` / `CARD_PHOTOS`) swaps the bottom button bar per tab; `updateBottomBar()` must run after the cards are added.
 - `outputPhotoDir(offerDir)` is the single source of truth for "the finished photos" (`cropped/` if present, else `retouched/`). The gallery and the *Open photo dir* button both call it so they cannot drift.
+- *Copy all to Allegro* (Allegro Lokalnie Form tab) fills the live listing form through `core/AllegroForm` + `core/Cdp` — a hand-rolled Chrome DevTools Protocol client on the JDK's own WebSocket (no library; Chrome is an external program like tesseract). Photos go in via `DOM.setFileInputFiles`, the title via the native value setter + `input` event, the description is *typed* (`Input.insertText` + Enter keystrokes) because it's a ProseMirror editor that ignores DOM mutation. It fills, never submits. The selectors are Allegro's `data-testid` hooks — if the fill breaks, diff those against the live page first.
 - A grid row resolves to an offer dir by matching `name` in each `data.json`, falling back to the row's position among the sorted dirs (`resolveOfferDir`).
 - `ColorEmoji` parses the `CBDT`/`CBLC` bitmap tables out of Noto Color Emoji and paints those images, because **Java2D cannot rasterize color fonts**. It restyles the view only — the document text keeps the original emoji characters, so saving round-trips them. Absent the font, it degrades to monochrome glyphs.
 - Thumbnails decode subsampled and load off the UI thread on a single-threaded executor.
 
 ## Configuration
 
-`Config.forBaseDir(baseDir)` derives every path from the base directory, overridable by env var or a `.env` file in it. **A real environment variable wins over `.env`.** Keys: `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_UID`, `MTP_GLOB_PATTERN`, `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION` (`auto` | `single` | `subfolders`), `OCR_LANGUAGES`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`.
+`Config.forBaseDir(baseDir)` derives every path from the base directory, overridable by env var or a `.env` file in it. **A real environment variable wins over `.env`.** Keys: `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_UID`, `MTP_GLOB_PATTERN`, `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION` (`auto` | `single` | `subfolders`), `OCR_LANGUAGES`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `CHROME_BIN`, `CHROME_PROFILE_DIR`.
 
 `offers.csv` is **tab-delimited** on write; on read the delimiter is auto-detected (tab if the header has one, else comma).
 

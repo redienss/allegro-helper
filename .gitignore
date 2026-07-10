@@ -4,3 +4,7 @@ raw_photos/
 offers/
 more_data_*.txt
 .~lock.*#
+# Chrome profile driven by "Copy all to Allegro" - holds the Allegro login session.
+.chrome-profile/
+# Reference copy of the Allegro form, saved while logged in (embeds account data).
+allegro-form/
