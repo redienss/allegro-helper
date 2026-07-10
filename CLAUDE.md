@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 ./build.sh                 # javac -> build/classes (+ build/allegro-helper.jar if the `jar` tool exists)
 ./run.sh                   # desktop UI
-./run.sh --cli all         # headless: import | match | whitebalance | autocontrast | autocrop | describe | all
+./run.sh --cli all         # headless: import | match | whitebalance | autocontrast | autocrop | ocr | describe | all
 ./run.sh --cli retouch /path/to/base-dir   # retouch = alias for whitebalance + autocontrast
 ```
 
@@ -39,7 +39,7 @@ Java 25, Swing, **zero external dependencies** — JDK standard library only (Sw
 
 ### The pipeline
 
-`core/Workflow` is the spine. It runs an ordered `List<Step>` (`IMPORT → MATCH → WHITE_BALANCE → AUTO_CONTRAST → AUTOCROP → DESCRIBE`), logging a `== <label> ==` header per step and translating each step's 0..1 `stepProgress` into overall progress. Both front ends (`ui/MainWindow`, `cli/Cli`) do nothing but choose steps and supply a `Workflow.Listener`; all pipeline logic lives in `core/`.
+`core/Workflow` is the spine. It runs an ordered `List<Step>` (`IMPORT → MATCH → WHITE_BALANCE → AUTO_CONTRAST → AUTOCROP → OCR → DESCRIBE`), logging a `== <label> ==` header per step and translating each step's 0..1 `stepProgress` into overall progress. Both front ends (`ui/MainWindow`, `cli/Cli`) do nothing but choose steps and supply a `Workflow.Listener`; all pipeline logic lives in `core/`.
 
 Each step is a static `run`/`runAll(Config, Reporter)` and talks to the outside world only through `Reporter` (log lines + progress). That indirection is why the same code serves the UI and the CLI — don't print to stdout from `core/`.
 
@@ -53,6 +53,7 @@ offers/<YYYYMMDD_HHMM>/
   contrasted/     # per-channel auto-contrast   (auto-contrast)
   cropped/        # cropped to the item         (auto-crop)
   more_data.txt   # copied from more_data_<N>.txt
+  ocr.txt         # text read off the photos    (ocr)
   description.txt                               (describe)
 ```
 
@@ -74,7 +75,8 @@ ignores.
 - **`Clustering`** derives timestamps from OpenCamera filenames (`IMG_YYYYMMDD_HHMMSS.jpg`); a gap > `SERIES_GAP_THRESHOLD_SECONDS` starts a new series. Series are matched to CSV rows **by position**, so row order is load-bearing.
 - **`Retouch`** backs both retouching steps (`Retouch.Mode.WHITE_BALANCE` / `AUTO_CONTRAST`): a gray-world white balance and a reproduction of PIL's `ImageOps.autocontrast(cutoff=1)`. `Exif` reproduces `ImageOps.exif_transpose` because ImageIO ignores orientation. Deviating from PIL's semantics here is a behavior change, not a cleanup.
 - **`AutoCrop`** separates item from background by *time*, not brightness or edges: on a turntable only the item's pixels change, so the mask is the per-pixel luminance range over the series, Otsu-thresholded, reduced to the largest connected blob. One box per series, grown by a margin and expanded to the source aspect ratio. It decodes via `ImageReadParam.setSourceSubsampling` (point-sampled — Pillow's smoothed resize gives a slightly different Otsu threshold, so Java boxes are tighter than a Python prototype's).
-- **`GenerateDescription`** posts to OpenAI Chat Completions. Price and `inpost_size` are appended from the CSV, never generated. Skips offers that already have `description.txt`.
+- **`Ocr`** shells out to the `tesseract` CLI (an external *program*, like the gvfs-mtp mount — the zero-dependency rule is about Java libraries) and writes `ocr.txt`, reading the most-processed photo dir like auto-crop does. Tesseract expects scans, not photos, so each frame is upscaled 2x and OCRed at both 0° and 180° (turntable items often face the camera with their label upside down; tesseract's OSD can't tell on mostly-object frames), keeping the higher-confidence rotation and dropping low-confidence words. Results are logged and appended to `ocr.txt` photo by photo; a `.ocr-in-progress` marker (removed on completion) tells a finished `ocr.txt` — skipped on re-run, even when empty — from one left by an interrupted run, which is redone. Missing tesseract aborts the run with an install hint.
+- **`GenerateDescription`** posts to OpenAI Chat Completions. Price and `inpost_size` are appended from the CSV, never generated. `more_data.txt` and a non-empty `ocr.txt` ride along in the offer JSON (`additional_notes` / `ocr_text`). Skips offers that already have `description.txt`.
 
 ### Adding a pipeline step
 
@@ -89,7 +91,7 @@ Four places, all of which must agree:
 
 `MainWindow` (~1200 lines) is the only class that knows about Swing layout.
 
-- The right panel's five tabs are addressed exclusively through the `TAB_*` constants (`DESCRIPTION_INPUT=0`, `DESCRIPTION_OUTPUT=1`, `PHOTOS_INPUT=2`, `PHOTOS_OUTPUT=3`, `ALLEGRO_FORM=4`). Every tab-dependent branch routes through them, which is why reordering tabs is a small change — keep it that way, never compare raw indices.
+- The right panel's six tabs are addressed exclusively through the `TAB_*` constants (`DESCRIPTION_INPUT=0`, `DESCRIPTION_OUTPUT=1`, `PHOTOS_INPUT=2`, `PHOTOS_OUTPUT=3`, `OCR=4`, `ALLEGRO_FORM=5`). Every tab-dependent branch routes through them, which is why reordering tabs is a small change — keep it that way, never compare raw indices.
 - A `CardLayout` (`CARD_EDITOR` / `CARD_PHOTOS`) swaps the bottom button bar per tab; `updateBottomBar()` must run after the cards are added.
 - `outputPhotoDir(offerDir)` is the single source of truth for "the finished photos" (`cropped/` if present, else `retouched/`). The gallery and the *Open photo dir* button both call it so they cannot drift.
 - A grid row resolves to an offer dir by matching `name` in each `data.json`, falling back to the row's position among the sorted dirs (`resolveOfferDir`).
@@ -98,7 +100,7 @@ Four places, all of which must agree:
 
 ## Configuration
 
-`Config.forBaseDir(baseDir)` derives every path from the base directory, overridable by env var or a `.env` file in it. **A real environment variable wins over `.env`.** Keys: `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_UID`, `MTP_GLOB_PATTERN`, `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`.
+`Config.forBaseDir(baseDir)` derives every path from the base directory, overridable by env var or a `.env` file in it. **A real environment variable wins over `.env`.** Keys: `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_UID`, `MTP_GLOB_PATTERN`, `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `OCR_LANGUAGES`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`.
 
 `offers.csv` is **tab-delimited** on write; on read the delimiter is auto-detected (tab if the header has one, else comma).
 

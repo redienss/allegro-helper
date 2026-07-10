@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Runs the enabled pipeline steps in sequence (import → match → white balance →
- * auto-contrast → auto-crop → describe), emitting a section header per step and
+ * auto-contrast → auto-crop → ocr → describe), emitting a section header per step and
  * reporting overall progress as
  * {@code (completedSteps + currentStepFraction) / totalSteps}.
  */
@@ -19,6 +19,7 @@ public final class Workflow {
         WHITE_BALANCE("white balance"),
         AUTO_CONTRAST("auto-contrast"),
         AUTOCROP("auto-crop"),
+        OCR("ocr"),
         DESCRIBE("describe");
 
         public final String label;
@@ -98,6 +99,7 @@ public final class Workflow {
             case WHITE_BALANCE -> Retouch.runAll(cfg, Retouch.Mode.WHITE_BALANCE, reporter);
             case AUTO_CONTRAST -> Retouch.runAll(cfg, Retouch.Mode.AUTO_CONTRAST, reporter);
             case AUTOCROP -> AutoCrop.runAll(cfg, reporter);
+            case OCR -> Ocr.runAll(cfg, reporter);
             case DESCRIBE -> GenerateDescription.runAll(cfg, reporter);
         }
     }

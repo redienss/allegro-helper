@@ -18,7 +18,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Generates {@code description.txt} for each offer from {@code data.json} using
+ * Generates {@code description.txt} for each offer from {@code data.json} (plus
+ * {@code more_data.txt} and {@code ocr.txt} when present) using
  * the OpenAI Chat Completions API. Item-specific facts (condition, damage,
  * quantity) come exclusively from the CSV data; the price is taken directly
  * from the CSV.
@@ -56,6 +57,13 @@ public final class GenerateDescription {
                     + "zawiera stwierdzenie o stanie produktu (np. 'stan: nowy'), które jest sprzeczne z polem "
                     + "'condition' - zignoruj je; pole 'condition' zawsze ma pierwszeństwo, bo dotyczy "
                     + "faktycznie sprzedawanego egzemplarza, a nie ogólnej oferty ze strony źródłowej.\n\n"
+                    + "Czasem JSON zawiera pole 'ocr_text' - surowy tekst odczytany automatycznie (OCR) ze "
+                    + "zdjęć przedmiotu: etykiety, tabliczki znamionowe, napisy na obudowie i opakowaniu. "
+                    + "Nagłówki w nawiasach kwadratowych to nazwy plików zdjęć - pomiń je. Tekst może "
+                    + "zawierać błędy rozpoznawania i przypadkowe fragmenty; wykorzystaj z niego tylko te "
+                    + "informacje, które potrafisz pewnie zinterpretować (np. dokładne oznaczenie modelu, "
+                    + "parametry z tabliczki znamionowej), a niezrozumiałe fragmenty zignoruj. W razie "
+                    + "sprzeczności z pozostałymi polami JSON-a pierwszeństwo mają te pola.\n\n"
                     + "Styl: konkretny, rzeczowy, bez marketingowego zachwytu - unikaj sformułowań typu 'idealny "
                     + "do', 'świetny wybór', 'gwarantuje najwyższą jakość', a także wezwań do zakupu typu "
                     + "'zapraszam do zakupu', 'zachęcam do zakupu', 'kup teraz', również przy opisywaniu "
@@ -113,8 +121,13 @@ public final class GenerateDescription {
         String extraNotes = Files.exists(moreDataPath)
                 ? Files.readString(moreDataPath, StandardCharsets.UTF_8).strip()
                 : "";
+        Path ocrPath = offerDir.resolve("ocr.txt");
+        String ocrText = Files.exists(ocrPath)
+                ? Files.readString(ocrPath, StandardCharsets.UTF_8).strip()
+                : "";
 
-        String descriptionText = callOpenAi(client, cfg, buildUserPrompt(data, extraNotes)).strip();
+        String descriptionText =
+                callOpenAi(client, cfg, buildUserPrompt(data, extraNotes, ocrText)).strip();
 
         double price = parsePrice(str(data, "price"));
         String content = descriptionText + "\n\n"
@@ -126,7 +139,7 @@ public final class GenerateDescription {
         reporter.log(offerDir.getFileName() + ": [" + apiLabel(cfg) + "] generated description.txt.");
     }
 
-    static String buildOfferJson(Map<String, Object> data, String extraNotes) {
+    static String buildOfferJson(Map<String, Object> data, String extraNotes, String ocrText) {
         LinkedHashMap<String, Object> offer = new LinkedHashMap<>();
         offer.put("name", str(data, "name"));
         offer.put("brand", str(data, "brand"));
@@ -139,15 +152,18 @@ public final class GenerateDescription {
         if (!extraNotes.isEmpty()) {
             offer.put("additional_notes", extraNotes);
         }
+        if (!ocrText.isEmpty()) {
+            offer.put("ocr_text", ocrText);
+        }
         return Json.write(offer, true);
     }
 
-    static String buildUserPrompt(Map<String, Object> data, String extraNotes) {
+    static String buildUserPrompt(Map<String, Object> data, String extraNotes, String ocrText) {
         return "Na podstawie danych poniżej wygeneruj opis oferty dla Allegro Lokalnie. "
                 + "Dodaj trochę ikonek dla czytelności opisu.\n"
                 + "Offer data (JSON):\n"
                 + "<<<JSON>>>\n"
-                + buildOfferJson(data, extraNotes) + "\n"
+                + buildOfferJson(data, extraNotes, ocrText) + "\n"
                 + "<<<END JSON>>>";
     }
 

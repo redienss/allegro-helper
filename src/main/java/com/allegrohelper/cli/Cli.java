@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Headless command-line entry point:
- * {@code import | match | whitebalance | autocontrast | autocrop | describe | all}
+ * {@code import | match | whitebalance | autocontrast | autocrop | ocr | describe | all}
  * ({@code retouch} is an alias for white balance + auto-contrast). Useful for
  * scripting and for running the pipeline without a display.
  */
@@ -22,7 +22,7 @@ public final class Cli {
     public static int run(String[] args) {
         if (args.length == 0) {
             System.err.println(
-                    "Usage: allegro-helper --cli <import|match|whitebalance|autocontrast|autocrop|describe|all> [baseDir]\n"
+                    "Usage: allegro-helper --cli <import|match|whitebalance|autocontrast|autocrop|ocr|describe|all> [baseDir]\n"
                     + "       (retouch = whitebalance + autocontrast)");
             return 2;
         }
@@ -38,10 +38,11 @@ public final class Cli {
             // Pre-split alias: retouch used to be one step doing both.
             case "retouch" -> List.of(Workflow.Step.WHITE_BALANCE, Workflow.Step.AUTO_CONTRAST);
             case "autocrop", "auto-crop" -> List.of(Workflow.Step.AUTOCROP);
+            case "ocr" -> List.of(Workflow.Step.OCR);
             case "describe" -> List.of(Workflow.Step.DESCRIBE);
             case "all" -> List.of(Workflow.Step.IMPORT, Workflow.Step.MATCH,
                     Workflow.Step.WHITE_BALANCE, Workflow.Step.AUTO_CONTRAST,
-                    Workflow.Step.AUTOCROP, Workflow.Step.DESCRIBE);
+                    Workflow.Step.AUTOCROP, Workflow.Step.OCR, Workflow.Step.DESCRIBE);
             default -> null;
         };
         if (steps == null) {

@@ -120,7 +120,8 @@ public final class MainWindow {
     private static final int TAB_DESCRIPTION_OUTPUT = 1;  // description.txt editor
     private static final int TAB_PHOTOS_INPUT = 2;   // original photos gallery
     private static final int TAB_PHOTOS_OUTPUT = 3;  // retouched photos gallery
-    private static final int TAB_ALLEGRO_FORM = 4;   // copy helper for the Allegro Lokalnie form
+    private static final int TAB_OCR = 4;            // ocr.txt editor
+    private static final int TAB_ALLEGRO_FORM = 5;   // copy helper for the Allegro Lokalnie form
 
     /** Thumbnail box size (px) for the photo galleries. */
     private static final int THUMB_SIZE = 140;
@@ -149,6 +150,7 @@ public final class MainWindow {
     private final JCheckBox whiteBalanceBox = new JCheckBox("White balance", true);
     private final JCheckBox autoContrastBox = new JCheckBox("Auto-contrast", true);
     private final JCheckBox autoCropBox = new JCheckBox("Auto-crop", true);
+    private final JCheckBox ocrBox = new JCheckBox("OCR", true);
     private final JCheckBox describeBox = new JCheckBox("Describe", true);
 
     private final JButton startButton = new JButton("Start");
@@ -163,6 +165,7 @@ public final class MainWindow {
     // Styled panes (not JTextArea) so emoji can be painted as color images.
     private final JTextPane moreDataArea = new JTextPane();   // Description (Input) -> more_data_<N>.txt
     private final JTextPane detailsArea = new JTextPane();    // Description (Output) -> description.txt
+    private final JTextPane ocrArea = new JTextPane();        // OCR -> ocr.txt
 
     // Photo galleries; a single background thread loads their thumbnails.
     private final ExecutorService galleryLoader = Executors.newSingleThreadExecutor(r -> {
@@ -194,6 +197,7 @@ public final class MainWindow {
     // no offer directory exists yet).
     private Path moreDataTarget;
     private Path descriptionTarget;
+    private Path ocrTarget;
 
     private volatile boolean running = false;
 
@@ -420,18 +424,27 @@ public final class MainWindow {
         c.weightx = 0;
         c.gridwidth = 1;
         c.fill = GridBagConstraints.NONE;
+        JButton browseButton = new JButton("Browse…");
+        browseButton.addActionListener(browse);
         if (reset != null) {
             c.insets = new Insets(top, 0, 0, 4);
-            JButton resetButton = new JButton("⟲");
+            // The ⟲ glyph comes from a fallback font with taller line metrics,
+            // so follow the Browse button's height instead of the glyph's.
+            JButton resetButton = new JButton("⟲") {
+                @Override
+                public Dimension getPreferredSize() {
+                    Dimension d = super.getPreferredSize();
+                    d.height = browseButton.getPreferredSize().height;
+                    return d;
+                }
+            };
             resetButton.setToolTipText("Restore the default photo directory");
             resetButton.setMargin(new Insets(2, 6, 2, 6));
             resetButton.addActionListener(reset);
             panel.add(resetButton, c);
         }
         c.insets = new Insets(top, 0, 0, 0);
-        JButton button = new JButton("Browse…");
-        button.addActionListener(browse);
-        panel.add(button, c);
+        panel.add(browseButton, c);
     }
 
     private JPanel buildPhotosPanel() {
@@ -509,12 +522,15 @@ public final class MainWindow {
         JPanel panel = titled("Workflow");
         panel.setLayout(new BorderLayout(6, 6));
 
-        JPanel boxes = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 2));
+        // Tight gap: all seven boxes must fit one row at the default window size,
+        // or the height-capped section cuts off whatever wraps to a second row.
+        JPanel boxes = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
         boxes.add(importBox);
         boxes.add(matchBox);
         boxes.add(whiteBalanceBox);
         boxes.add(autoContrastBox);
         boxes.add(autoCropBox);
+        boxes.add(ocrBox);
         boxes.add(describeBox);
         panel.add(boxes, BorderLayout.CENTER);
 
@@ -566,7 +582,7 @@ public final class MainWindow {
         panel.add(detailsHeader, BorderLayout.NORTH);
 
         java.awt.Font mono = new java.awt.Font("monospaced", java.awt.Font.PLAIN, 13);
-        for (JTextPane pane : new JTextPane[]{moreDataArea, detailsArea, formDescriptionArea}) {
+        for (JTextPane pane : new JTextPane[]{moreDataArea, detailsArea, ocrArea, formDescriptionArea}) {
             pane.setEditable(true); // JTextPane wraps by default
             pane.setFont(mono);
             pane.setCaretColor(CARET_COLOR);
@@ -576,6 +592,7 @@ public final class MainWindow {
         rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
         rightTabs.addTab("Photos (Input)", photosInputGallery.component());
         rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
+        rightTabs.addTab("OCR", new JScrollPane(ocrArea));
         rightTabs.addTab("Allegro Lokalnie Form", buildAllegroFormTab());
         // Render tab titles as custom labels we fully control, so the selected tab
         // stays clearly highlighted regardless of the (dark) look and feel.
@@ -784,11 +801,27 @@ public final class MainWindow {
 
     private boolean isEditorTab() {
         int i = rightTabs.getSelectedIndex();
-        return i == TAB_DESCRIPTION_INPUT || i == TAB_DESCRIPTION_OUTPUT;
+        return i == TAB_DESCRIPTION_INPUT || i == TAB_DESCRIPTION_OUTPUT || i == TAB_OCR;
     }
 
-    private boolean isDescriptionInputTab() {
-        return rightTabs.getSelectedIndex() == TAB_DESCRIPTION_INPUT;
+    /** The file backing the active editor tab, or null when it has none yet. */
+    private Path activeEditorTarget() {
+        return switch (rightTabs.getSelectedIndex()) {
+            case TAB_DESCRIPTION_INPUT -> moreDataTarget;
+            case TAB_DESCRIPTION_OUTPUT -> descriptionTarget;
+            case TAB_OCR -> ocrTarget;
+            default -> null;
+        };
+    }
+
+    /** The text pane of the active editor tab, or null on non-editor tabs. */
+    private JTextPane activeEditorPane() {
+        return switch (rightTabs.getSelectedIndex()) {
+            case TAB_DESCRIPTION_INPUT -> moreDataArea;
+            case TAB_DESCRIPTION_OUTPUT -> detailsArea;
+            case TAB_OCR -> ocrArea;
+            default -> null;
+        };
     }
 
     /** Repaints emoji as color images whenever the pane's text changes. */
@@ -883,9 +916,10 @@ public final class MainWindow {
     }
 
     /**
-     * Loads the selected offer's files into the two editor tabs:
-     * More Data (Input) from {@code more_data_<N>.txt} next to offers.csv, and
-     * Offer Details (Output) from {@code description.txt} in the offer directory.
+     * Loads the selected offer's files into the editor tabs:
+     * Description (Input) from {@code more_data_<N>.txt} next to offers.csv, and
+     * Description (Output) / OCR from {@code description.txt} / {@code ocr.txt}
+     * in the offer directory.
      */
     private void loadSelectedOffer() {
         int viewRow = offerTable.getSelectedRow();
@@ -893,8 +927,10 @@ public final class MainWindow {
             detailsHeader.setText("Select an offer in the grid.");
             moreDataArea.setText("");
             detailsArea.setText("");
+            ocrArea.setText("");
             moreDataTarget = null;
             descriptionTarget = null;
+            ocrTarget = null;
             currentOfferDir = null;
             photosInputGallery.message("Select an offer in the grid.");
             photosOutputGallery.message("Select an offer in the grid.");
@@ -921,7 +957,9 @@ public final class MainWindow {
         currentOfferDir = offerDir;
         if (offerDir == null) {
             descriptionTarget = null;
+            ocrTarget = null;
             detailsArea.setText("");
+            ocrArea.setText("");
             detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
                     + " — <i>not matched yet (photos and Description output appear after Match)</i></html>");
             photosInputGallery.message("Not matched yet — run Match.");
@@ -931,6 +969,8 @@ public final class MainWindow {
         } else {
             descriptionTarget = offerDir.resolve("description.txt");
             detailsArea.setText(readIfExists(descriptionTarget));
+            ocrTarget = offerDir.resolve("ocr.txt");
+            ocrArea.setText(readIfExists(ocrTarget));
             detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
                     + " — " + escapeHtml(offerDir.getFileName().toString()) + "</html>");
             photosInputGallery.show(offerDir.resolve("photos"));
@@ -941,6 +981,7 @@ public final class MainWindow {
         formTitleField.setText(name);
         formTitleField.setCaretPosition(0);
         detailsArea.setCaretPosition(0);
+        ocrArea.setCaretPosition(0);
         formDescriptionArea.setCaretPosition(0);
         updateBottomBar();
     }
@@ -954,15 +995,13 @@ public final class MainWindow {
             error("Select an offer in the grid first.");
             return;
         }
-        boolean moreDataTab = isDescriptionInputTab();
-        Path target = moreDataTab ? moreDataTarget : descriptionTarget;
-        String content = moreDataTab ? moreDataArea.getText() : detailsArea.getText();
-
+        Path target = activeEditorTarget();
         if (target == null) {
-            // Only reachable for the Offer Details tab before the offer is matched.
-            error("No offer directory yet — run Match first, then Describe.");
+            // Only reachable for the offer-directory tabs before the offer is matched.
+            error("No offer directory yet — run Match first.");
             return;
         }
+        String content = activeEditorPane().getText();
         try {
             Path parent = target.getParent();
             if (parent != null) {
@@ -984,10 +1023,9 @@ public final class MainWindow {
             error("Select an offer in the grid first.");
             return;
         }
-        boolean moreDataTab = isDescriptionInputTab();
-        Path target = moreDataTab ? moreDataTarget : descriptionTarget;
+        Path target = activeEditorTarget();
         if (target == null) {
-            error("No offer directory yet — run Match first, then Describe.");
+            error("No offer directory yet — run Match first.");
             return;
         }
         if (!Files.exists(target)) {
@@ -1003,7 +1041,7 @@ public final class MainWindow {
         }
         try {
             Files.delete(target);
-            (moreDataTab ? moreDataArea : detailsArea).setText("");
+            activeEditorPane().setText("");
             appendLog("Deleted " + target);
         } catch (IOException e) {
             error("Failed to delete " + target + ": " + e.getMessage());
@@ -1048,7 +1086,7 @@ public final class MainWindow {
         if (!isEditorTab()) {
             return;
         }
-        (isDescriptionInputTab() ? moreDataArea : detailsArea).setText("");
+        activeEditorPane().setText("");
     }
 
     private static String readIfExists(Path file) {
@@ -1672,6 +1710,9 @@ public final class MainWindow {
         }
         if (autoCropBox.isSelected()) {
             steps.add(Workflow.Step.AUTOCROP);
+        }
+        if (ocrBox.isSelected()) {
+            steps.add(Workflow.Step.OCR);
         }
         if (describeBox.isSelected()) {
             steps.add(Workflow.Step.DESCRIBE);

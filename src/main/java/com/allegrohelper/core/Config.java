@@ -25,6 +25,7 @@ public final class Config {
     public final String mtpGlobPattern;
     public final int photosPerOffer;
     public final int seriesGapThresholdSeconds;
+    public final String ocrLanguages;
     public final String openaiApiKey;
     public final String openaiModel;
     public final String openaiBaseUrl;
@@ -40,6 +41,7 @@ public final class Config {
                 "/run/user/" + mtpUid + "/gvfs/mtp:host=*/*/DCIM/OpenCamera");
         this.photosPerOffer = intOrDefault(env, "PHOTOS_PER_OFFER", 20);
         this.seriesGapThresholdSeconds = intOrDefault(env, "SERIES_GAP_THRESHOLD_SECONDS", 60);
+        this.ocrLanguages = env.getOrDefault("OCR_LANGUAGES", "pol+eng");
         this.openaiApiKey = env.getOrDefault("OPENAI_API_KEY", "");
         this.openaiModel = env.getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
         this.openaiBaseUrl = stripTrailingSlash(
