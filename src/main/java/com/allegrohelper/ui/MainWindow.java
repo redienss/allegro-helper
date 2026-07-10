@@ -122,8 +122,12 @@ public final class MainWindow {
     /** Thumbnail box size (px) for the photo galleries. */
     private static final int THUMB_SIZE = 140;
 
-    /** Smaller thumbnails on the Allegro form tab, sized so 8 fit per row. */
-    private static final int FORM_THUMB_SIZE = 74;
+    /**
+     * Smaller thumbnails on the Allegro form tab, sized so 8 fit per row on the
+     * user's 1920x1080 laptop (right panel ≈ 900–940 px inside; a cell is the
+     * thumbnail + 16 px, so 8×112 fits and a 9th doesn't).
+     */
+    private static final int FORM_THUMB_SIZE = 96;
 
     /** Allegro Lokalnie allows at most this many photos per offer. */
     private static final int ALLEGRO_MAX_PHOTOS = 16;
