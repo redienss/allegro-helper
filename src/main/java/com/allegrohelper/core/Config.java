@@ -52,10 +52,20 @@ public final class Config {
 
     /** Builds a configuration for the given base directory, loading {@code .env} if present. */
     public static Config forBaseDir(Path baseDir) {
+        return forBaseDir(baseDir, Map.of());
+    }
+
+    /**
+     * Like {@link #forBaseDir(Path)}, with caller-supplied overrides (e.g. values
+     * the user typed into the UI) that win over both {@code .env} and the real
+     * environment.
+     */
+    public static Config forBaseDir(Path baseDir, Map<String, String> overrides) {
         Path base = baseDir.toAbsolutePath().normalize();
         Map<String, String> env = new HashMap<>(loadDotenv(base.resolve(".env")));
         // Real environment variables win over .env.
         env.putAll(System.getenv());
+        env.putAll(overrides);
         return new Config(base, env);
     }
 

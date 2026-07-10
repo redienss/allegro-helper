@@ -58,6 +58,9 @@ import java.awt.Dimension;
 import java.awt.Toolkit;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.Image;
 import java.awt.Graphics2D;
 import java.awt.GraphicsDevice;
@@ -136,6 +139,7 @@ public final class MainWindow {
 
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
+    private final JTextField photoDirField = new JTextField();
     private final DefaultListModel<String> photosModel = new DefaultListModel<>();
     private final OfferTableModel offerModel = new OfferTableModel();
     private final JTable offerTable = new JTable(offerModel);
@@ -195,6 +199,9 @@ public final class MainWindow {
 
     public MainWindow(Path initialBaseDir) {
         baseDirField.setText(initialBaseDir.toAbsolutePath().normalize().toString());
+        // Seed with the configured photo source (MTP_GLOB_PATTERN or the default
+        // phone glob) so the user sees — and can change — where photos come from.
+        photoDirField.setText(Config.forBaseDir(initialBaseDir).mtpGlobPattern);
         build();
         loadOffersFromBaseDir();
     }
@@ -225,7 +232,7 @@ public final class MainWindow {
 
         // Left panel: the full control stack on top (each section keeps its
         // preferred height but fills the available width) with the log below.
-        JPanel baseDirPanel = buildBaseDirPanel();
+        JPanel dirsPanel = buildDirsPanel();
         JPanel photosPanel = buildPhotosPanel();
         JPanel offerPanel = buildOfferPanel();
         JPanel workflowPanel = buildWorkflowPanel();
@@ -235,9 +242,9 @@ public final class MainWindow {
         // directory and Photos section shifted to its right.
         JPanel topRight = new JPanel();
         topRight.setLayout(new BoxLayout(topRight, BoxLayout.Y_AXIS));
-        baseDirPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        dirsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         photosPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        topRight.add(baseDirPanel);
+        topRight.add(dirsPanel);
         topRight.add(photosPanel);
 
         JPanel topArea = new JPanel(new BorderLayout());
@@ -269,7 +276,7 @@ public final class MainWindow {
         standardizeFonts(frame.getRootPane());
         updateTabStyles(); // re-assert tab bold/dim after fonts are standardized
         offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
-        for (JPanel section : List.of(baseDirPanel, photosPanel, topArea, offerPanel, workflowPanel, progressPanel)) {
+        for (JPanel section : List.of(dirsPanel, photosPanel, topArea, offerPanel, workflowPanel, progressPanel)) {
             capHeight(section);
         }
 
@@ -384,16 +391,33 @@ public final class MainWindow {
         frame.setIconImages(images);
     }
 
-    private JPanel buildBaseDirPanel() {
-        JPanel panel = new JPanel(new BorderLayout(6, 0));
+    /** Base + photo directory rows; GridBagLayout keeps their labels and fields aligned. */
+    private JPanel buildDirsPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 0, 8));
-        panel.add(new JLabel("Base directory:"), BorderLayout.WEST);
-        baseDirField.setCaretColor(CARET_COLOR);
-        panel.add(baseDirField, BorderLayout.CENTER);
-        JButton browse = new JButton("Browse…");
-        browse.addActionListener(e -> chooseBaseDir());
-        panel.add(browse, BorderLayout.EAST);
+        addDirRow(panel, 0, "Base directory:", baseDirField, e -> chooseBaseDir());
+        addDirRow(panel, 1, "Photo directory:", photoDirField, e -> choosePhotoDir());
         return panel;
+    }
+
+    private static void addDirRow(JPanel panel, int row, String label,
+                                  JTextField field, java.awt.event.ActionListener browse) {
+        GridBagConstraints c = new GridBagConstraints();
+        c.gridy = row;
+        int top = row == 0 ? 0 : 6;
+        c.insets = new Insets(top, 0, 0, 6);
+        c.anchor = GridBagConstraints.WEST;
+        panel.add(new JLabel(label), c);
+        c.weightx = 1;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        field.setCaretColor(CARET_COLOR);
+        panel.add(field, c);
+        c.weightx = 0;
+        c.fill = GridBagConstraints.NONE;
+        c.insets = new Insets(top, 0, 0, 0);
+        JButton button = new JButton("Browse…");
+        button.addActionListener(browse);
+        panel.add(button, c);
     }
 
     private JPanel buildPhotosPanel() {
@@ -1375,6 +1399,41 @@ public final class MainWindow {
         }
     }
 
+    private void choosePhotoDir() {
+        // The field usually holds the MTP glob, which no chooser can open;
+        // start from the deepest existing prefix of it instead.
+        Path start = deepestExistingDir(photoDirField.getText().strip());
+        JFileChooser chooser = new JFileChooser(start == null ? null : start.toString());
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
+            photoDirField.setText(chooser.getSelectedFile().getAbsolutePath());
+            refreshPhotos();
+        }
+    }
+
+    /** The deepest existing directory along the given path, stopping at any glob segment. */
+    private static Path deepestExistingDir(String pattern) {
+        if (!pattern.startsWith("/")) {
+            return null;
+        }
+        Path result = null;
+        Path current = Path.of("/");
+        for (String segment : pattern.split("/")) {
+            if (segment.isEmpty()) {
+                continue;
+            }
+            if (segment.indexOf('*') >= 0 || segment.indexOf('?') >= 0) {
+                break;
+            }
+            current = current.resolve(segment);
+            if (!Files.isDirectory(current)) {
+                break;
+            }
+            result = current;
+        }
+        return result;
+    }
+
     private void loadOffersFromBaseDir() {
         Config cfg = currentConfig();
         try {
@@ -1598,7 +1657,10 @@ public final class MainWindow {
     }
 
     private Config currentConfig() {
-        return Config.forBaseDir(Path.of(baseDirField.getText().strip()));
+        String photoDir = photoDirField.getText().strip();
+        Map<String, String> overrides =
+                photoDir.isEmpty() ? Map.of() : Map.of("MTP_GLOB_PATTERN", photoDir);
+        return Config.forBaseDir(Path.of(baseDirField.getText().strip()), overrides);
     }
 
     private void setRunning(boolean value) {
