@@ -70,9 +70,10 @@ OCR reports every photo as it goes, with a peek at what it found:
 
 ```
 == ocr ==
-20260710_0817: OCR IMG_20260710_081840.jpg (16/20): found "RK -3138D 6 ElicoCamp 220g …"
-20260710_0817: OCR IMG_20260710_081845.jpg (17/20): no text.
-20260710_0817: wrote ocr.txt (20 unique text blocks from 20 photos).
+20260710_1014: OCR IMG_20260710_101556.jpg (13/20): found "NASZA BOMBA"
+20260710_1014: OCR IMG_20260710_101606.jpg (15/20): found "EKSPERT STRATEGY&FUTURE …"
+20260710_1014: OCR IMG_20260710_101616.jpg (17/20): no text.
+20260710_1014: wrote ocr.txt (12 unique text blocks from 20 photos).
 ```
 
 ### What stays manual
@@ -163,11 +164,11 @@ the item.
 
 ![The Photos (Output) tab, showing the auto-cropped photos](screenshots/004.png)
 
-The OCR tab shows what was legible on the item — here the charger's nameplate:
-the model number and the electrical parameters survived, and whatever else the
-glossy plastic gave up.
+The OCR tab shows what was legible on the item. For a book it is practically
+the whole back cover — the blurb, the ISBN, the names — which gives Describe
+plenty of true, item-specific material to work with.
 
-![The OCR tab, showing the text read off the photos](screenshots/005.png)
+![The OCR tab, showing the back-cover text read off the photos](screenshots/005.png)
 
 The last tab collects everything the Allegro Lokalnie listing form needs in one
 place: open the form with one click, drag the selected photos onto it, and copy
