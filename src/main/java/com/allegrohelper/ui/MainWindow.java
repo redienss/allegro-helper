@@ -395,13 +395,15 @@ public final class MainWindow {
     private JPanel buildDirsPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 0, 8));
-        addDirRow(panel, 0, "Base directory:", baseDirField, e -> chooseBaseDir());
-        addDirRow(panel, 1, "Photo directory:", photoDirField, e -> choosePhotoDir());
+        addDirRow(panel, 0, "Base directory:", baseDirField, e -> chooseBaseDir(), null);
+        addDirRow(panel, 1, "Photo directory:", photoDirField, e -> choosePhotoDir(),
+                e -> resetPhotoDir());
         return panel;
     }
 
     private static void addDirRow(JPanel panel, int row, String label,
-                                  JTextField field, java.awt.event.ActionListener browse) {
+                                  JTextField field, java.awt.event.ActionListener browse,
+                                  java.awt.event.ActionListener reset) {
         GridBagConstraints c = new GridBagConstraints();
         c.gridy = row;
         int top = row == 0 ? 0 : 6;
@@ -410,10 +412,22 @@ public final class MainWindow {
         panel.add(new JLabel(label), c);
         c.weightx = 1;
         c.fill = GridBagConstraints.HORIZONTAL;
+        // A row without a reset button lets the field span its column too,
+        // keeping the Browse buttons of all rows aligned.
+        c.gridwidth = reset == null ? 2 : 1;
         field.setCaretColor(CARET_COLOR);
         panel.add(field, c);
         c.weightx = 0;
+        c.gridwidth = 1;
         c.fill = GridBagConstraints.NONE;
+        if (reset != null) {
+            c.insets = new Insets(top, 0, 0, 4);
+            JButton resetButton = new JButton("⟲");
+            resetButton.setToolTipText("Restore the default photo directory");
+            resetButton.setMargin(new Insets(2, 6, 2, 6));
+            resetButton.addActionListener(reset);
+            panel.add(resetButton, c);
+        }
         c.insets = new Insets(top, 0, 0, 0);
         JButton button = new JButton("Browse…");
         button.addActionListener(browse);
@@ -1409,6 +1423,15 @@ public final class MainWindow {
             photoDirField.setText(chooser.getSelectedFile().getAbsolutePath());
             refreshPhotos();
         }
+    }
+
+    /** Restores the configured photo source (the MTP glob unless .env/env override it). */
+    private void resetPhotoDir() {
+        // Deliberately not currentConfig(): that would re-apply the field's own
+        // value as the override, making this a no-op.
+        Config cfg = Config.forBaseDir(Path.of(baseDirField.getText().strip()));
+        photoDirField.setText(cfg.mtpGlobPattern);
+        refreshPhotos();
     }
 
     /** The deepest existing directory along the given path, stopping at any glob segment. */
