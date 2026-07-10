@@ -37,9 +37,20 @@ marketplace.
    for the whole series (the item does not jump between frames), grown by a
    small margin and kept at the source aspect ratio. Results go to `cropped/`;
    the retouched photos are left untouched.
-7. **Describe** — an offer description is generated per offer via the OpenAI
-   API, including the price taken directly from the CSV.
-8. The offer is then created on Allegro Lokalnie by hand, using the cropped
+7. **OCR** — the text visible on the item and its packaging (labels,
+   nameplates, model numbers) is read off the finished photos into `ocr.txt`,
+   using the [tesseract](https://github.com/tesseract-ocr/tesseract) CLI —
+   free and local, no API cost. Tesseract expects scans rather than photos, so
+   each frame is upscaled and OCRed both upright and upside down (an item often
+   stands with its label upside down to the camera), the higher-confidence
+   reading wins, and low-confidence noise is dropped. Results are logged and
+   appended to `ocr.txt` photo by photo, so the log always shows what is being
+   worked on.
+8. **Describe** — an offer description is generated per offer via the OpenAI
+   API, including the price taken directly from the CSV. The recognized OCR
+   text rides along in the request, so exact model designations and nameplate
+   parameters make it into the description.
+9. The offer is then created on Allegro Lokalnie by hand, using the cropped
    photos and the generated description.
 
 Every step is safe to re-run — already processed offers and photos are skipped.
@@ -53,6 +64,15 @@ cropping it wrongly. It reports the box it settled on:
 == auto-crop ==
 20260708_0340: cropped 20 photos to 2225x1669.
 20260708_0349: cropped 20 photos to 2210x1658.
+```
+
+OCR reports every photo as it goes, with a peek at what it found:
+
+```
+== ocr ==
+20260710_0817: OCR IMG_20260710_081840.jpg (16/20): found "RK -3138D 6 ElicoCamp 220g …"
+20260710_0817: OCR IMG_20260710_081845.jpg (17/20): no text.
+20260710_0817: wrote ocr.txt (20 unique text blocks from 20 photos).
 ```
 
 ### What stays manual
@@ -71,6 +91,12 @@ selected offer on the right.
 
 ### Left: controls
 
+- **Base directory** / **Photo directory** — where the app works and where the
+  photos come from. The photo directory defaults to the phone's OpenCamera
+  directory (via MTP) but can point anywhere — useful when someone else's
+  phone mounts under a different path, or for a local folder of photos. The
+  **⟲** button restores the default; picking a directory rescans the Photos
+  list.
 - **Photos** — photo series detected on the connected phone (before import),
   e.g. `20260708_0340 | 20x series of photos to import`. Scanned automatically
   on launch; click **Refresh** to rescan.
@@ -79,7 +105,7 @@ selected offer on the right.
   directory if present; otherwise empty and fillable by hand. You can also
   **Load CSV…** from anywhere, **Save CSV**, and add/remove rows.
 - **Workflow** — checkboxes `Import`, `Match`, `White balance`, `Auto-contrast`,
-  `Auto-crop`, `Describe` (all checked by default), so any subset of the
+  `Auto-crop`, `OCR`, `Describe` (all checked by default), so any subset of the
   pipeline — including either retouching step on its own — can be run.
 - **Start** — runs the selected steps in order. If `Match` is selected, the grid
   is written to `offers.csv` first (that step's input).
@@ -94,7 +120,7 @@ selected offer on the right.
 ### Right: the selected offer
 
 Clicking a row in the grid shows that offer (resolved by matching the row's name
-to each offer's `data.json`, falling back to row position) in five tabs:
+to each offer's `data.json`, falling back to row position) in six tabs:
 
 - **Description (Input)** — editor for `more_data_<N>.txt` next to `offers.csv`
   (N = the row's 1-based number): extra free-form notes folded into the
@@ -106,6 +132,10 @@ to each offer's `data.json`, falling back to row position) in five tabs:
 - **Photos (Output)** — thumbnail gallery of the finished photos: the output of
   the latest step that has run — `offers/<id>/cropped/`, else `contrasted/`,
   else `white_balanced/`.
+- **OCR** — editor for `ocr.txt` in the offer directory: the text the OCR step
+  read off the photos, one block per photo that had any. Fix a misread model
+  number here and save before running Describe, and the correction flows into
+  the description.
 - **Allegro Lokalnie Form** — everything the
   [listing form](https://allegrolokalnie.pl/o/oferty/wystaw) needs, laid out
   for copying: a link to the form, the finished photos in a compact grid
@@ -133,15 +163,21 @@ the item.
 
 ![The Photos (Output) tab, showing the auto-cropped photos](screenshots/004.png)
 
+The OCR tab shows what was legible on the item — here the charger's nameplate:
+the model number and the electrical parameters survived, and whatever else the
+glossy plastic gave up.
+
+![The OCR tab, showing the text read off the photos](screenshots/005.png)
+
 The last tab collects everything the Allegro Lokalnie listing form needs in one
 place: open the form with one click, drag the selected photos onto it, and copy
 the title and description into it.
 
-![The Allegro Lokalnie Form tab, with the first 16 photos selected](screenshots/005.png)
+![The Allegro Lokalnie Form tab, with the first 16 photos selected](screenshots/006.png)
 
-The Description tabs have a bottom bar with **Delete** and **Clear** in the
-lower-left corner (away from **Save** in the lower-right, to avoid accidental
-clicks), all acting on the active tab's file:
+The Description and OCR tabs have a bottom bar with **Delete** and **Clear** in
+the lower-left corner (away from **Save** in the lower-right, to avoid
+accidental clicks), all acting on the active tab's file:
 
 - **Save** writes the editor to the file.
 - **Clear** empties the editor only — the file is unchanged until you Save.
@@ -162,6 +198,10 @@ characters. Without a color emoji font the text falls back to the normal glyphs
   `java.net.http`, `javax.imageio`).
 - `gio` (GVFS) to read photos from a phone connected via MTP (mounted at
   `/run/user/<uid>/gvfs/mtp:host=...`).
+- The `tesseract` CLI for the *OCR* step
+  (`sudo apt install tesseract-ocr tesseract-ocr-pol tesseract-ocr-eng`).
+  Without it the OCR step aborts with that install hint; the rest of the
+  pipeline does not need it.
 - An OpenAI API key for the *Describe* step (`OPENAI_API_KEY`), read from the
   environment or a `.env` file in the base directory (see `.env.example`).
 
@@ -195,7 +235,7 @@ GNOME shows this icon for the running window too.
 The same pipeline runs without a UI:
 
 ```bash
-./run.sh --cli import      # or match | whitebalance | autocontrast | autocrop | describe | all
+./run.sh --cli import      # or match | whitebalance | autocontrast | autocrop | ocr | describe | all
 ./run.sh --cli retouch     # alias: whitebalance + autocontrast
 ./run.sh --cli all /path/to/base-dir
 ```
@@ -206,9 +246,11 @@ The base directory (chosen at the top of the window, default: the launch
 directory) determines `offers.csv`, `raw_photos/` and `offers/`. These
 environment variables are honored, from the environment or `.env`:
 `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
-`PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `OPENAI_API_KEY`,
-`OPENAI_MODEL`, and `OPENAI_BASE_URL` (for an OpenAI-compatible endpoint). A
-real environment variable takes precedence over a value in `.env`.
+`PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `OCR_LANGUAGES` (tesseract
+languages, default `pol+eng`), `OPENAI_API_KEY`, `OPENAI_MODEL`, and
+`OPENAI_BASE_URL` (for an OpenAI-compatible endpoint). A real environment
+variable takes precedence over a value in `.env`, and the **Photo directory**
+field in the window takes precedence over `MTP_GLOB_PATTERN` from either.
 
 ## Data layout
 
@@ -243,6 +285,10 @@ details).
 Phone (Samsung, MTP):
 `mtp://SAMSUNG_SAMSUNG_Android_R58R301MAHN/Internal storage/DCIM/OpenCamera`
 
+A different phone (or a plain local directory) goes into the **Photo
+directory** field at the top of the window — the default value is the glob
+that finds the OpenCamera directory on whatever phone is mounted.
+
 Filenames follow the OpenCamera convention `IMG_YYYYMMDD_HHMMSS.jpg`. Photos
 within one series are ~5 seconds apart, with a noticeably longer gap between
 series (time to swap the item on the turntable) — which is how series boundaries
@@ -261,6 +307,7 @@ offers/20260708_0340/
   contrasted/      # photos after auto-contrast
   cropped/         # retouched photos cropped to the item (Auto-crop)
   more_data.txt    # optional, copied from more_data_<N>.txt if present
+  ocr.txt          # text read off the photos (OCR), editable in the OCR tab
   description.txt  # generated description + price (from the CSV)
 ```
 
