@@ -6,9 +6,9 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Detects the photo series present on the connected phone (before import), so
- * the UI can show what's waiting to be imported. Uses the same clustering as
- * the match step.
+ * Detects the photo series present in the photo directory (before import), so
+ * the UI can show what's waiting to be imported. Uses the same series
+ * recognition as the match step, so the preview matches what a run would do.
  */
 public final class PhoneScan {
 
@@ -19,7 +19,7 @@ public final class PhoneScan {
     }
 
     /**
-     * Scans the phone's OpenCamera directory and clusters its photos into series.
+     * Scans the photo directory and groups its photos into series.
      *
      * @throws IOException if the phone/DCIM directory cannot be found or read
      */
@@ -31,8 +31,8 @@ public final class PhoneScan {
                             + "\nConnect the phone and mount it (gio mount -l).");
         }
         Path sourceDir = matches.get(0);
-        List<Path> photos = ImportPhotos.listJpegs(sourceDir);
-        List<PhotoSeries> series = Clustering.cluster(photos, Duration.ofSeconds(cfg.seriesGapThresholdSeconds));
+        List<PhotoSeries> series = SeriesRecognition.recognize(cfg.seriesRecognition, sourceDir,
+                Duration.ofSeconds(cfg.seriesGapThresholdSeconds));
         return new Result(sourceDir, series);
     }
 }

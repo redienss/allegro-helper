@@ -22,10 +22,12 @@ marketplace.
    5 seconds.
 2. **Import** — photos are copied from the phone (mounted via MTP) into
    `raw_photos/`. The originals stay on the phone.
-3. **Match** — photos are grouped into series by the timestamp in their filename
-   and matched to the rows of `offers.csv`, one series per row, in order. Each
-   series is moved into its own directory named after its first photo,
-   e.g. `offers/20260708_0340/`.
+3. **Match** — photos are grouped into series and matched to the rows of
+   `offers.csv`, one series per row, in order. Each series is moved into its
+   own offer directory, e.g. `offers/20260708_0340/`. How the series are
+   recognized is selectable in the Photos section (see below): by the
+   timestamps in the filenames (the default, made for the turntable workflow),
+   the whole directory as one item, or one item per subfolder.
 4. **White balance** — automatic gray-world white balance.
 5. **Auto-contrast** — automatic per-channel contrast stretch. Works on the
    white-balanced photos when that step has run, on the originals otherwise.
@@ -98,9 +100,22 @@ selected offer on the right.
   phone mounts under a different path, or for a local folder of photos. The
   **⟲** button restores the default; picking a directory rescans the Photos
   list.
-- **Photos** — photo series detected on the connected phone (before import),
+- **Photos** — photo series detected in the photo directory (before import),
   e.g. `20260708_0340 | 20x series of photos to import`. Scanned automatically
-  on launch; click **Refresh** to rescan.
+  on launch; click **Refresh** to rescan. The dropdown next to it selects how
+  the series are recognized, both for this list and for the Match step:
+  - **Auto detect photo series** (default) — grouped by the timestamps in the
+    OpenCamera filenames; a gap longer than `SERIES_GAP_THRESHOLD_SECONDS`
+    starts a new series. Made for the turntable workflow.
+  - **All photos in dir as one item** — every photo in the directory belongs
+    to one single offer, whatever its name, camera, or timestamp. Only the
+    first row of `offers.csv` is used. Useful for listing one item
+    photographed from different angles at different times.
+  - **Each subfolder as separate item** — each subfolder of the photo
+    directory holds one offer's photos; subfolders in name order match the
+    CSV rows in row order, and the offer directories take the subfolder
+    names. Useful when the photos were not taken with the turntable and were
+    sorted by hand.
 - **Offer Data** — an editable grid (`Name | Brand | Model | Condition | Damage |
   Quantity | Price | InPost Size`). Loaded from `offers.csv` in the base
   directory if present; otherwise empty and fillable by hand. You can also
@@ -247,11 +262,13 @@ The base directory (chosen at the top of the window, default: the launch
 directory) determines `offers.csv`, `raw_photos/` and `offers/`. These
 environment variables are honored, from the environment or `.env`:
 `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
-`PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `OCR_LANGUAGES` (tesseract
-languages, default `pol+eng`), `OPENAI_API_KEY`, `OPENAI_MODEL`, and
-`OPENAI_BASE_URL` (for an OpenAI-compatible endpoint). A real environment
-variable takes precedence over a value in `.env`, and the **Photo directory**
-field in the window takes precedence over `MTP_GLOB_PATTERN` from either.
+`PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION`
+(`auto` | `single` | `subfolders`, the CLI equivalent of the series
+recognition dropdown), `OCR_LANGUAGES` (tesseract languages, default
+`pol+eng`), `OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_BASE_URL` (for an
+OpenAI-compatible endpoint). A real environment variable takes precedence over
+a value in `.env`; the **Photo directory** field and the series recognition
+dropdown in the window take precedence over both.
 
 ## Data layout
 

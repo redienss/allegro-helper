@@ -6,7 +6,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Imports photos from the phone (mounted via gvfs-mtp) into the local working
@@ -38,9 +40,28 @@ public final class ImportPhotos {
         Path sourceDir = findSourceDir(cfg, reporter);
         Files.createDirectories(cfg.rawPhotosDir);
 
-        List<Path> photos = listJpegs(sourceDir);
+        // Source -> destination, resolved up front so both layouts share one
+        // copy loop. In subfolder mode the structure is the series grouping,
+        // so it must survive the trip into raw_photos.
+        Map<Path, Path> photos = new LinkedHashMap<>();
+        if (cfg.seriesRecognition == SeriesRecognition.Mode.SUBFOLDERS) {
+            for (Path sub : SeriesRecognition.listSubdirs(sourceDir)) {
+                Path destDir = cfg.rawPhotosDir.resolve(sub.getFileName().toString());
+                for (Path src : listJpegs(sub)) {
+                    photos.put(src, destDir.resolve(src.getFileName().toString()));
+                }
+            }
+        } else {
+            for (Path src : listJpegs(sourceDir)) {
+                photos.put(src, cfg.rawPhotosDir.resolve(src.getFileName().toString()));
+            }
+        }
+
         if (photos.isEmpty()) {
-            reporter.log("No photos to import in " + sourceDir + ".");
+            reporter.log("No photos to import in " + sourceDir
+                    + (cfg.seriesRecognition == SeriesRecognition.Mode.SUBFOLDERS
+                            ? " (series recognition is per-subfolder, so only its subfolders were searched)."
+                            : "."));
             reporter.stepProgress(1.0);
             return;
         }
@@ -50,9 +71,11 @@ public final class ImportPhotos {
         int failed = 0;
         int total = photos.size();
         int index = 0;
-        for (Path src : photos) {
-            Path dest = cfg.rawPhotosDir.resolve(src.getFileName().toString());
+        for (Map.Entry<Path, Path> entry : photos.entrySet()) {
+            Path src = entry.getKey();
+            Path dest = entry.getValue();
             try {
+                Files.createDirectories(dest.getParent());
                 if (!Files.exists(dest)) {
                     Files.copy(src, dest, StandardCopyOption.COPY_ATTRIBUTES);
                     if (Files.size(dest) != Files.size(src)) {

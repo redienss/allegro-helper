@@ -26,32 +26,45 @@ public final class GroupAndMatch {
 
     public static void run(Config cfg, Reporter reporter) throws IOException, PipelineException {
         List<Map<String, String>> offers = loadOffers(cfg.csvPath);
-        List<Path> photos = ImportPhotos.listJpegs(cfg.rawPhotosDir);
+        if (cfg.seriesRecognition == SeriesRecognition.Mode.SINGLE_ITEM && offers.size() > 1) {
+            reporter.log("Series recognition is 'all photos as one item': using only the first"
+                    + " of the " + offers.size() + " CSV rows.");
+            offers = offers.subList(0, 1);
+        }
 
-        if (photos.isEmpty()) {
+        Duration gap = Duration.ofSeconds(cfg.seriesGapThresholdSeconds);
+        List<PhotoSeries> clusters =
+                SeriesRecognition.recognize(cfg.seriesRecognition, cfg.rawPhotosDir, gap);
+
+        if (clusters.isEmpty()) {
             reporter.log("No photos in " + cfg.rawPhotosDir + " to match.");
             reporter.stepProgress(1.0);
             return;
         }
 
-        Duration gap = Duration.ofSeconds(cfg.seriesGapThresholdSeconds);
-        List<PhotoSeries> clusters = Clustering.cluster(photos, gap);
-
         if (clusters.size() != offers.size()) {
+            boolean subfolders = cfg.seriesRecognition == SeriesRecognition.Mode.SUBFOLDERS;
             StringBuilder sb = new StringBuilder();
-            sb.append("The number of detected photo series (").append(clusters.size())
+            sb.append(subfolders
+                            ? "The number of photo subfolders ("
+                            : "The number of detected photo series (")
+                    .append(clusters.size())
                     .append(") does not match the number of rows in ").append(cfg.csvPath)
                     .append(" (").append(offers.size()).append("). Nothing was moved.\n")
                     .append("Detected series:\n");
             int i = 1;
             for (PhotoSeries c : clusters) {
-                sb.append("  series ").append(i++).append(": ").append(c.count())
-                        .append(" photos, ").append(c.start()).append(" -> ").append(c.end())
+                sb.append("  series ").append(i++).append(" (").append(c.label()).append("): ")
+                        .append(c.count()).append(" photos, ")
+                        .append(c.start()).append(" -> ").append(c.end())
                         .append('\n');
             }
-            sb.append("Check SERIES_GAP_THRESHOLD_SECONDS (currently ")
-                    .append(cfg.seriesGapThresholdSeconds)
-                    .append("s) or the order/count of rows in the CSV.");
+            sb.append(subfolders
+                    ? "Check the subfolders in " + cfg.rawPhotosDir
+                            + " or the order/count of rows in the CSV."
+                    : "Check SERIES_GAP_THRESHOLD_SECONDS (currently "
+                            + cfg.seriesGapThresholdSeconds
+                            + "s) or the order/count of rows in the CSV.");
             reporter.log(sb.toString());
             throw new PipelineException("Photo series / CSV row count mismatch; nothing was moved.");
         }
@@ -63,7 +76,10 @@ public final class GroupAndMatch {
             Map<String, String> offer = offers.get(index);
             PhotoSeries cluster = clusters.get(index);
 
-            if (cluster.count() != cfg.photosPerOffer) {
+            // Only the turntable workflow implies a fixed shot count per item;
+            // the other modes accept whatever the user gathered.
+            if (cfg.seriesRecognition == SeriesRecognition.Mode.AUTO
+                    && cluster.count() != cfg.photosPerOffer) {
                 reporter.log("Warning: the series for offer '" + offer.getOrDefault("name", "")
                         + "' has " + cluster.count() + " photos (expected " + cfg.photosPerOffer + ").");
             }

@@ -3,6 +3,7 @@ package com.allegrohelper.ui;
 import com.allegrohelper.core.Config;
 import com.allegrohelper.core.PhoneScan;
 import com.allegrohelper.core.PhotoSeries;
+import com.allegrohelper.core.SeriesRecognition;
 import com.allegrohelper.core.Workflow;
 import com.allegrohelper.util.Json;
 
@@ -89,6 +90,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -146,6 +148,11 @@ public final class MainWindow {
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
     private final JTextField photoDirField = new JTextField();
+    /** Item order mirrors {@link SeriesRecognition.Mode#values()}. */
+    private final JComboBox<String> seriesModeCombo = new JComboBox<>(new String[]{
+            "Auto detect photo series",
+            "All photos in dir as one item",
+            "Each subfolder as separate item"});
     private final DefaultListModel<String> photosModel = new DefaultListModel<>();
     private final OfferTableModel offerModel = new OfferTableModel();
     private final JTable offerTable = new JTable(offerModel);
@@ -210,7 +217,9 @@ public final class MainWindow {
         baseDirField.setText(initialBaseDir.toAbsolutePath().normalize().toString());
         // Seed with the configured photo source (MTP_GLOB_PATTERN or the default
         // phone glob) so the user sees — and can change — where photos come from.
-        photoDirField.setText(Config.forBaseDir(initialBaseDir).mtpGlobPattern);
+        Config initial = Config.forBaseDir(initialBaseDir);
+        photoDirField.setText(initial.mtpGlobPattern);
+        seriesModeCombo.setSelectedIndex(initial.seriesRecognition.ordinal());
         build();
         loadOffersFromBaseDir();
     }
@@ -464,7 +473,10 @@ public final class MainWindow {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         refreshPhotosButton.addActionListener(e -> refreshPhotos());
         buttons.add(refreshPhotosButton);
-        buttons.add(new JLabel("Photo series recognized on the connected phone."));
+        // Changing the recognition mode re-scans, so the list always previews
+        // what the match step would do with the current settings.
+        seriesModeCombo.addActionListener(e -> refreshPhotos());
+        buttons.add(seriesModeCombo);
         panel.add(buttons, BorderLayout.SOUTH);
         return panel;
     }
@@ -1726,9 +1738,13 @@ public final class MainWindow {
     }
 
     private Config currentConfig() {
+        Map<String, String> overrides = new HashMap<>();
         String photoDir = photoDirField.getText().strip();
-        Map<String, String> overrides =
-                photoDir.isEmpty() ? Map.of() : Map.of("MTP_GLOB_PATTERN", photoDir);
+        if (!photoDir.isEmpty()) {
+            overrides.put("MTP_GLOB_PATTERN", photoDir);
+        }
+        overrides.put("SERIES_RECOGNITION",
+                SeriesRecognition.Mode.values()[seriesModeCombo.getSelectedIndex()].key);
         return Config.forBaseDir(Path.of(baseDirField.getText().strip()), overrides);
     }
 

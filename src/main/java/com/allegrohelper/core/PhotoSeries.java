@@ -5,9 +5,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * A series of photos taken close together in time - one item on the turntable,
- * i.e. one offer. The {@link #label()} matches the offer directory name
- * ({@code yyyyMMdd_HHmm} of the first photo).
+ * The photos of one offer. With auto-detection that is a series taken close
+ * together in time (one item on the turntable); the other recognition modes
+ * ({@link SeriesRecognition.Mode}) group by directory instead. The
+ * {@link #label()} matches the offer directory name: {@code yyyyMMdd_HHmm} of
+ * the series start, or the subfolder name in per-subfolder mode.
  */
 public record PhotoSeries(String label, LocalDateTime start, LocalDateTime end, List<Path> photos) {
 
