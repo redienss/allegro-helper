@@ -123,8 +123,13 @@ public final class MainWindow {
     private static final int TAB_OCR = 4;            // ocr.txt editor
     private static final int TAB_ALLEGRO_FORM = 5;   // copy helper for the Allegro Lokalnie form
 
-    /** Thumbnail box size (px) for the photo galleries. */
-    private static final int THUMB_SIZE = 140;
+    /**
+     * Thumbnail box size (px) for the Photos (Input)/(Output) galleries, sized
+     * so 4 fit per row on the user's maximized 1920x1080 laptop (right panel ≈
+     * 1000–1080 px inside; a cell is the thumbnail + 16 px, so 4×226 fits with
+     * room to spare and a 5th can't squeeze in even without the scrollbar).
+     */
+    private static final int THUMB_SIZE = 210;
 
     /**
      * Smaller thumbnails on the Allegro form tab, sized so 8 fit per row on the
