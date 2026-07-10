@@ -106,6 +106,12 @@ to each offer's `data.json`, falling back to row position) in four tabs:
 - **Photos (Output)** — thumbnail gallery of the finished photos: the output of
   the latest step that has run — `offers/<id>/cropped/`, else `contrasted/`,
   else `white_balanced/`.
+- **Allegro Lokalnie Form** — everything the
+  [listing form](https://allegrolokalnie.pl/o/oferty/wystaw) needs, laid out
+  for copying: a link to the form, the finished photos in a compact grid
+  (the first 16 — Allegro's limit — preselected; adjust the selection and drag
+  it onto the form's photo dropzone), and the title and generated description
+  with copy-to-clipboard buttons.
 
 ![The Description (Output) tab, showing a generated description](screenshots/002.png)
 

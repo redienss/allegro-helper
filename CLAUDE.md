@@ -89,7 +89,7 @@ Four places, all of which must agree:
 
 `MainWindow` (~1200 lines) is the only class that knows about Swing layout.
 
-- The right panel's four tabs are addressed exclusively through the `TAB_*` constants (`DESCRIPTION_INPUT=0`, `DESCRIPTION_OUTPUT=1`, `PHOTOS_INPUT=2`, `PHOTOS_OUTPUT=3`). Every tab-dependent branch routes through them, which is why reordering tabs is a small change — keep it that way, never compare raw indices.
+- The right panel's five tabs are addressed exclusively through the `TAB_*` constants (`DESCRIPTION_INPUT=0`, `DESCRIPTION_OUTPUT=1`, `PHOTOS_INPUT=2`, `PHOTOS_OUTPUT=3`, `ALLEGRO_FORM=4`). Every tab-dependent branch routes through them, which is why reordering tabs is a small change — keep it that way, never compare raw indices.
 - A `CardLayout` (`CARD_EDITOR` / `CARD_PHOTOS`) swaps the bottom button bar per tab; `updateBottomBar()` must run after the cards are added.
 - `outputPhotoDir(offerDir)` is the single source of truth for "the finished photos" (`cropped/` if present, else `retouched/`). The gallery and the *Open photo dir* button both call it so they cannot drift.
 - A grid row resolves to an offer dir by matching `name` in each `data.json`, falling back to the row's position among the sorted dirs (`resolveOfferDir`).

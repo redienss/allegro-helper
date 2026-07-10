@@ -52,8 +52,10 @@ import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
+import java.awt.Toolkit;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Image;
@@ -63,6 +65,7 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Window;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.dnd.DragSource;
@@ -74,6 +77,7 @@ import java.awt.dnd.DragSourceMotionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import java.net.URI;
 import java.net.URL;
 import java.io.File;
 import java.io.IOException;
@@ -113,9 +117,18 @@ public final class MainWindow {
     private static final int TAB_DESCRIPTION_OUTPUT = 1;  // description.txt editor
     private static final int TAB_PHOTOS_INPUT = 2;   // original photos gallery
     private static final int TAB_PHOTOS_OUTPUT = 3;  // retouched photos gallery
+    private static final int TAB_ALLEGRO_FORM = 4;   // copy helper for the Allegro Lokalnie form
 
     /** Thumbnail box size (px) for the photo galleries. */
     private static final int THUMB_SIZE = 140;
+
+    /** Smaller thumbnails on the Allegro form tab, sized so 8 fit per row. */
+    private static final int FORM_THUMB_SIZE = 74;
+
+    /** Allegro Lokalnie allows at most this many photos per offer. */
+    private static final int ALLEGRO_MAX_PHOTOS = 16;
+
+    private static final String ALLEGRO_FORM_URL = "https://allegrolokalnie.pl/o/oferty/wystaw";
 
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
@@ -149,8 +162,13 @@ public final class MainWindow {
         t.setDaemon(true);
         return t;
     });
-    private final Gallery photosInputGallery = new Gallery();
-    private final Gallery photosOutputGallery = new Gallery();
+    private final Gallery photosInputGallery = new Gallery(THUMB_SIZE, 0);
+    private final Gallery photosOutputGallery = new Gallery(THUMB_SIZE, 0);
+    private final Gallery formGallery = new Gallery(FORM_THUMB_SIZE, ALLEGRO_MAX_PHOTOS);
+
+    // Allegro Lokalnie Form tab: copy sources for the listing form.
+    private final JTextField formTitleField = new JTextField();
+    private final JTextPane formDescriptionArea = new JTextPane();
 
     private JButton deleteButton;
     private JButton clearButton;
@@ -506,7 +524,7 @@ public final class MainWindow {
         panel.add(detailsHeader, BorderLayout.NORTH);
 
         java.awt.Font mono = new java.awt.Font("monospaced", java.awt.Font.PLAIN, 13);
-        for (JTextPane pane : new JTextPane[]{moreDataArea, detailsArea}) {
+        for (JTextPane pane : new JTextPane[]{moreDataArea, detailsArea, formDescriptionArea}) {
             pane.setEditable(true); // JTextPane wraps by default
             pane.setFont(mono);
             pane.setCaretColor(CARET_COLOR);
@@ -516,6 +534,7 @@ public final class MainWindow {
         rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
         rightTabs.addTab("Photos (Input)", photosInputGallery.component());
         rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
+        rightTabs.addTab("Allegro Lokalnie Form", buildAllegroFormTab());
         // Render tab titles as custom labels we fully control, so the selected tab
         // stays clearly highlighted regardless of the (dark) look and feel.
         for (int i = 0; i < rightTabs.getTabCount(); i++) {
@@ -565,6 +584,119 @@ public final class MainWindow {
     }
 
     /**
+     * The Allegro Lokalnie Form tab: everything the listing form at
+     * {@link #ALLEGRO_FORM_URL} needs, laid out for copying — the finished
+     * photos (drag them onto the form's gallery dropzone), the title and the
+     * generated description (copy buttons). Nothing here is persisted; the
+     * editable sources live in the other tabs.
+     */
+    private JComponent buildAllegroFormTab() {
+        JPanel panel = new JPanel(new BorderLayout(6, 6));
+        panel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+
+        JPanel top = new JPanel();
+        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+
+        top.add(sectionLabel("Link to Allegro Lokalnie form"));
+        JLabel link = new JLabel("<html><a href=\"" + ALLEGRO_FORM_URL + "\">"
+                + ALLEGRO_FORM_URL + "</a></html>");
+        link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        link.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                openFormUrl();
+            }
+        });
+        JButton openUrlButton = new JButton("Open URL");
+        openUrlButton.addActionListener(e -> openFormUrl());
+        JPanel linkRow = flowRow();
+        linkRow.add(link);
+        linkRow.add(openUrlButton);
+        top.add(linkRow);
+
+        top.add(sectionLabel("Photos"));
+        JLabel photosHint = new JLabel("Select the photos to use (Allegro allows "
+                + ALLEGRO_MAX_PHOTOS + "; the first " + ALLEGRO_MAX_PHOTOS
+                + " are preselected), then drag the selection onto the form.");
+        photosHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        top.add(photosHint);
+        JScrollPane galleryScroll = formGallery.component();
+        // Three 8-thumbnail rows (a 20-photo series); more photos scroll inside.
+        Dimension gallerySize = new Dimension(10, 3 * (FORM_THUMB_SIZE + 16) + 12);
+        galleryScroll.setPreferredSize(gallerySize);
+        galleryScroll.setMinimumSize(gallerySize);
+        galleryScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, gallerySize.height));
+        galleryScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        top.add(galleryScroll);
+
+        top.add(sectionLabel("Title"));
+        JPanel titleRow = new JPanel(new BorderLayout(6, 0));
+        titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        formTitleField.setCaretColor(CARET_COLOR);
+        titleRow.add(formTitleField, BorderLayout.CENTER);
+        JButton copyTitleButton = new JButton("Copy Title");
+        copyTitleButton.addActionListener(e ->
+                copyToClipboard(formTitleField.getText(), "title"));
+        titleRow.add(copyTitleButton, BorderLayout.EAST);
+        titleRow.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+                titleRow.getPreferredSize().height));
+        top.add(titleRow);
+
+        panel.add(top, BorderLayout.NORTH);
+
+        JPanel descSection = new JPanel(new BorderLayout(6, 2));
+        JPanel descHeader = new JPanel(new BorderLayout());
+        descHeader.add(sectionLabel("Description"), BorderLayout.WEST);
+        JButton copyDescriptionButton = new JButton("Copy Description");
+        copyDescriptionButton.addActionListener(e ->
+                copyToClipboard(formDescriptionArea.getText(), "description"));
+        descHeader.add(copyDescriptionButton, BorderLayout.EAST);
+        descSection.add(descHeader, BorderLayout.NORTH);
+        descSection.add(new JScrollPane(formDescriptionArea), BorderLayout.CENTER);
+        panel.add(descSection, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private static JLabel sectionLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(label.getFont().deriveFont(Font.BOLD));
+        label.setBorder(BorderFactory.createEmptyBorder(8, 0, 4, 0));
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return label;
+    }
+
+    private static JPanel flowRow() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height + 40));
+        return row;
+    }
+
+    private void openFormUrl() {
+        new Thread(() -> {
+            try {
+                if (Desktop.isDesktopSupported()
+                        && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                    Desktop.getDesktop().browse(URI.create(ALLEGRO_FORM_URL));
+                } else {
+                    new ProcessBuilder("xdg-open", ALLEGRO_FORM_URL).start();
+                }
+                SwingUtilities.invokeLater(() -> appendLog("Opened " + ALLEGRO_FORM_URL));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() ->
+                        error("Could not open " + ALLEGRO_FORM_URL + ": " + e.getMessage()));
+            }
+        }, "open-url").start();
+    }
+
+    private void copyToClipboard(String text, String what) {
+        Toolkit.getDefaultToolkit().getSystemClipboard()
+                .setContents(new StringSelection(text), null);
+        appendLog("Copied the " + what + " to the clipboard.");
+    }
+
+    /**
      * Swaps the bottom bar for the active tab: Delete/Clear/Save on the Description
      * tabs, "Open photo dir" on the Photos tabs (disabled when there's no directory).
      */
@@ -584,7 +716,8 @@ public final class MainWindow {
         if (currentOfferDir == null) {
             return null;
         }
-        Path dir = rightTabs.getSelectedIndex() == TAB_PHOTOS_OUTPUT
+        int tab = rightTabs.getSelectedIndex();
+        Path dir = tab == TAB_PHOTOS_OUTPUT || tab == TAB_ALLEGRO_FORM
                 ? outputPhotoDir(currentOfferDir)
                 : currentOfferDir.resolve("photos");
         return Files.isDirectory(dir) ? dir : null;
@@ -722,6 +855,9 @@ public final class MainWindow {
             currentOfferDir = null;
             photosInputGallery.message("Select an offer in the grid.");
             photosOutputGallery.message("Select an offer in the grid.");
+            formGallery.message("Select an offer in the grid.");
+            formTitleField.setText("");
+            formDescriptionArea.setText("");
             updateBottomBar();
             return;
         }
@@ -747,6 +883,8 @@ public final class MainWindow {
                     + " — <i>not matched yet (photos and Description output appear after Match)</i></html>");
             photosInputGallery.message("Not matched yet — run Match.");
             photosOutputGallery.message("Not retouched yet — run White balance or Auto-contrast.");
+            formGallery.message("Not matched yet — run Match.");
+            formDescriptionArea.setText("");
         } else {
             descriptionTarget = offerDir.resolve("description.txt");
             detailsArea.setText(readIfExists(descriptionTarget));
@@ -754,8 +892,13 @@ public final class MainWindow {
                     + " — " + escapeHtml(offerDir.getFileName().toString()) + "</html>");
             photosInputGallery.show(offerDir.resolve("photos"));
             photosOutputGallery.show(outputPhotoDir(offerDir));
+            formGallery.show(outputPhotoDir(offerDir));
+            formDescriptionArea.setText(readIfExists(descriptionTarget));
         }
+        formTitleField.setText(name);
+        formTitleField.setCaretPosition(0);
         detailsArea.setCaretPosition(0);
+        formDescriptionArea.setCaretPosition(0);
         updateBottomBar();
     }
 
@@ -944,12 +1087,17 @@ public final class MainWindow {
         private final AtomicInteger token = new AtomicInteger();
         /** Files behind the thumbnails, kept index-aligned with {@link #model}. */
         private final List<Path> loadedFiles = new ArrayList<>();
+        private final int thumbSize;
+        /** When > 0, the first this-many thumbnails are selected after each load. */
+        private final int preselect;
 
-        Gallery() {
+        Gallery(int thumbSize, int preselect) {
+            this.thumbSize = thumbSize;
+            this.preselect = preselect;
             list.setLayoutOrientation(JList.HORIZONTAL_WRAP);
             list.setVisibleRowCount(0);
-            list.setFixedCellWidth(THUMB_SIZE + 16);
-            list.setFixedCellHeight(THUMB_SIZE + 16);
+            list.setFixedCellWidth(thumbSize + 16);
+            list.setFixedCellHeight(thumbSize + 16);
             scroll.getVerticalScrollBar().setUnitIncrement(16);
             list.setToolTipText("Double-click a photo to open it in the default viewer. "
                     + "Drag photos onto another app (e.g. a browser upload form); Ctrl/Shift-click selects several.");
@@ -1031,7 +1179,7 @@ public final class MainWindow {
                     if (token.get() != my) {
                         return; // a newer selection superseded this load
                     }
-                    ImageIcon icon = Thumbnails.load(file, THUMB_SIZE);
+                    ImageIcon icon = Thumbnails.load(file, thumbSize);
                     SwingUtilities.invokeLater(() -> {
                         if (token.get() != my) {
                             return;
@@ -1043,6 +1191,14 @@ public final class MainWindow {
                         if (icon != null) {
                             model.addElement(icon);
                             loadedFiles.add(file); // stays index-aligned with the model
+                        }
+                    });
+                }
+                if (preselect > 0) {
+                    SwingUtilities.invokeLater(() -> {
+                        if (token.get() == my && !loadedFiles.isEmpty()) {
+                            list.setSelectionInterval(0,
+                                    Math.min(preselect, loadedFiles.size()) - 1);
                         }
                     });
                 }
