@@ -94,7 +94,7 @@ selected offer on the right.
 ### Right: the selected offer
 
 Clicking a row in the grid shows that offer (resolved by matching the row's name
-to each offer's `data.json`, falling back to row position) in four tabs:
+to each offer's `data.json`, falling back to row position) in five tabs:
 
 - **Description (Input)** — editor for `more_data_<N>.txt` next to `offers.csv`
   (N = the row's 1-based number): extra free-form notes folded into the
@@ -119,12 +119,25 @@ Thumbnails load upright (EXIF-corrected) off the UI thread; double-click one to
 open it in the system image viewer. The Photos tabs have an **Open photo dir**
 button in the lower-right.
 
+Photos can be dragged out of any gallery straight into another application —
+most usefully onto the photo dropzone of a browser upload form, which receives
+them exactly as if they came from a file manager. Ctrl/Shift-click selects
+several photos; the drag carries exactly the selected files, and a floating
+stack of the dragged thumbnails (with a count badge) follows the pointer, along
+with a "copy" cursor.
+
 ![The Photos (Input) tab, showing the original photos](screenshots/003.png)
 
 Comparing the two galleries shows what Auto-crop did: the same series, framed to
 the item.
 
 ![The Photos (Output) tab, showing the auto-cropped photos](screenshots/004.png)
+
+The last tab collects everything the Allegro Lokalnie listing form needs in one
+place: open the form with one click, drag the selected photos onto it, and copy
+the title and description into it.
+
+![The Allegro Lokalnie Form tab, with the first 16 photos selected](screenshots/005.png)
 
 The Description tabs have a bottom bar with **Delete** and **Clear** in the
 lower-left corner (away from **Save** in the lower-right, to avoid accidental
