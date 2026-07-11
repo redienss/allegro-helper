@@ -121,7 +121,10 @@ selected offer on the right.
 - **Offer Data** — an editable grid (`Name | Brand | Model | Condition | Damage |
   Quantity | Price | InPost Size`). Loaded from `offers.csv` in the base
   directory if present; otherwise empty and fillable by hand. You can also
-  **Load CSV…** from anywhere, **Save CSV**, and add/remove rows.
+  **Load CSV…** from anywhere, **Save CSV**, **Open CSV in Editor** (opens the
+  file in the system's default `.csv` application, e.g. LibreOffice Calc),
+  **Reload CSV** (re-reads the file from disk after such an external edit), and
+  add/remove rows.
 - **Workflow** — checkboxes `Import`, `Match`, `White balance`, `Auto-contrast`,
   `Auto-crop`, `OCR`, `Describe` (all checked by default), so any subset of the
   pipeline — including either retouching step on its own — can be run.

@@ -511,12 +511,20 @@ public final class MainWindow {
         load.addActionListener(e -> loadCsvViaChooser());
         JButton save = new JButton("Save CSV");
         save.addActionListener(e -> saveCsvToBaseDir());
+        JButton openInEditor = new JButton("Open CSV in Editor");
+        openInEditor.setToolTipText("Open the offers CSV in the system's default .csv application");
+        openInEditor.addActionListener(e -> openCsvInEditor());
+        JButton reload = new JButton("Reload CSV");
+        reload.setToolTipText("Re-read the offers CSV from disk, e.g. after editing it in an external program");
+        reload.addActionListener(e -> reloadCsvFromDisk());
         JButton addRow = new JButton("Add Row");
         addRow.addActionListener(e -> offerModel.addEmptyRow());
         JButton removeRow = new JButton("Remove Row");
         removeRow.addActionListener(e -> removeSelectedRow());
         buttons.add(load);
         buttons.add(save);
+        buttons.add(openInEditor);
+        buttons.add(reload);
         buttons.add(addRow);
         buttons.add(removeRow);
         panel.add(buttons, BorderLayout.SOUTH);
@@ -1601,6 +1609,32 @@ public final class MainWindow {
             appendLog("Saved " + n + " offers to " + cfg.csvPath);
         } catch (IOException e) {
             error("Failed to save CSV: " + e.getMessage());
+        }
+    }
+
+    private void openCsvInEditor() {
+        Path csv = currentConfig().csvPath;
+        if (!Files.exists(csv)) {
+            error("CSV file does not exist yet: " + csv + " — Save CSV first.");
+            return;
+        }
+        openInSystem(csv);
+    }
+
+    /** Re-reads the offers CSV from disk, discarding unsaved edits in the grid. */
+    private void reloadCsvFromDisk() {
+        stopCellEditing();
+        Path csv = currentConfig().csvPath;
+        if (!Files.exists(csv)) {
+            error("CSV file does not exist yet: " + csv + " — Save CSV first.");
+            return;
+        }
+        try {
+            offerModel.loadFromCsv(csv);
+            appendLog("Reloaded offers from " + csv);
+            loadSelectedOffer();
+        } catch (IOException e) {
+            error("Failed to reload CSV: " + e.getMessage());
         }
     }
 
