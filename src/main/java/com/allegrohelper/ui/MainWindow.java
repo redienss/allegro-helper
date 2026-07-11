@@ -164,7 +164,11 @@ public final class MainWindow {
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
     private final JTextField photoDirField = new JTextField();
-    /** Item order mirrors {@link SeriesRecognition.Mode#values()}; the short prefix names the mode. */
+    /**
+     * Item order mirrors {@link SeriesRecognition.Mode#values()}; the short prefix
+     * names the mode. Items stay these English keys — a renderer translates at
+     * paint time, so a language switch only needs a repaint.
+     */
     private final JComboBox<String> seriesModeCombo = new JComboBox<>(new String[]{
             "AUTO - Auto detect photo series",
             "SINGLE - All photos in the directory as one item",
@@ -309,6 +313,8 @@ public final class MainWindow {
 
         setWindowIcon();
 
+        // Translate the built (English) texts before measuring; a no-op under English.
+        I18n.retranslate(frame);
         // Enlarge and unify fonts across the whole window before measuring, so the
         // fixed-height sections are sized for the final (larger) text.
         standardizeFonts(frame.getRootPane());
@@ -329,7 +335,7 @@ public final class MainWindow {
         JMenuBar bar = new JMenuBar();
         JMenu file = new JMenu("File");
         JMenuItem settings = new JMenuItem("Settings…");
-        settings.addActionListener(e -> new SettingsDialog(frame, this::onThemeChanged).setVisible(true));
+        settings.addActionListener(e -> new SettingsDialog(frame, this::onSettingsApplied).setVisible(true));
         JMenuItem exit = new JMenuItem("Exit");
         // Close via the window event so it takes the same path as the title-bar X.
         exit.addActionListener(e -> frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING)));
@@ -341,13 +347,15 @@ public final class MainWindow {
     }
 
     /**
-     * Re-applies the styling {@link #build()} baked in for the previous theme,
-     * after the Settings dialog changed the look and feel at runtime: caret
+     * Re-applies the styling {@link #build()} baked in for the previous theme
+     * or language, after the Settings dialog changed either at runtime: caret
      * colors, the grid's cell editors (updateComponentTreeUI does not reach
      * editors that aren't in the component tree), fonts on the recreated
-     * editors, and the tab highlight.
+     * editors, and the tab highlight. The dialog already retranslated the
+     * component tree; texts set at runtime (galleries, the photos list, the
+     * details header) catch up on their next refresh.
      */
-    private void onThemeChanged() {
+    private void onSettingsApplied() {
         recolorCarets(frame.getRootPane());
         styleGridEditors();
         standardizeFonts(frame.getRootPane());
@@ -547,6 +555,14 @@ public final class MainWindow {
         // Changing the recognition mode re-scans, so the list always previews
         // what the match step would do with the current settings.
         seriesModeCombo.addActionListener(e -> refreshPhotos());
+        seriesModeCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Object shown = value == null ? null : I18n.t(value.toString());
+                return super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+            }
+        });
         buttons.add(seriesModeCombo);
         panel.add(buttons, BorderLayout.SOUTH);
         return panel;
@@ -854,7 +870,7 @@ public final class MainWindow {
                 SwingUtilities.invokeLater(() -> appendLog("Opened " + ALLEGRO_FORM_URL));
             } catch (Exception e) {
                 SwingUtilities.invokeLater(() ->
-                        error("Could not open " + ALLEGRO_FORM_URL + ": " + e.getMessage()));
+                        error(I18n.t("Could not open {0}: {1}", ALLEGRO_FORM_URL, e.getMessage())));
             }
         }, "open-url").start();
     }
@@ -870,7 +886,7 @@ public final class MainWindow {
         String title = formTitleField.getText().strip();
         String description = formDescriptionArea.getText();
         if (photos.isEmpty() && title.isBlank() && description.isBlank()) {
-            error("Nothing to copy: select an offer with photos, a title or a description first.");
+            error(I18n.t("Nothing to copy: select an offer with photos, a title or a description first."));
             return;
         }
         Config cfg = currentConfig();
@@ -892,7 +908,7 @@ public final class MainWindow {
                         });
             } catch (Exception e) {
                 SwingUtilities.invokeLater(() ->
-                        error("Copy to Allegro failed: " + e.getMessage()));
+                        error(I18n.t("Copy to Allegro failed: {0}", e.getMessage())));
             } finally {
                 SwingUtilities.invokeLater(() -> button.setEnabled(true));
             }
@@ -1073,7 +1089,7 @@ public final class MainWindow {
     private void loadSelectedOffer() {
         int viewRow = offerTable.getSelectedRow();
         if (viewRow < 0) {
-            detailsHeader.setText("Select an offer in the grid.");
+            detailsHeader.setText(I18n.t("Select an offer in the grid."));
             moreDataArea.setText("");
             detailsArea.setText("");
             ocrArea.setText("");
@@ -1081,9 +1097,9 @@ public final class MainWindow {
             descriptionTarget = null;
             ocrTarget = null;
             currentOfferDir = null;
-            photosInputGallery.message("Select an offer in the grid.");
-            photosOutputGallery.message("Select an offer in the grid.");
-            formGallery.message("Select an offer in the grid.");
+            photosInputGallery.message(I18n.t("Select an offer in the grid."));
+            photosOutputGallery.message(I18n.t("Select an offer in the grid."));
+            formGallery.message(I18n.t("Select an offer in the grid."));
             formTitleField.setText("");
             formDescriptionArea.setText("");
             updateBottomBar();
@@ -1109,19 +1125,20 @@ public final class MainWindow {
             ocrTarget = null;
             detailsArea.setText("");
             ocrArea.setText("");
-            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
-                    + " — <i>not matched yet (photos and Description output appear after Match)</i></html>");
-            photosInputGallery.message("Not matched yet — run Match.");
-            photosOutputGallery.message("Not retouched yet — run White balance or Auto-contrast.");
-            formGallery.message("Not matched yet — run Match.");
+            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>" + I18n.t(
+                    "row {0} — <i>not matched yet (photos and Description output appear after Match)</i>",
+                    rowNumber) + "</html>");
+            photosInputGallery.message(I18n.t("Not matched yet — run Match."));
+            photosOutputGallery.message(I18n.t("Not retouched yet — run White balance or Auto-contrast."));
+            formGallery.message(I18n.t("Not matched yet — run Match."));
             formDescriptionArea.setText("");
         } else {
             descriptionTarget = offerDir.resolve("description.txt");
             detailsArea.setText(readIfExists(descriptionTarget));
             ocrTarget = offerDir.resolve("ocr.txt");
             ocrArea.setText(readIfExists(ocrTarget));
-            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>row " + rowNumber
-                    + " — " + escapeHtml(offerDir.getFileName().toString()) + "</html>");
+            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>" + I18n.t("row {0} — {1}",
+                    rowNumber, escapeHtml(offerDir.getFileName().toString())) + "</html>");
             photosInputGallery.show(offerDir.resolve("photos"));
             photosOutputGallery.show(outputPhotoDir(offerDir));
             formGallery.show(outputPhotoDir(offerDir));
@@ -1141,13 +1158,13 @@ public final class MainWindow {
             return;
         }
         if (offerTable.getSelectedRow() < 0 || moreDataTarget == null) {
-            error("Select an offer in the grid first.");
+            error(I18n.t("Select an offer in the grid first."));
             return;
         }
         Path target = activeEditorTarget();
         if (target == null) {
             // Only reachable for the offer-directory tabs before the offer is matched.
-            error("No offer directory yet — run Match first.");
+            error(I18n.t("No offer directory yet — run Match first."));
             return;
         }
         String content = activeEditorPane().getText();
@@ -1159,7 +1176,7 @@ public final class MainWindow {
             Files.writeString(target, content, StandardCharsets.UTF_8);
             appendLog("Saved " + target);
         } catch (IOException e) {
-            error("Failed to save " + target + ": " + e.getMessage());
+            error(I18n.t("Failed to save {0}: {1}", target, e.getMessage()));
         }
     }
 
@@ -1169,22 +1186,22 @@ public final class MainWindow {
             return;
         }
         if (offerTable.getSelectedRow() < 0 || moreDataTarget == null) {
-            error("Select an offer in the grid first.");
+            error(I18n.t("Select an offer in the grid first."));
             return;
         }
         Path target = activeEditorTarget();
         if (target == null) {
-            error("No offer directory yet — run Match first.");
+            error(I18n.t("No offer directory yet — run Match first."));
             return;
         }
         if (!Files.exists(target)) {
-            JOptionPane.showMessageDialog(frame, "There is no file to delete yet:\n" + target,
+            JOptionPane.showMessageDialog(frame, I18n.t("There is no file to delete yet:\n{0}", target),
                     "Allegro Helper", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         int choice = JOptionPane.showConfirmDialog(frame,
-                "Delete this file? This cannot be undone.\n\n" + target,
-                "Delete file", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                I18n.t("Delete this file? This cannot be undone.\n\n{0}", target),
+                I18n.t("Delete file"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (choice != JOptionPane.YES_OPTION) {
             return;
         }
@@ -1193,7 +1210,7 @@ public final class MainWindow {
             activeEditorPane().setText("");
             appendLog("Deleted " + target);
         } catch (IOException e) {
-            error("Failed to delete " + target + ": " + e.getMessage());
+            error(I18n.t("Failed to delete {0}: {1}", target, e.getMessage()));
         }
     }
 
@@ -1202,8 +1219,8 @@ public final class MainWindow {
         Path dir = activePhotoDir();
         if (dir == null) {
             error(currentOfferDir == null
-                    ? "No offer directory yet — run Match first."
-                    : "That photo directory does not exist yet.");
+                    ? I18n.t("No offer directory yet — run Match first.")
+                    : I18n.t("That photo directory does not exist yet."));
             return;
         }
         openInSystem(dir);
@@ -1225,7 +1242,7 @@ public final class MainWindow {
                 SwingUtilities.invokeLater(() -> appendLog("Opened " + target));
             } catch (Exception e) {
                 SwingUtilities.invokeLater(() ->
-                        error("Could not open " + target + ": " + e.getMessage()));
+                        error(I18n.t("Could not open {0}: {1}", target, e.getMessage())));
             }
         }, "open-in-system").start();
     }
@@ -1397,7 +1414,7 @@ public final class MainWindow {
             model.clear();
             loadedFiles.clear();
             if (dir == null || !Files.isDirectory(dir)) {
-                model.addElement("Not available yet.");
+                model.addElement(I18n.t("Not available yet."));
                 return;
             }
             List<Path> files;
@@ -1406,14 +1423,14 @@ public final class MainWindow {
                         .sorted(Comparator.comparing(p -> p.getFileName().toString()))
                         .toList();
             } catch (IOException e) {
-                model.addElement("Could not read " + dir + ": " + e.getMessage());
+                model.addElement(I18n.t("Could not read {0}: {1}", dir, e.getMessage()));
                 return;
             }
             if (files.isEmpty()) {
-                model.addElement("No photos.");
+                model.addElement(I18n.t("No photos."));
                 return;
             }
-            model.addElement("Loading " + files.size() + " thumbnails…");
+            model.addElement(I18n.t("Loading {0} thumbnails…", files.size()));
             galleryLoader.submit(() -> {
                 boolean[] cleared = {false};
                 for (Path file : files) {
@@ -1673,7 +1690,7 @@ public final class MainWindow {
                 appendLog("Loaded offers from " + chooser.getSelectedFile());
                 loadSelectedOffer();
             } catch (IOException e) {
-                error("Failed to load CSV: " + e.getMessage());
+                error(I18n.t("Failed to load CSV: {0}", e.getMessage()));
             }
         }
     }
@@ -1685,14 +1702,14 @@ public final class MainWindow {
             int n = offerModel.saveToCsv(cfg.csvPath);
             appendLog("Saved " + n + " offers to " + cfg.csvPath);
         } catch (IOException e) {
-            error("Failed to save CSV: " + e.getMessage());
+            error(I18n.t("Failed to save CSV: {0}", e.getMessage()));
         }
     }
 
     private void openCsvInEditor() {
         Path csv = currentConfig().csvPath;
         if (!Files.exists(csv)) {
-            error("CSV file does not exist yet: " + csv + " — Save CSV first.");
+            error(I18n.t("CSV file does not exist yet: {0} — Save CSV first.", csv));
             return;
         }
         openInSystem(csv);
@@ -1703,7 +1720,7 @@ public final class MainWindow {
         stopCellEditing();
         Path csv = currentConfig().csvPath;
         if (!Files.exists(csv)) {
-            error("CSV file does not exist yet: " + csv + " — Save CSV first.");
+            error(I18n.t("CSV file does not exist yet: {0} — Save CSV first.", csv));
             return;
         }
         try {
@@ -1711,7 +1728,7 @@ public final class MainWindow {
             appendLog("Reloaded offers from " + csv);
             loadSelectedOffer();
         } catch (IOException e) {
-            error("Failed to reload CSV: " + e.getMessage());
+            error(I18n.t("Failed to reload CSV: {0}", e.getMessage()));
         }
     }
 
@@ -1726,18 +1743,18 @@ public final class MainWindow {
         Config cfg = currentConfig();
         refreshPhotosButton.setEnabled(false);
         photosModel.clear();
-        photosModel.addElement("Scanning phone…");
+        photosModel.addElement(I18n.t("Scanning phone…"));
         new Thread(() -> {
             String message;
             List<String> entries = new ArrayList<>();
             try {
                 PhoneScan.Result result = PhoneScan.scan(cfg);
                 if (result.series().isEmpty()) {
-                    message = "No photo series found in " + result.sourceDir();
+                    message = I18n.t("No photo series found in {0}", result.sourceDir());
                 } else {
                     message = null;
                     for (PhotoSeries s : result.series()) {
-                        entries.add(s.label() + " | " + s.count() + "x series of photos to import");
+                        entries.add(I18n.t("{0} | {1}x series of photos to import", s.label(), s.count()));
                     }
                 }
             } catch (IOException e) {
@@ -1777,17 +1794,17 @@ public final class MainWindow {
         Path csv = cfg.csvPath.toAbsolutePath().normalize();
         Path raw = cfg.rawPhotosDir.toAbsolutePath().normalize();
         if (csv.startsWith(offersDir) || raw.startsWith(offersDir)) {
-            error("Refusing to delete " + offersDir
-                    + ": it contains offers.csv or raw_photos (check OFFERS_DIR).");
+            error(I18n.t("Refusing to delete {0}: it contains offers.csv or raw_photos (check OFFERS_DIR).",
+                    offersDir));
             return;
         }
 
-        String title = restart ? "Clean & Restart" : "Delete Output Files";
+        String title = I18n.t(restart ? "Clean & Restart" : "Delete Output Files");
         int choice = JOptionPane.showConfirmDialog(frame,
-                "This deletes all generated offer directories under:\n" + offersDir
+                I18n.t("This deletes all generated offer directories under:\n{0}"
                         + "\n\nSources are kept: photos on the phone, offers.csv, more_data_<N>.txt."
-                        + "\nRe-importing the photos requires the phone to be connected."
-                        + (restart ? "\n\nDelete and start the selected workflow steps?" : "\n\nDelete?"),
+                        + "\nRe-importing the photos requires the phone to be connected.", offersDir)
+                        + I18n.t(restart ? "\n\nDelete and start the selected workflow steps?" : "\n\nDelete?"),
                 title, JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (choice != JOptionPane.YES_OPTION) {
             return;
@@ -1803,7 +1820,7 @@ public final class MainWindow {
                     }
                 }
             } catch (IOException e) {
-                error("Failed to delete output files: " + e.getMessage());
+                error(I18n.t("Failed to delete output files: {0}", e.getMessage()));
                 return; // don't restart on a half-finished clean
             }
             appendLog("Deleted " + deleted + " entries under " + offersDir);
@@ -1833,7 +1850,7 @@ public final class MainWindow {
 
         List<Workflow.Step> steps = selectedSteps();
         if (steps.isEmpty()) {
-            error("Select at least one workflow step.");
+            error(I18n.t("Select at least one workflow step."));
             return;
         }
 
@@ -1845,7 +1862,7 @@ public final class MainWindow {
                 int n = offerModel.saveToCsv(cfg.csvPath);
                 appendLog("Saved " + n + " offers to " + cfg.csvPath);
             } catch (IOException e) {
-                error("Failed to save offers.csv before matching: " + e.getMessage());
+                error(I18n.t("Failed to save offers.csv before matching: {0}", e.getMessage()));
                 return;
             }
         }
@@ -1920,7 +1937,7 @@ public final class MainWindow {
     private void setRunning(boolean value) {
         running = value;
         startButton.setEnabled(!value);
-        startButton.setText(value ? "Running…" : "Start");
+        startButton.setText(value ? I18n.t("Running…") : "Start"); // "Start" reads the same in Polish
         deleteOutputsButton.setEnabled(!value);
         cleanRestartButton.setEnabled(!value);
     }

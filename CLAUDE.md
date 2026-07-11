@@ -110,5 +110,6 @@ Four places, all of which must agree:
 ## Conventions
 
 - Code, comments, docs, and log output are **English**. The OpenAI system prompt and the generated offer text stay **Polish** — Allegro Lokalnie is a Polish marketplace. Don't "fix" the Polish strings in `GenerateDescription`.
+- UI strings are **English literals in the code**; Polish (File > Settings > Language) comes from `ui/I18n` — `I18n.t(...)` at sites that compose text at runtime, and a `retranslate` tree-walk that swaps build-time texts on live components by exact match. New user-visible UI text therefore needs an entry in `I18n`'s map (Polish values must stay unique — the reverse map normalizes displayed texts back to English before re-translating). The pipeline log is deliberately untranslated.
 - Commit **directly to `main`**; no feature branches. Commit subjects are imperative and sentence-cased ("Add an Auto-crop workflow step").
 - Class javadocs here carry the *why* — the non-obvious rationale (why Java2D can't do color emoji, why brightness thresholding fails on a white item). When you change such a mechanism, update its javadoc; it's the design doc.

@@ -1,6 +1,7 @@
 package com.allegrohelper;
 
 import com.allegrohelper.cli.Cli;
+import com.allegrohelper.ui.Language;
 import com.allegrohelper.ui.MainWindow;
 import com.allegrohelper.ui.Theme;
 
@@ -41,9 +42,10 @@ public final class App {
 
         Path baseDir = args.length > 0 ? Path.of(args[0]) : Path.of(System.getProperty("user.dir"));
         SwingUtilities.invokeLater(() -> {
-            // Saved theme (File > Settings > Appearance), defaulting to the
-            // system look and feel; best-effort inside apply.
+            // Saved theme and language (File > Settings), defaulting to the
+            // system look and feel and English; best-effort inside apply.
             Theme.apply(Theme.load());
+            Language.apply(Language.load());
             new MainWindow(baseDir).show();
         });
     }

@@ -100,8 +100,12 @@ selected offer on the right.
   left, the selected page on the right). Its **Appearance** page picks the
   theme: **System** (the platform look and feel, following the desktop theme —
   the default), **Dark**, or **Light** (both built on the JDK's own Nimbus
-  look and feel, keeping the app dependency-free). Applying takes effect
-  immediately, no restart, and the choice is remembered across launches.
+  look and feel, keeping the app dependency-free). Its **Language** page picks
+  the UI language: **English** (the default) or **Polish** — the whole window
+  is translated on the spot (texts drawn at runtime, like an already-loaded
+  photo list, catch up on their next refresh; the pipeline log stays English).
+  Applying either setting takes effect immediately, no restart, and the
+  choices are remembered across launches.
 - **File > Exit** — closes the app, same as the window's close button.
 
 ### Left: controls

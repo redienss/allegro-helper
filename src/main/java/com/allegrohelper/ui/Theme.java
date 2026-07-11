@@ -33,7 +33,7 @@ public enum Theme {
 
     @Override
     public String toString() {
-        return label; // rendered directly by the Settings combo box
+        return I18n.t(label); // rendered directly by the Settings combo box, in the active language
     }
 
     private static final String PREF_KEY = "theme";
