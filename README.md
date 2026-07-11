@@ -106,14 +106,15 @@ selected offer on the right.
   e.g. `20260708_0340 | 20x series of photos to import`. Scanned automatically
   on launch; click **Refresh** to rescan. The dropdown next to it selects how
   the series are recognized, both for this list and for the Match step:
-  - **Auto detect photo series** (default) — grouped by the timestamps in the
-    OpenCamera filenames; a gap longer than `SERIES_GAP_THRESHOLD_SECONDS`
-    starts a new series. Made for the turntable workflow.
-  - **All photos in dir as one item** — every photo in the directory belongs
-    to one single offer, whatever its name, camera, or timestamp. Only the
-    first row of `offers.csv` is used. Useful for listing one item
-    photographed from different angles at different times.
-  - **Each subfolder as separate item** — each subfolder of the photo
+  - **AUTO - Auto detect photo series** (default) — grouped by the timestamps
+    in the OpenCamera filenames; a gap longer than
+    `SERIES_GAP_THRESHOLD_SECONDS` starts a new series. Made for the
+    turntable workflow.
+  - **SINGLE - All photos in the directory as one item** — every photo in the
+    directory belongs to one single offer, whatever its name, camera, or
+    timestamp. Only the first row of `offers.csv` is used. Useful for listing
+    one item photographed from different angles at different times.
+  - **SUBFOLDERS - Each subfolder as a separate item** — each subfolder of the photo
     directory holds one offer's photos; subfolders in name order match the
     CSV rows in row order, and the offer directories take the subfolder
     names. Useful when the photos were not taken with the turntable and were

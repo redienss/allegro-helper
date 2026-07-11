@@ -150,11 +150,11 @@ public final class MainWindow {
     private final JFrame frame = new JFrame("Allegro Helper");
     private final JTextField baseDirField = new JTextField();
     private final JTextField photoDirField = new JTextField();
-    /** Item order mirrors {@link SeriesRecognition.Mode#values()}. */
+    /** Item order mirrors {@link SeriesRecognition.Mode#values()}; the short prefix names the mode. */
     private final JComboBox<String> seriesModeCombo = new JComboBox<>(new String[]{
-            "Auto detect photo series",
-            "All photos in dir as one item",
-            "Each subfolder as separate item"});
+            "AUTO - Auto detect photo series",
+            "SINGLE - All photos in the directory as one item",
+            "SUBFOLDERS - Each subfolder as a separate item"});
     private final DefaultListModel<String> photosModel = new DefaultListModel<>();
     private final OfferTableModel offerModel = new OfferTableModel();
     private final JTable offerTable = new JTable(offerModel);
