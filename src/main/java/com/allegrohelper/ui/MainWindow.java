@@ -21,6 +21,9 @@ import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
@@ -37,6 +40,7 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.AbstractDocument;
 import javax.swing.text.BadLocationException;
+import javax.swing.text.JTextComponent;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -82,6 +86,7 @@ import java.awt.dnd.DragSourceEvent;
 import java.awt.dnd.DragSourceMotionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.net.URI;
 import java.net.URL;
@@ -105,13 +110,22 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class MainWindow {
 
-    /** Text caret color — white so it's visible against the dark theme. */
-    private static final Color CARET_COLOR = Color.WHITE;
+    /** Accent color (orange, from the logo) for the active tab underline and count badges. */
+    private static final Color TAB_ACCENT = new Color(0xF2, 0x6B, 0x1F);
+
+    /** Text caret color — methods, not constants, because they follow the active {@link Theme}. */
+    private static Color caretColor() {
+        return Theme.isDark() ? Color.WHITE : Color.BLACK;
+    }
 
     /** Tab title colors: the selected tab is bright with an accent underline, others are dimmed. */
-    private static final Color TAB_SELECTED_FG = Color.WHITE;
-    private static final Color TAB_UNSELECTED_FG = new Color(0x9E, 0x9E, 0x9E);
-    private static final Color TAB_ACCENT = new Color(0xF2, 0x6B, 0x1F); // orange, from the logo
+    private static Color tabSelectedFg() {
+        return Theme.isDark() ? Color.WHITE : new Color(0x1A, 0x1A, 0x1A);
+    }
+
+    private static Color tabUnselectedFg() {
+        return Theme.isDark() ? new Color(0x9E, 0x9E, 0x9E) : new Color(0x6E, 0x6E, 0x6E);
+    }
 
     /** One font size for the whole window, so all text reads at a similar (larger) size. */
     private static final int UI_FONT_SIZE = 16;
@@ -204,6 +218,9 @@ public final class MainWindow {
     private static final String CARD_EDITOR = "editor";
     private static final String CARD_PHOTOS = "photos";
 
+    /** The height-capped left-panel sections, kept so a theme change can re-measure them. */
+    private final List<JPanel> cappedSections = new ArrayList<>();
+
     /** Offer directory of the selected row, or null when none / not matched yet. */
     private Path currentOfferDir;
 
@@ -247,6 +264,7 @@ public final class MainWindow {
 
     private void build() {
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        frame.setJMenuBar(buildMenuBar());
         frame.setPreferredSize(new Dimension(1600, 920));
         frame.setLayout(new BorderLayout(8, 8));
 
@@ -296,13 +314,64 @@ public final class MainWindow {
         standardizeFonts(frame.getRootPane());
         updateTabStyles(); // re-assert tab bold/dim after fonts are standardized
         offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
-        for (JPanel section : List.of(dirsPanel, photosPanel, topArea, offerPanel, workflowPanel, progressPanel)) {
+        cappedSections.addAll(List.of(dirsPanel, photosPanel, topArea, offerPanel, workflowPanel, progressPanel));
+        for (JPanel section : cappedSections) {
             capHeight(section);
         }
 
         frame.pack();
         frame.setLocationRelativeTo(null);
         SwingUtilities.invokeLater(() -> split.setDividerLocation(0.5));
+    }
+
+    /** The top menu bar: File > Settings… / Exit. */
+    private JMenuBar buildMenuBar() {
+        JMenuBar bar = new JMenuBar();
+        JMenu file = new JMenu("File");
+        JMenuItem settings = new JMenuItem("Settings…");
+        settings.addActionListener(e -> new SettingsDialog(frame, this::onThemeChanged).setVisible(true));
+        JMenuItem exit = new JMenuItem("Exit");
+        // Close via the window event so it takes the same path as the title-bar X.
+        exit.addActionListener(e -> frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING)));
+        file.add(settings);
+        file.addSeparator();
+        file.add(exit);
+        bar.add(file);
+        return bar;
+    }
+
+    /**
+     * Re-applies the styling {@link #build()} baked in for the previous theme,
+     * after the Settings dialog changed the look and feel at runtime: caret
+     * colors, the grid's cell editors (updateComponentTreeUI does not reach
+     * editors that aren't in the component tree), fonts on the recreated
+     * editors, and the tab highlight.
+     */
+    private void onThemeChanged() {
+        recolorCarets(frame.getRootPane());
+        styleGridEditors();
+        standardizeFonts(frame.getRootPane());
+        updateTabStyles();
+        // Re-measure the height-capped sections: component heights differ
+        // between look and feels, and stale caps clip rows.
+        offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
+        for (JPanel section : cappedSections) {
+            capHeight(section);
+        }
+        frame.revalidate();
+        frame.repaint();
+    }
+
+    /** Re-applies the theme-dependent caret color to every text component under {@code c}. */
+    private static void recolorCarets(Component c) {
+        if (c instanceof JTextComponent text) {
+            text.setCaretColor(caretColor());
+        }
+        if (c instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                recolorCarets(child);
+            }
+        }
     }
 
     /** Caps a section's height at its preferred size so it fills width but not extra vertical space. */
@@ -313,7 +382,7 @@ public final class MainWindow {
     }
 
     /** Sets every component (and titled-border header) in the tree to {@link #UI_FONT_SIZE}, keeping family/style. */
-    private void standardizeFonts(Component c) {
+    static void standardizeFonts(Component c) {
         Font font = c.getFont();
         if (font != null) {
             c.setFont(font.deriveFont((float) UI_FONT_SIZE));
@@ -342,7 +411,7 @@ public final class MainWindow {
         }
     }
 
-    private void resizeTitledBorderFont(Border border) {
+    private static void resizeTitledBorderFont(Border border) {
         if (border instanceof TitledBorder tb) {
             Font f = tb.getTitleFont();
             if (f == null) {
@@ -358,7 +427,7 @@ public final class MainWindow {
         }
     }
 
-    private void resizeCellEditorFont(javax.swing.table.TableCellEditor editor) {
+    private static void resizeCellEditorFont(javax.swing.table.TableCellEditor editor) {
         if (editor instanceof javax.swing.DefaultCellEditor dce) {
             Component comp = dce.getComponent();
             if (comp != null && comp.getFont() != null) {
@@ -435,7 +504,7 @@ public final class MainWindow {
         // A row without a reset button lets the field span its column too,
         // keeping the Browse buttons of all rows aligned.
         c.gridwidth = reset == null ? 2 : 1;
-        field.setCaretColor(CARET_COLOR);
+        field.setCaretColor(caretColor());
         panel.add(field, c);
         c.weightx = 0;
         c.gridwidth = 1;
@@ -496,12 +565,7 @@ public final class MainWindow {
                 loadSelectedOffer();
             }
         });
-        configureInpostColumn();
-        // White caret for the default in-cell text editor.
-        if (offerTable.getDefaultEditor(Object.class) instanceof javax.swing.DefaultCellEditor editor
-                && editor.getComponent() instanceof JTextField field) {
-            field.setCaretColor(CARET_COLOR);
-        }
+        styleGridEditors();
         JScrollPane scroll = new JScrollPane(offerTable);
         scroll.setPreferredSize(new Dimension(880, 150));
         panel.add(scroll, BorderLayout.CENTER);
@@ -531,6 +595,19 @@ public final class MainWindow {
         return panel;
     }
 
+    /**
+     * (Re)installs the grid's cell editors with theme-matching carets. Called
+     * from build and again on a theme change, because the editors live outside
+     * the component tree until a cell is edited.
+     */
+    private void styleGridEditors() {
+        configureInpostColumn();
+        if (offerTable.getDefaultEditor(Object.class) instanceof javax.swing.DefaultCellEditor editor
+                && editor.getComponent() instanceof JTextField field) {
+            field.setCaretColor(caretColor());
+        }
+    }
+
     private void configureInpostColumn() {
         int col = indexOfKey("inpost_size");
         if (col < 0) {
@@ -540,7 +617,7 @@ public final class MainWindow {
         JComboBox<String> combo = new JComboBox<>(new DefaultComboBoxModel<>(new String[]{"A", "B", "C"}));
         combo.setEditable(true);
         if (combo.getEditor().getEditorComponent() instanceof JTextField field) {
-            field.setCaretColor(CARET_COLOR);
+            field.setCaretColor(caretColor());
         }
         column.setCellEditor(new javax.swing.DefaultCellEditor(combo));
     }
@@ -593,7 +670,7 @@ public final class MainWindow {
         logArea.setLineWrap(true);
         logArea.setWrapStyleWord(true);
         logArea.setFont(new java.awt.Font("monospaced", java.awt.Font.PLAIN, 12));
-        logArea.setCaretColor(CARET_COLOR);
+        logArea.setCaretColor(caretColor());
         panel.add(new JScrollPane(logArea), BorderLayout.CENTER);
         return panel;
     }
@@ -612,7 +689,7 @@ public final class MainWindow {
         for (JTextPane pane : new JTextPane[]{moreDataArea, detailsArea, ocrArea, formDescriptionArea}) {
             pane.setEditable(true); // JTextPane wraps by default
             pane.setFont(mono);
-            pane.setCaretColor(CARET_COLOR);
+            pane.setCaretColor(caretColor());
             installEmojiRendering(pane);
         }
         rightTabs.addTab("Description (Input)", new JScrollPane(moreDataArea));
@@ -724,7 +801,7 @@ public final class MainWindow {
         top.add(sectionLabel("Title"));
         JPanel titleRow = new JPanel(new BorderLayout(6, 0));
         titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        formTitleField.setCaretColor(CARET_COLOR);
+        formTitleField.setCaretColor(caretColor());
         titleRow.add(formTitleField, BorderLayout.CENTER);
         JButton copyTitleButton = new JButton("Copy Title");
         copyTitleButton.addActionListener(e ->
@@ -970,7 +1047,7 @@ public final class MainWindow {
             }
             boolean active = i == selected;
             label.setFont(label.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN));
-            label.setForeground(active ? TAB_SELECTED_FG : TAB_UNSELECTED_FG);
+            label.setForeground(active ? tabSelectedFg() : tabUnselectedFg());
             // Accent underline on the active tab; matching padding keeps heights equal.
             label.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createMatteBorder(0, 0, active ? 2 : 0, 0, TAB_ACCENT),

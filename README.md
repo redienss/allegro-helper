@@ -94,6 +94,16 @@ selected offer on the right.
 
 ![The main window, on the Description (Input) tab](screenshots/001.png)
 
+### Menu bar
+
+- **File > Settings…** — a PhpStorm-style settings dialog (page list on the
+  left, the selected page on the right). Its **Appearance** page picks the
+  theme: **System** (the platform look and feel, following the desktop theme —
+  the default), **Dark**, or **Light** (both built on the JDK's own Nimbus
+  look and feel, keeping the app dependency-free). Applying takes effect
+  immediately, no restart, and the choice is remembered across launches.
+- **File > Exit** — closes the app, same as the window's close button.
+
 ### Left: controls
 
 - **Base directory** / **Photo directory** — where the app works and where the

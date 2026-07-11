@@ -2,9 +2,9 @@ package com.allegrohelper;
 
 import com.allegrohelper.cli.Cli;
 import com.allegrohelper.ui.MainWindow;
+import com.allegrohelper.ui.Theme;
 
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import java.awt.GraphicsEnvironment;
 import java.awt.Toolkit;
 import java.lang.reflect.Field;
@@ -41,11 +41,9 @@ public final class App {
 
         Path baseDir = args.length > 0 ? Path.of(args[0]) : Path.of(System.getProperty("user.dir"));
         SwingUtilities.invokeLater(() -> {
-            try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception ignored) {
-                // Fall back to the default look and feel.
-            }
+            // Saved theme (File > Settings > Appearance), defaulting to the
+            // system look and feel; best-effort inside apply.
+            Theme.apply(Theme.load());
             new MainWindow(baseDir).show();
         });
     }
