@@ -1696,7 +1696,9 @@ public final class MainWindow {
      *
      * <p>The two images always share a shape (auto-crop expands its box back to the
      * source aspect ratio), so the taller requirement decides the row and neither
-     * half is letterboxed in practice.
+     * half is letterboxed in practice. A panel with no image to show keeps the
+     * shape of the last one it had, so the row does not resize while a render is
+     * in flight — see {@link ImagePanel#aspect}.
      */
     private static final class PreviewRowLayout implements LayoutManager {
 
@@ -1757,8 +1759,19 @@ public final class MainWindow {
      */
     private static final class ImagePanel extends JPanel {
 
+        /** The shape of a panel that has never shown an image: a camera's usual 4:3. */
+        private static final double DEFAULT_ASPECT = 4.0 / 3.0;
+
         private BufferedImage image;
         private String status = "";
+        /**
+         * Width/height of the last image shown, which the panel keeps its shape at
+         * while it has no image. Without it the panel would take the tab's whole
+         * height whenever it shows a status line — "Select an offer in the grid.",
+         * or "Rendering the preview…" between two offers — and the layout would
+         * jump every time a render lands.
+         */
+        private double aspect = DEFAULT_ASPECT;
 
         /** @param title the border title ("Before" / "After"); {@link I18n} translates it in place */
         ImagePanel(String title) {
@@ -1768,11 +1781,12 @@ public final class MainWindow {
         void setImage(BufferedImage img) {
             image = img;
             status = "";
+            aspect = img.getWidth() / (double) img.getHeight();
             revalidate(); // the row's height follows the image's shape
             repaint();
         }
 
-        /** Shows {@code text} instead of an image (already translated). */
+        /** Shows {@code text} instead of an image (already translated), at the current shape. */
         void setStatus(String text) {
             image = null;
             status = text;
@@ -1780,21 +1794,14 @@ public final class MainWindow {
             repaint();
         }
 
-        /**
-         * The height at which an image drawn this wide fills the panel exactly, or
-         * 0 while there is no image (a status line is happy at any height).
-         */
+        /** The height at which an image of the panel's shape, drawn this wide, fills it exactly. */
         int heightFor(int width) {
-            if (image == null) {
-                return 0;
-            }
             Insets insets = getInsets();
             int content = width - insets.left - insets.right;
             if (content <= 0) {
                 return 0;
             }
-            return (int) Math.round(content * image.getHeight() / (double) image.getWidth())
-                    + insets.top + insets.bottom;
+            return (int) Math.round(content / aspect) + insets.top + insets.bottom;
         }
 
         @Override
