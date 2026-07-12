@@ -1,5 +1,8 @@
 package com.allegrohelper.ui;
 
+import com.allegrohelper.core.Config;
+import com.allegrohelper.core.GenerateDescription;
+
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.DefaultListCellRenderer;
@@ -9,10 +12,16 @@ import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPasswordField;
 import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.text.JTextComponent;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Component;
@@ -23,16 +32,29 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Window;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * The File &gt; Settings dialog: a PhpStorm-style two-pane layout — the page
  * list on the left, the selected page's card on the right, OK/Cancel/Apply
- * below. Pages: Appearance ({@link Theme}) and Language ({@link Language}).
+ * below. Pages: Appearance ({@link Theme}), Language ({@link Language}) and
+ * OpenAI API (API key, model and the description prompts).
  *
  * <p>Apply (and OK) takes effect immediately: it installs the look and feel
  * and/or language, persists the choices, restyles and retranslates every open
  * window, and then runs the caller's hook so {@link MainWindow} can re-apply
  * the styling its build baked in. No restart involved.
+ *
+ * <p>Theme and language are per-user UI preferences and live in
+ * {@link java.util.prefs.Preferences}; the OpenAI values are pipeline
+ * configuration ({@link Config} keys), so they are written to the base
+ * directory's {@code .env} instead — and only when they differ from the
+ * built-in defaults, so {@code .env} carries just the overrides. The page
+ * shows the <em>effective</em> values, so a real environment variable (which
+ * outranks {@code .env}) shows up here and keeps winning after a save.
  *
  * <p>Built entirely from English literals like every window, then passed
  * through {@link I18n#retranslate}; the page list and combos render their
@@ -43,19 +65,36 @@ final class SettingsDialog extends JDialog {
 
     private static final String PAGE_APPEARANCE = "Appearance";
     private static final String PAGE_LANGUAGE = "Language";
+    private static final String PAGE_OPENAI = "OpenAI API";
+
+    /** Suggestions only — the combo is editable, any model id can be typed. */
+    private static final String[] OPENAI_MODELS = {
+            "gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "gpt-5-mini", "gpt-5"};
 
     private final JComboBox<Theme> themeCombo = new JComboBox<>(Theme.values());
     private final JComboBox<Language> languageCombo = new JComboBox<>(Language.values());
+    private final JPasswordField apiKeyField = new JPasswordField();
+    private final JComboBox<String> modelCombo = new JComboBox<>(OPENAI_MODELS);
+    private final JTextArea systemPromptArea = new JTextArea();
+    private final JTextArea userPromptArea = new JTextArea();
     private final JButton applyButton = new JButton("Apply");
     private final Runnable onSettingsApplied;
+    private final Path baseDir;
 
-    SettingsDialog(JFrame owner, Runnable onSettingsApplied) {
+    /** The effective OpenAI values as of the last load/save, for dirty checks. */
+    private String savedApiKey = "";
+    private String savedModel = "";
+    private String savedSystemPrompt = "";
+    private String savedUserPrompt = "";
+
+    SettingsDialog(JFrame owner, Path baseDir, Runnable onSettingsApplied) {
         super(owner, "Settings", true);
         this.onSettingsApplied = onSettingsApplied;
+        this.baseDir = baseDir;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        JList<String> pages = new JList<>(new String[]{PAGE_APPEARANCE, PAGE_LANGUAGE});
+        JList<String> pages = new JList<>(new String[]{PAGE_APPEARANCE, PAGE_LANGUAGE, PAGE_OPENAI});
         pages.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         pages.setSelectedIndex(0);
         pages.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
@@ -75,6 +114,7 @@ final class SettingsDialog extends JDialog {
         JPanel content = new JPanel(cards);
         content.add(buildPage(PAGE_APPEARANCE, "Theme:", themeCombo), PAGE_APPEARANCE);
         content.add(buildPage(PAGE_LANGUAGE, "Language:", languageCombo), PAGE_LANGUAGE);
+        content.add(buildOpenAiPage(), PAGE_OPENAI);
         pages.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && pages.getSelectedValue() != null) {
                 cards.show(content, pages.getSelectedValue());
@@ -87,13 +127,20 @@ final class SettingsDialog extends JDialog {
 
         themeCombo.setSelectedItem(Theme.current());
         languageCombo.setSelectedItem(Language.current());
+        loadOpenAiSettings();
         applyButton.setEnabled(false);
         themeCombo.addActionListener(e -> updateApplyEnabled());
         languageCombo.addActionListener(e -> updateApplyEnabled());
+        modelCombo.addActionListener(e -> updateApplyEnabled());
+        watchDocument(apiKeyField);
+        watchDocument((JTextComponent) modelCombo.getEditor().getEditorComponent());
+        watchDocument(systemPromptArea);
+        watchDocument(userPromptArea);
 
         I18n.retranslate(this);
         MainWindow.standardizeFonts(getRootPane());
-        setPreferredSize(new Dimension(760, 480));
+        MainWindow.recolorCarets(getRootPane());
+        setPreferredSize(new Dimension(820, 560));
         pack();
         setLocationRelativeTo(owner);
     }
@@ -129,6 +176,138 @@ final class SettingsDialog extends JDialog {
         return page;
     }
 
+    /** The OpenAI API page: key, model and the two description prompts. */
+    private JPanel buildOpenAiPage() {
+        modelCombo.setEditable(true);
+        for (JTextArea area : new JTextArea[]{systemPromptArea, userPromptArea}) {
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+        }
+
+        JPanel page = new JPanel(new GridBagLayout());
+        page.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+        GridBagConstraints c = new GridBagConstraints();
+        c.gridx = 0;
+        c.gridy = 0;
+        c.gridwidth = 2;
+        c.anchor = GridBagConstraints.NORTHWEST;
+        c.insets = new Insets(0, 0, 16, 0);
+        JLabel headerLabel = new JLabel(PAGE_OPENAI);
+        headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD));
+        page.add(headerLabel, c);
+
+        c.gridwidth = 1;
+        addRow(page, c, 1, "API Key:", apiKeyField, GridBagConstraints.HORIZONTAL, 0);
+        addRow(page, c, 2, "Model:", modelCombo, GridBagConstraints.HORIZONTAL, 0);
+        // The system prompt is the long one; give it most of the stretch.
+        addRow(page, c, 3, "System Prompt:", new JScrollPane(systemPromptArea),
+                GridBagConstraints.BOTH, 0.7);
+        addRow(page, c, 4, "User Prompt:", new JScrollPane(userPromptArea),
+                GridBagConstraints.BOTH, 0.3);
+        return page;
+    }
+
+    private static void addRow(JPanel page, GridBagConstraints c, int row,
+                               String label, Component field, int fill, double weighty) {
+        c.gridx = 0;
+        c.gridy = row;
+        c.fill = GridBagConstraints.NONE;
+        c.weightx = 0;
+        c.weighty = 0;
+        c.insets = new Insets(0, 0, 8, 8);
+        page.add(new JLabel(label), c);
+        c.gridx = 1;
+        c.fill = fill;
+        c.weightx = 1;
+        c.weighty = weighty;
+        c.insets = new Insets(0, 0, 8, 0);
+        page.add(field, c);
+    }
+
+    /**
+     * (Re)loads the OpenAI page from the effective configuration and resets
+     * the dirty baseline. Also run after a save, so values that fell back to
+     * a default (a cleared prompt) reappear as that default.
+     */
+    private void loadOpenAiSettings() {
+        Config cfg = Config.forBaseDir(baseDir);
+        savedApiKey = cfg.openaiApiKey;
+        savedModel = cfg.openaiModel;
+        savedSystemPrompt = cfg.openaiSystemPrompt;
+        savedUserPrompt = cfg.openaiUserPrompt;
+        apiKeyField.setText(cfg.openaiApiKey);
+        modelCombo.setSelectedItem(cfg.openaiModel);
+        systemPromptArea.setText(cfg.openaiSystemPrompt);
+        systemPromptArea.setCaretPosition(0);
+        userPromptArea.setText(cfg.openaiUserPrompt);
+        userPromptArea.setCaretPosition(0);
+    }
+
+    /** The model id as typed, not just as last committed by the editable combo. */
+    private String currentModel() {
+        Object item = modelCombo.getEditor().getItem();
+        return item == null ? "" : item.toString().strip();
+    }
+
+    private boolean openaiDirty() {
+        return !new String(apiKeyField.getPassword()).strip().equals(savedApiKey)
+                || !currentModel().equals(savedModel)
+                || !systemPromptArea.getText().equals(savedSystemPrompt)
+                || !userPromptArea.getText().equals(savedUserPrompt);
+    }
+
+    private void watchDocument(JTextComponent component) {
+        component.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                updateApplyEnabled();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                updateApplyEnabled();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                updateApplyEnabled();
+            }
+        });
+    }
+
+    /**
+     * Writes the OpenAI settings to the base directory's {@code .env}. A value
+     * equal to its built-in default (or blank) is removed rather than written,
+     * so {@code .env} only ever carries the overrides.
+     */
+    private boolean saveOpenAiSettings() {
+        String apiKey = new String(apiKeyField.getPassword()).strip();
+        String model = currentModel();
+        String systemPrompt = systemPromptArea.getText();
+        String userPrompt = userPromptArea.getText();
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("OPENAI_API_KEY", apiKey.isEmpty() ? null : apiKey);
+        values.put("OPENAI_MODEL",
+                model.isEmpty() || model.equals(Config.DEFAULT_OPENAI_MODEL) ? null : model);
+        values.put("OPENAI_SYSTEM_PROMPT",
+                systemPrompt.isBlank() || systemPrompt.equals(GenerateDescription.SYSTEM_PROMPT)
+                        ? null : systemPrompt);
+        values.put("OPENAI_USER_PROMPT",
+                userPrompt.isBlank() || userPrompt.equals(GenerateDescription.USER_PROMPT)
+                        ? null : userPrompt);
+        try {
+            Config.updateDotenv(baseDir, values);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this,
+                    I18n.t("Failed to save settings to {0}: {1}",
+                            baseDir.resolve(".env"), e.getMessage()),
+                    I18n.t("Settings"), JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        loadOpenAiSettings();
+        return true;
+    }
+
     private JPanel buildButtonBar() {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         JButton ok = new JButton("OK");
@@ -148,19 +327,24 @@ final class SettingsDialog extends JDialog {
 
     private void updateApplyEnabled() {
         applyButton.setEnabled(themeCombo.getSelectedItem() != Theme.current()
-                || languageCombo.getSelectedItem() != Language.current());
+                || languageCombo.getSelectedItem() != Language.current()
+                || openaiDirty());
     }
 
     /**
-     * Installs and persists the selected theme and language, restyling and
-     * retranslating every open window (this dialog included).
+     * Installs and persists the selected theme, language and OpenAI settings,
+     * restyling and retranslating every open window (this dialog included).
      */
     private void applySelection() {
         Theme theme = (Theme) themeCombo.getSelectedItem();
         Language language = (Language) languageCombo.getSelectedItem();
         boolean themeChanged = theme != null && theme != Theme.current();
         boolean languageChanged = language != null && language != Language.current();
+        if (openaiDirty()) {
+            saveOpenAiSettings();
+        }
         if (!themeChanged && !languageChanged) {
+            updateApplyEnabled();
             return;
         }
         if (themeChanged) {
@@ -180,7 +364,9 @@ final class SettingsDialog extends JDialog {
             }
         }
         onSettingsApplied.run();
-        MainWindow.standardizeFonts(getRootPane()); // updateComponentTreeUI reset this dialog's fonts
+        // updateComponentTreeUI reset this dialog's fonts and caret colors.
+        MainWindow.standardizeFonts(getRootPane());
+        MainWindow.recolorCarets(getRootPane());
         updateApplyEnabled();
     }
 }

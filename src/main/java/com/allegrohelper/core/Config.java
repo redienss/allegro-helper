@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +17,8 @@ import java.util.Map;
  * environment variable takes precedence over a value in {@code .env}.
  */
 public final class Config {
+
+    public static final String DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 
     public final Path baseDir;
     public final Path csvPath;
@@ -30,6 +33,8 @@ public final class Config {
     public final String openaiApiKey;
     public final String openaiModel;
     public final String openaiBaseUrl;
+    public final String openaiSystemPrompt;
+    public final String openaiUserPrompt;
     public final String chromeBin;
     public final Path chromeProfileDir;
 
@@ -47,9 +52,14 @@ public final class Config {
         this.seriesRecognition = SeriesRecognition.Mode.parse(env.get("SERIES_RECOGNITION"));
         this.ocrLanguages = env.getOrDefault("OCR_LANGUAGES", "pol+eng");
         this.openaiApiKey = env.getOrDefault("OPENAI_API_KEY", "");
-        this.openaiModel = env.getOrDefault("OPENAI_MODEL", "gpt-4o-mini");
+        this.openaiModel = stringOrDefault(env, "OPENAI_MODEL", DEFAULT_OPENAI_MODEL);
         this.openaiBaseUrl = stripTrailingSlash(
                 env.getOrDefault("OPENAI_BASE_URL", "https://api.openai.com/v1"));
+        // Blank falls back to the default: an empty prompt is never useful.
+        this.openaiSystemPrompt =
+                stringOrDefault(env, "OPENAI_SYSTEM_PROMPT", GenerateDescription.SYSTEM_PROMPT);
+        this.openaiUserPrompt =
+                stringOrDefault(env, "OPENAI_USER_PROMPT", GenerateDescription.USER_PROMPT);
         this.chromeBin = env.getOrDefault("CHROME_BIN", "");
         // A dedicated profile: Chrome only exposes DevTools on a fresh instance,
         // and the Allegro login session persists in it between runs.
@@ -110,18 +120,103 @@ public final class Config {
         return values;
     }
 
+    /**
+     * Removes surrounding quotes. Double-quoted values additionally decode
+     * {@code \n}, {@code \r}, {@code \t}, {@code \"} and {@code \\} — the
+     * standard dotenv semantics that let a multi-line value (an OpenAI prompt
+     * edited in File &gt; Settings &gt; OpenAI API) live on one {@code .env}
+     * line. Single-quoted values stay literal.
+     */
     private static String stripQuotes(String value) {
-        if (value.length() >= 2
-                && ((value.startsWith("\"") && value.endsWith("\""))
-                || (value.startsWith("'") && value.endsWith("'")))) {
+        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+            return unescape(value.substring(1, value.length() - 1));
+        }
+        if (value.length() >= 2 && value.startsWith("'") && value.endsWith("'")) {
             return value.substring(1, value.length() - 1);
         }
         return value;
     }
 
+    private static String unescape(String s) {
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char next = s.charAt(++i);
+                switch (next) {
+                    case 'n' -> out.append('\n');
+                    case 'r' -> out.append('\r');
+                    case 't' -> out.append('\t');
+                    default -> out.append(next); // covers \" and \\
+                }
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * Updates keys in the base directory's {@code .env}, creating the file if
+     * needed and preserving every unrelated line (comments included). A null
+     * value removes the key. Values are encoded as the counterpart of
+     * {@link #stripQuotes}: double-quoted with escapes when they contain
+     * newlines, quotes or other characters the line-based format cannot carry
+     * verbatim.
+     */
+    public static void updateDotenv(Path baseDir, Map<String, String> values) throws IOException {
+        Path envFile = baseDir.toAbsolutePath().normalize().resolve(".env");
+        List<String> lines = Files.isRegularFile(envFile)
+                ? new ArrayList<>(Files.readAllLines(envFile, StandardCharsets.UTF_8))
+                : new ArrayList<>();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            // Drop every assignment of the key (loadDotenv lets the last one
+            // win, so duplicates must not survive) and put the new one where
+            // the first used to be.
+            int insertAt = -1;
+            for (int i = lines.size() - 1; i >= 0; i--) {
+                if (isAssignmentOf(lines.get(i), entry.getKey())) {
+                    lines.remove(i);
+                    insertAt = i;
+                }
+            }
+            if (entry.getValue() != null) {
+                String line = entry.getKey() + "=" + encodeValue(entry.getValue());
+                lines.add(insertAt == -1 ? lines.size() : insertAt, line);
+            }
+        }
+        Files.write(envFile, lines, StandardCharsets.UTF_8);
+    }
+
+    private static boolean isAssignmentOf(String rawLine, String key) {
+        String line = rawLine.strip();
+        if (line.startsWith("export ")) {
+            line = line.substring("export ".length()).strip();
+        }
+        int eq = line.indexOf('=');
+        return eq > 0 && line.substring(0, eq).strip().equals(key);
+    }
+
+    private static String encodeValue(String value) {
+        boolean needsQuoting = value.chars().anyMatch(
+                c -> c == '"' || c == '\'' || c == '\\' || c == '#' || c == '\n' || c == '\r' || c == '\t')
+                || (!value.isEmpty() && (Character.isWhitespace(value.charAt(0))
+                || Character.isWhitespace(value.charAt(value.length() - 1))));
+        if (!needsQuoting) {
+            return value;
+        }
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
+    }
+
     private static Path pathOrDefault(Map<String, String> env, String key, Path fallback) {
         String v = env.get(key);
         return (v == null || v.isBlank()) ? fallback : Path.of(v);
+    }
+
+    private static String stringOrDefault(Map<String, String> env, String key, String fallback) {
+        String v = env.get(key);
+        return (v == null || v.isBlank()) ? fallback : v;
     }
 
     private static int intOrDefault(Map<String, String> env, String key, int fallback) {

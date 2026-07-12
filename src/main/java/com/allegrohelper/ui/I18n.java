@@ -209,6 +209,12 @@ final class I18n {
         put("Light", "Jasny");
         put("English", "Angielski");
         put("Polish", "Polski");
+        // "OpenAI API" (page name/header) and "Model:" read the same in Polish.
+        put("API Key:", "Klucz API:");
+        put("System Prompt:", "Prompt systemowy:");
+        put("User Prompt:", "Prompt użytkownika:");
+        put("Failed to save settings to {0}: {1}",
+                "Nie udało się zapisać ustawień do {0}: {1}");
     }
 
     private static void put(String en, String pl) {

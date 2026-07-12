@@ -26,10 +26,15 @@ import java.util.Map;
  *
  * <p>The prompt and generated text are intentionally kept in Polish, since the
  * listing is published on Allegro Lokalnie (Polish market).
+ *
+ * <p>{@link #SYSTEM_PROMPT} and {@link #USER_PROMPT} are the built-in defaults;
+ * the values actually sent come from {@link Config} ({@code OPENAI_SYSTEM_PROMPT}
+ * / {@code OPENAI_USER_PROMPT}, editable in File &gt; Settings &gt; OpenAI API).
  */
 public final class GenerateDescription {
 
-    static final String SYSTEM_PROMPT =
+    /** Default system prompt, used when {@code OPENAI_SYSTEM_PROMPT} is not set. */
+    public static final String SYSTEM_PROMPT =
             "Piszesz krótkie, rzeczowe opisy ofert sprzedaży używanych przedmiotów prywatnych "
                     + "na Allegro Lokalnie, w języku polskim.\n\n"
                     + "Dane o KONKRETNYM egzemplarzu (pola 'condition', 'damage', 'quantity') pochodzą "
@@ -70,6 +75,18 @@ public final class GenerateDescription {
                     + "specyfikacji technicznych. 3-6 zdań.\n\n"
                     + "Nie podawaj w treści opisu pól 'price' ani 'inpost_size' (cena i gabaryt paczki) - te "
                     + "informacje są dodawane automatycznie osobno, pod opisem.";
+
+    /** Placeholder in the user prompt that {@link #buildUserPrompt} replaces with the offer JSON. */
+    public static final String OFFER_JSON_PLACEHOLDER = "{{OFFER_JSON}}";
+
+    /** Default user prompt template, used when {@code OPENAI_USER_PROMPT} is not set. */
+    public static final String USER_PROMPT =
+            "Na podstawie danych poniżej wygeneruj opis oferty dla Allegro Lokalnie. "
+                    + "Dodaj trochę ikonek dla czytelności opisu.\n"
+                    + "Offer data (JSON):\n"
+                    + "<<<JSON>>>\n"
+                    + OFFER_JSON_PLACEHOLDER + "\n"
+                    + "<<<END JSON>>>";
 
     private GenerateDescription() {
     }
@@ -127,7 +144,7 @@ public final class GenerateDescription {
                 : "";
 
         String descriptionText =
-                callOpenAi(client, cfg, buildUserPrompt(data, extraNotes, ocrText)).strip();
+                callOpenAi(client, cfg, buildUserPrompt(cfg, data, extraNotes, ocrText)).strip();
 
         double price = parsePrice(str(data, "price"));
         String content = descriptionText + "\n\n"
@@ -158,19 +175,21 @@ public final class GenerateDescription {
         return Json.write(offer, true);
     }
 
-    static String buildUserPrompt(Map<String, Object> data, String extraNotes, String ocrText) {
-        return "Na podstawie danych poniżej wygeneruj opis oferty dla Allegro Lokalnie. "
-                + "Dodaj trochę ikonek dla czytelności opisu.\n"
-                + "Offer data (JSON):\n"
-                + "<<<JSON>>>\n"
-                + buildOfferJson(data, extraNotes, ocrText) + "\n"
-                + "<<<END JSON>>>";
+    static String buildUserPrompt(Config cfg, Map<String, Object> data, String extraNotes, String ocrText) {
+        String offerJson = buildOfferJson(data, extraNotes, ocrText);
+        String template = cfg.openaiUserPrompt;
+        if (template.contains(OFFER_JSON_PLACEHOLDER)) {
+            return template.replace(OFFER_JSON_PLACEHOLDER, offerJson);
+        }
+        // A customized template without the placeholder would silently drop the
+        // offer data, so append it in the default framing instead.
+        return template + "\nOffer data (JSON):\n<<<JSON>>>\n" + offerJson + "\n<<<END JSON>>>";
     }
 
     private static String callOpenAi(HttpClient client, Config cfg, String userPrompt)
             throws IOException, PipelineException {
         List<Object> messages = new ArrayList<>();
-        messages.add(message("system", SYSTEM_PROMPT));
+        messages.add(message("system", cfg.openaiSystemPrompt));
         messages.add(message("user", userPrompt));
 
         LinkedHashMap<String, Object> body = new LinkedHashMap<>();

@@ -335,7 +335,8 @@ public final class MainWindow {
         JMenuBar bar = new JMenuBar();
         JMenu file = new JMenu("File");
         JMenuItem settings = new JMenuItem("Settings…");
-        settings.addActionListener(e -> new SettingsDialog(frame, this::onSettingsApplied).setVisible(true));
+        settings.addActionListener(e -> new SettingsDialog(frame,
+                Path.of(baseDirField.getText().strip()), this::onSettingsApplied).setVisible(true));
         JMenuItem exit = new JMenuItem("Exit");
         // Close via the window event so it takes the same path as the title-bar X.
         exit.addActionListener(e -> frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING)));
@@ -371,7 +372,7 @@ public final class MainWindow {
     }
 
     /** Re-applies the theme-dependent caret color to every text component under {@code c}. */
-    private static void recolorCarets(Component c) {
+    static void recolorCarets(Component c) {
         if (c instanceof JTextComponent text) {
             text.setCaretColor(caretColor());
         }
