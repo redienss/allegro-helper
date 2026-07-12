@@ -902,10 +902,13 @@ public final class MainWindow {
         boxes.add(leftRow(previewAutoCropBox));
         configureContrastSlider();
 
-        JPanel panel = new JPanel(new BorderLayout(6, 6));
+        // The photo row, then the steps right under it — a BorderLayout would put
+        // them at the bottom of the tab, a long way below photos that only take the
+        // height they need.
+        JPanel panel = new JPanel(new PreviewTabLayout(6));
         panel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
-        panel.add(images, BorderLayout.CENTER);
-        panel.add(boxes, BorderLayout.SOUTH);
+        panel.add(images);
+        panel.add(boxes);
         return panel;
     }
 
@@ -1731,9 +1734,29 @@ public final class MainWindow {
             Insets insets = parent.getInsets();
             int width = parent.getWidth() - insets.left - insets.right;
             int available = parent.getHeight() - insets.top - insets.bottom;
-            int half = (width - gap) / 2;
+            int half = halfWidth(width);
             if (half <= 0 || available <= 0) {
                 return;
+            }
+            int height = Math.min(neededHeight(parent, width), available);
+
+            int x = insets.left;
+            for (Component c : parent.getComponents()) {
+                c.setBounds(x, insets.top, half, height);
+                x += half + gap;
+            }
+        }
+
+        /**
+         * The height the row wants when laid out {@code width} wide: the taller of
+         * the two halves at that width. {@link PreviewTabLayout} asks so it can put
+         * the checkbox column directly beneath the photos instead of at the bottom
+         * of the tab.
+         */
+        int neededHeight(Container parent, int width) {
+            int half = halfWidth(width);
+            if (half <= 0) {
+                return 0;
             }
             int height = 0;
             for (Component c : parent.getComponents()) {
@@ -1741,13 +1764,74 @@ public final class MainWindow {
                     height = Math.max(height, panel.heightFor(half));
                 }
             }
-            height = height <= 0 ? available : Math.min(height, available);
+            return height;
+        }
 
-            int x = insets.left;
-            for (Component c : parent.getComponents()) {
-                c.setBounds(x, insets.top, half, height);
-                x += half + gap;
+        private int halfWidth(int width) {
+            return (width - gap) / 2;
+        }
+    }
+
+    /**
+     * The Retouch Preview tab: the photo row at the top, only as tall as the photos
+     * need, and the step checkboxes immediately below it. Both stretch to the tab's
+     * full width; whatever is left over stays empty at the bottom.
+     *
+     * <p>Neither {@code BorderLayout} nor {@code BoxLayout} can do this, because the
+     * photo row's height depends on the width it is given (the halves keep their
+     * images' aspect ratio) and a Swing preferred size cannot express that. So the
+     * width is settled first, and {@link PreviewRowLayout#neededHeight} is asked
+     * afterwards.
+     */
+    private static final class PreviewTabLayout implements LayoutManager {
+
+        private final int gap;
+
+        PreviewTabLayout(int gap) {
+            this.gap = gap;
+        }
+
+        @Override
+        public void addLayoutComponent(String name, Component comp) {
+        }
+
+        @Override
+        public void removeLayoutComponent(Component comp) {
+        }
+
+        @Override
+        public Dimension preferredLayoutSize(Container parent) {
+            return new Dimension(0, 0); // a tab takes whatever the tabbed pane gives it
+        }
+
+        @Override
+        public Dimension minimumLayoutSize(Container parent) {
+            return new Dimension(0, 0);
+        }
+
+        @Override
+        public void layoutContainer(Container parent) {
+            if (parent.getComponentCount() < 2) {
+                return;
             }
+            Container images = (Container) parent.getComponent(0);
+            Component boxes = parent.getComponent(1);
+
+            Insets insets = parent.getInsets();
+            int width = parent.getWidth() - insets.left - insets.right;
+            int available = parent.getHeight() - insets.top - insets.bottom;
+            if (width <= 0 || available <= 0) {
+                return;
+            }
+
+            int boxesHeight = Math.min(boxes.getPreferredSize().height, available);
+            int room = Math.max(0, available - boxesHeight - gap);
+            int imagesHeight = images.getLayout() instanceof PreviewRowLayout row
+                    ? Math.min(row.neededHeight(images, width), room)
+                    : room;
+
+            images.setBounds(insets.left, insets.top, width, imagesHeight);
+            boxes.setBounds(insets.left, insets.top + imagesHeight + gap, width, boxesHeight);
         }
     }
 
