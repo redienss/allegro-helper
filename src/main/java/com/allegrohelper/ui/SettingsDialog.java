@@ -5,6 +5,7 @@ import com.allegrohelper.core.GenerateDescription;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -24,7 +25,9 @@ import javax.swing.event.DocumentListener;
 import javax.swing.text.JTextComponent;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -32,6 +35,8 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -71,12 +76,16 @@ final class SettingsDialog extends JDialog {
     private static final String[] OPENAI_MODELS = {
             "gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1", "gpt-5-mini", "gpt-5"};
 
+    /** Where a user without a key gets one; linked under the API Key field. */
+    private static final String API_KEYS_URL = "https://platform.openai.com/api-keys";
+
     private final JComboBox<Theme> themeCombo = new JComboBox<>(Theme.values());
     private final JComboBox<Language> languageCombo = new JComboBox<>(Language.values());
     private final JPasswordField apiKeyField = new JPasswordField();
     private final JComboBox<String> modelCombo = new JComboBox<>(OPENAI_MODELS);
     private final JTextArea systemPromptArea = new JTextArea();
     private final JTextArea userPromptArea = new JTextArea();
+    private final JLabel apiKeyLink = buildApiKeyLink();
     private final JButton applyButton = new JButton("Apply");
     private final Runnable onSettingsApplied;
     private final Path baseDir;
@@ -147,7 +156,10 @@ final class SettingsDialog extends JDialog {
         I18n.retranslate(this);
         MainWindow.standardizeFonts(getRootPane());
         MainWindow.recolorCarets(getRootPane());
-        setPreferredSize(new Dimension(820, 560));
+        // Wide enough for the API-key hint row in Polish too, whose label runs
+        // some 60px longer than the English one and would otherwise push the
+        // link off the edge of the page.
+        setPreferredSize(new Dimension(900, 560));
         pack();
         setLocationRelativeTo(owner);
     }
@@ -205,13 +217,66 @@ final class SettingsDialog extends JDialog {
 
         c.gridwidth = 1;
         addRow(page, c, 1, "API Key:", apiKeyField, GridBagConstraints.HORIZONTAL, 0);
-        addRow(page, c, 2, "Model:", modelCombo, GridBagConstraints.HORIZONTAL, 0);
+        // Under the field, where someone who has no key is looking anyway.
+        addRow(page, c, 2, "", buildApiKeyHint(), GridBagConstraints.HORIZONTAL, 0);
+        addRow(page, c, 3, "Model:", modelCombo, GridBagConstraints.HORIZONTAL, 0);
         // The system prompt is the long one; give it most of the stretch.
-        addRow(page, c, 3, "System Prompt:", new JScrollPane(systemPromptArea),
+        addRow(page, c, 4, "System Prompt:", new JScrollPane(systemPromptArea),
                 GridBagConstraints.BOTH, 0.7);
-        addRow(page, c, 4, "User Prompt:", new JScrollPane(userPromptArea),
+        addRow(page, c, 5, "User Prompt:", new JScrollPane(userPromptArea),
                 GridBagConstraints.BOTH, 0.3);
         return page;
+    }
+
+    /**
+     * The "no key yet?" hint and the link to OpenAI's API keys page, as one row.
+     *
+     * <p>Laid out along the X axis rather than with a {@link FlowLayout}: flow
+     * wraps when the row runs out of width, and the wrapped line then falls
+     * outside the GridBag row's height and is clipped — the link simply vanishes.
+     * The trailing glue keeps both parts left-aligned.
+     */
+    private JPanel buildApiKeyHint() {
+        JPanel hint = new JPanel();
+        hint.setLayout(new BoxLayout(hint, BoxLayout.X_AXIS));
+        hint.add(new JLabel("No API key yet?"));
+        hint.add(Box.createHorizontalStrut(6));
+        hint.add(apiKeyLink);
+        hint.add(Box.createHorizontalGlue());
+        return hint;
+    }
+
+    /**
+     * The API keys page as a clickable link: underlined, hand cursor, and
+     * painted in {@link #linkColor()} so it reads as a link against either
+     * theme's background.
+     */
+    private JLabel buildApiKeyLink() {
+        JLabel link = new JLabel("<html><u>" + API_KEYS_URL + "</u></html>");
+        link.setForeground(linkColor());
+        link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        link.setToolTipText(API_KEYS_URL);
+        link.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                MainWindow.browse(API_KEYS_URL,
+                        () -> { }, // the browser opening is its own feedback
+                        message -> JOptionPane.showMessageDialog(SettingsDialog.this,
+                                I18n.t("Could not open {0}: {1}", API_KEYS_URL, message),
+                                I18n.t("Settings"), JOptionPane.ERROR_MESSAGE));
+            }
+        });
+        return link;
+    }
+
+    /**
+     * Link blue, picked per theme for contrast: a light blue on the dark
+     * background, a deep blue on the light one. The look and feel offers no key
+     * for this, and a single fixed blue would wash out against one of the two.
+     * Both clear WCAG AA against their background (≈6:1 and ≈7:1).
+     */
+    private static Color linkColor() {
+        return Theme.isDark() ? new Color(0x8C, 0xC8, 0xFF) : new Color(0x0A, 0x3D, 0x91);
     }
 
     /**
@@ -386,9 +451,11 @@ final class SettingsDialog extends JDialog {
             }
         }
         onSettingsApplied.run();
-        // updateComponentTreeUI reset this dialog's fonts and caret colors.
+        // updateComponentTreeUI reset this dialog's fonts and caret colors, and
+        // the link blue is picked per theme, so it has to be re-picked here.
         MainWindow.standardizeFonts(getRootPane());
         MainWindow.recolorCarets(getRootPane());
+        apiKeyLink.setForeground(linkColor());
         updateApplyEnabled();
     }
 }

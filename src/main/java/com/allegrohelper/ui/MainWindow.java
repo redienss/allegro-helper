@@ -103,6 +103,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
  * The Allegro Helper main window: photo series detected on the phone, the
@@ -909,22 +910,36 @@ public final class MainWindow {
 
     /**
      * Opens the Allegro form in the user's <em>default</em> browser (not the
-     * app-driven Chrome — that is {@link #copyAllToAllegro}). Off the EDT, since
-     * launching a browser can block.
+     * app-driven Chrome — that is {@link #copyAllToAllegro}).
      */
     private void openFormUrl() {
+        browse(ALLEGRO_FORM_URL,
+                () -> appendLog("Opened " + ALLEGRO_FORM_URL),
+                message -> error(I18n.t("Could not open {0}: {1}", ALLEGRO_FORM_URL, message)));
+    }
+
+    /**
+     * Opens a URL in the user's default browser, falling back to {@code xdg-open}
+     * where the Desktop API is unavailable (a bare X session, some Linux
+     * desktops). Runs off the EDT, since launching a browser can block; both
+     * callbacks are invoked back on the EDT.
+     *
+     * @param onOpened  run once the browser was launched
+     * @param onFailure given the failure message
+     */
+    static void browse(String url, Runnable onOpened, Consumer<String> onFailure) {
         new Thread(() -> {
             try {
                 if (Desktop.isDesktopSupported()
                         && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                    Desktop.getDesktop().browse(URI.create(ALLEGRO_FORM_URL));
+                    Desktop.getDesktop().browse(URI.create(url));
                 } else {
-                    new ProcessBuilder("xdg-open", ALLEGRO_FORM_URL).start();
+                    new ProcessBuilder("xdg-open", url).start();
                 }
-                SwingUtilities.invokeLater(() -> appendLog("Opened " + ALLEGRO_FORM_URL));
+                SwingUtilities.invokeLater(onOpened);
             } catch (Exception e) {
-                SwingUtilities.invokeLater(() ->
-                        error(I18n.t("Could not open {0}: {1}", ALLEGRO_FORM_URL, e.getMessage())));
+                String message = e.getMessage();
+                SwingUtilities.invokeLater(() -> onFailure.accept(message));
             }
         }, "open-url").start();
     }

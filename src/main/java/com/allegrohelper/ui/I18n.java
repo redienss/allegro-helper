@@ -212,6 +212,7 @@ final class I18n {
         put("Polish", "Polski");
         // "OpenAI API" (page name/header) and "Model:" read the same in Polish.
         put("API Key:", "Klucz API:");
+        put("No API key yet?", "Nie masz klucza API?");
         put("System Prompt:", "Prompt systemowy:");
         put("User Prompt:", "Prompt użytkownika:");
         put("Failed to save settings to {0}: {1}",
