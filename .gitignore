@@ -1,5 +1,8 @@
 .env
 build/
+# Eclipse IDE project files
+.classpath
+.project
 raw_photos/
 offers/
 more_data_*.txt
