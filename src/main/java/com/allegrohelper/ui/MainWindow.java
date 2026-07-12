@@ -39,6 +39,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.ListSelectionModel;
+import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.AbstractDocument;
@@ -191,6 +192,12 @@ public final class MainWindow {
     /** Vertical gap above and below each row of the Retouch Preview's checkbox column. */
     private static final int PREVIEW_ROW_GAP = 8;
 
+    /** One wheel notch on the contrast slider, in its hundredths: 0.05x. */
+    private static final int CONTRAST_WHEEL_STEP = 5;
+
+    /** How long the wheel must be still before the contrast slider's value counts as settled. */
+    private static final int CONTRAST_WHEEL_SETTLE_MS = 300;
+
     private static final String ALLEGRO_FORM_URL = "https://allegrolokalnie.pl/o/oferty/wystaw";
 
     private final JFrame frame = new JFrame("Allegro Helper");
@@ -255,6 +262,14 @@ public final class MainWindow {
             scaledStrength(Retouch.MAX_CONTRAST),
             scaledStrength(Retouch.DEFAULT_CONTRAST));
     private final JLabel contrastValueLabel = new JLabel();
+    /**
+     * Ends the "adjusting" state a wheel notch put the slider in, once the wheel has
+     * been still for {@link #CONTRAST_WHEEL_SETTLE_MS}. That fires the slider's own
+     * change event with nothing adjusting any more, so a scroll re-renders the
+     * preview exactly once, through the same path a finished drag takes.
+     */
+    private final Timer wheelSettle = new Timer(CONTRAST_WHEEL_SETTLE_MS,
+            e -> contrastSlider.setValueIsAdjusting(false));
     private final ExecutorService previewLoader = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "retouch-preview");
         t.setDaemon(true);
@@ -959,10 +974,24 @@ public final class MainWindow {
     /**
      * Sets the contrast slider up from the config — so a {@code CONTRAST_STRENGTH}
      * in {@code .env} is what the user sees — and has it re-render the preview.
-     * Only once the drag ends: a render costs a full-size decode, and every value
-     * the knob passes through on the way would queue one.
+     * Only once the value settles: a render costs a full-size decode, and every
+     * value the knob passes through on the way would queue one. A drag says when it
+     * has settled ({@code getValueIsAdjusting}); the wheel cannot, so
+     * {@link #wheelSettle} calls it settled once the scrolling stops.
      */
     private void configureContrastSlider() {
+        wheelSettle.setRepeats(false); // one shot per scroll, restarted by each notch
+        contrastSlider.addMouseWheelListener(e -> {
+            if (!contrastSlider.isEnabled()) {
+                return;
+            }
+            // Wheel up (a negative rotation) means more contrast, the direction the
+            // knob moves under the same gesture.
+            contrastSlider.setValueIsAdjusting(true); // no render per notch
+            contrastSlider.setValue(
+                    contrastSlider.getValue() - e.getWheelRotation() * CONTRAST_WHEEL_STEP);
+            wheelSettle.restart();
+        });
         contrastSlider.setValue(scaledStrength(
                 Config.forBaseDir(Path.of(baseDirField.getText().strip())).contrastStrength));
         contrastSlider.setMajorTickSpacing(scaledStrength(Retouch.NEUTRAL_CONTRAST)
