@@ -135,6 +135,8 @@ final class I18n {
         put("Before", "Przed");
         put("After", "Po");
         put("Rendering the preview…", "Tworzenie podglądu…");
+        put("< Previous", "< Poprzednie");
+        put("Next >", "Następne >");
         put("1.00x leaves the photo as it is; less flattens it, more deepens it.",
                 "1,00x zostawia zdjęcie bez zmian; mniej spłaszcza, więcej pogłębia.");
         put("Could not render the preview: {0}", "Nie udało się utworzyć podglądu: {0}");

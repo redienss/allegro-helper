@@ -109,6 +109,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -279,6 +280,17 @@ public final class MainWindow {
     private final AtomicInteger previewToken = new AtomicInteger();
     /** Set when the preview would have to be re-rendered but its tab is not showing. */
     private boolean previewStale = true;
+
+    // Stepping through the offer's photos, under the Before panel. The count is not
+    // known until a render has listed the photo directory, so the label and the
+    // buttons are driven by the Result, not by the click that asked for it.
+    private final JButton previousPhotoButton = new JButton("< Previous");
+    private final JButton nextPhotoButton = new JButton("Next >");
+    private final JLabel photoIndexLabel = new JLabel();
+    /** Which photo of the selected offer the preview shows, 0-based. */
+    private int previewPhotoIndex;
+    /** Photos in the selected offer, as of the last render; 0 before there has been one. */
+    private int previewPhotoCount;
 
     // Allegro Lokalnie Form tab: copy sources for the listing form.
     private final JTextField formTitleField = new JTextField();
@@ -917,14 +929,57 @@ public final class MainWindow {
         boxes.add(leftRow(previewAutoCropBox));
         configureContrastSlider();
 
-        // The photo row, then the steps right under it — a BorderLayout would put
-        // them at the bottom of the tab, a long way below photos that only take the
-        // height they need.
+        // The photo row, the photo stepper, then the steps right under them — a
+        // BorderLayout would put the last at the bottom of the tab, a long way below
+        // photos that only take the height they need.
         JPanel panel = new JPanel(new PreviewTabLayout(6));
         panel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
         panel.add(images);
+        panel.add(photoStepper());
         panel.add(boxes);
         return panel;
+    }
+
+    /**
+     * The photo stepper under the Before panel: {@code [< Previous] 3/20 [Next >]},
+     * which photo of the offer's series the preview is showing. Both panels show the
+     * same photo — before and after are only worth comparing on one — so the stepper
+     * sits under Before, where the eye starts.
+     *
+     * <p>Stepping only re-renders; nothing is written, and the photo the pipeline
+     * would process is unaffected by which one is on screen.
+     */
+    private JPanel photoStepper() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+        previousPhotoButton.addActionListener(e -> showPreviewPhoto(previewPhotoIndex - 1));
+        nextPhotoButton.addActionListener(e -> showPreviewPhoto(previewPhotoIndex + 1));
+        row.add(previousPhotoButton);
+        row.add(photoIndexLabel);
+        row.add(nextPhotoButton);
+        showPhotoIndex();
+        return row;
+    }
+
+    /** Steps the preview to another photo of the offer, within the series. */
+    private void showPreviewPhoto(int index) {
+        if (index < 0 || index >= previewPhotoCount) {
+            return;
+        }
+        previewPhotoIndex = index;
+        showPhotoIndex();
+        refreshRetouchPreview();
+    }
+
+    /**
+     * Shows which photo of the series is on screen, and greys the buttons out at the
+     * ends of it — and entirely while there is no offer, when the count is 0 and
+     * there is nothing to step through.
+     */
+    private void showPhotoIndex() {
+        photoIndexLabel.setText(previewPhotoCount == 0
+                ? "–" : (previewPhotoIndex + 1) + "/" + previewPhotoCount);
+        previousPhotoButton.setEnabled(previewPhotoIndex > 0);
+        nextPhotoButton.setEnabled(previewPhotoIndex < previewPhotoCount - 1);
     }
 
     /** One row of the preview's control column: its components, left-aligned. */
@@ -1068,12 +1123,15 @@ public final class MainWindow {
 
         Path offerDir = currentOfferDir;
         if (offerDir == null) {
+            previewPhotoCount = 0; // nothing to step through
+            showPhotoIndex();
             showPreviewStatus(offerTable.getSelectedRow() < 0
                     ? I18n.t("Select an offer in the grid.")
                     : I18n.t("Not matched yet — run Match."));
             return;
         }
 
+        int photoIndex = previewPhotoIndex;
         boolean whiteBalance = previewWhiteBalanceBox.isSelected();
         boolean contrast = previewContrastBox.isSelected();
         double strength = contrastStrength();
@@ -1083,8 +1141,8 @@ public final class MainWindow {
             String failure = null;
             RetouchPreview.Result result = null;
             try {
-                result = RetouchPreview.render(offerDir, whiteBalance, contrast, strength,
-                        autoCrop, PREVIEW_MAX_SIZE);
+                result = RetouchPreview.render(offerDir, photoIndex, whiteBalance, contrast,
+                        strength, autoCrop, PREVIEW_MAX_SIZE);
             } catch (IOException e) {
                 failure = I18n.t("Could not render the preview: {0}", e.getMessage());
             }
@@ -1097,10 +1155,17 @@ public final class MainWindow {
                 if (message != null) {
                     showPreviewStatus(message);
                 } else if (rendered == null) {
+                    previewPhotoCount = 0;
+                    showPhotoIndex();
                     showPreviewStatus(I18n.t("No photos."));
                 } else {
                     beforePanel.setImage(rendered.before());
                     afterPanel.setImage(rendered.after());
+                    // The render is the only thing that has counted the photos, and
+                    // it clamps the index — so take both back from it.
+                    previewPhotoCount = rendered.count();
+                    previewPhotoIndex = rendered.index();
+                    showPhotoIndex();
                 }
             });
         });
@@ -1503,6 +1568,9 @@ public final class MainWindow {
 
         // Description (Output) + galleries live in the resolved offer directory.
         Path offerDir = resolveOfferDir(cfg, name, modelRow);
+        if (!Objects.equals(offerDir, currentOfferDir)) {
+            previewPhotoIndex = 0; // another offer, another series: back to its first photo
+        }
         currentOfferDir = offerDir;
         if (offerDir == null) {
             descriptionTarget = null;
@@ -1803,14 +1871,16 @@ public final class MainWindow {
 
     /**
      * The Retouch Preview tab: the photo row at the top, only as tall as the photos
-     * need, and the step checkboxes immediately below it. Both stretch to the tab's
-     * full width; whatever is left over stays empty at the bottom.
+     * need; the photo stepper under the left (Before) half; the step checkboxes
+     * below that. Whatever height is left over stays empty at the bottom.
      *
      * <p>Neither {@code BorderLayout} nor {@code BoxLayout} can do this, because the
      * photo row's height depends on the width it is given (the halves keep their
      * images' aspect ratio) and a Swing preferred size cannot express that. So the
      * width is settled first, and {@link PreviewRowLayout#neededHeight} is asked
-     * afterwards.
+     * afterwards. The stepper and the checkboxes get their preferred height first,
+     * so a short tab shrinks the photos rather than pushing the controls out of
+     * sight.
      */
     private static final class PreviewTabLayout implements LayoutManager {
 
@@ -1840,11 +1910,12 @@ public final class MainWindow {
 
         @Override
         public void layoutContainer(Container parent) {
-            if (parent.getComponentCount() < 2) {
+            if (parent.getComponentCount() < 3) {
                 return;
             }
             Container images = (Container) parent.getComponent(0);
-            Component boxes = parent.getComponent(1);
+            Component stepper = parent.getComponent(1);
+            Component boxes = parent.getComponent(2);
 
             Insets insets = parent.getInsets();
             int width = parent.getWidth() - insets.left - insets.right;
@@ -1853,14 +1924,22 @@ public final class MainWindow {
                 return;
             }
 
-            int boxesHeight = Math.min(boxes.getPreferredSize().height, available);
-            int room = Math.max(0, available - boxesHeight - gap);
+            int stepperHeight = stepper.getPreferredSize().height;
+            int boxesHeight = boxes.getPreferredSize().height;
+            int room = Math.max(0, available - stepperHeight - boxesHeight - 2 * gap);
             int imagesHeight = images.getLayout() instanceof PreviewRowLayout row
                     ? Math.min(row.neededHeight(images, width), room)
                     : room;
 
-            images.setBounds(insets.left, insets.top, width, imagesHeight);
-            boxes.setBounds(insets.left, insets.top + imagesHeight + gap, width, boxesHeight);
+            int y = insets.top;
+            images.setBounds(insets.left, y, width, imagesHeight);
+            y += imagesHeight + gap;
+            // Centered under the Before half, whose width the row layout decides.
+            int half = images.getLayout() instanceof PreviewRowLayout row
+                    ? row.halfWidth(width) : width;
+            stepper.setBounds(insets.left, y, half, stepperHeight);
+            y += stepperHeight + gap;
+            boxes.setBounds(insets.left, y, width, boxesHeight);
         }
     }
 

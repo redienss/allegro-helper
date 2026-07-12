@@ -42,8 +42,14 @@ import java.util.List;
  */
 public final class RetouchPreview {
 
-    /** The two images the tab shows; both already scaled down for display. */
-    public record Result(BufferedImage before, BufferedImage after) {
+    /**
+     * The two images the tab shows, both already scaled down for display, plus where
+     * the rendered photo sits in the offer: {@code index} is 0-based and clamped
+     * into the series, {@code count} is how many photos the offer has. The tab's
+     * "1/20" reads them — nothing else has listed the photo directory, so nothing
+     * else knows the count.
+     */
+    public record Result(BufferedImage before, BufferedImage after, int index, int count) {
     }
 
     /** Not instantiable: the class is a namespace for {@link #render}. */
@@ -51,9 +57,11 @@ public final class RetouchPreview {
     }
 
     /**
-     * Renders the before/after pair for an offer's first photo, or null when the
+     * Renders the before/after pair for one of an offer's photos, or null when the
      * offer has no photos yet.
      *
+     * @param photoIndex which photo of the series, 0-based; clamped into range, so
+     *                   an index left over from a longer offer cannot fail a render
      * @param contrastStrength the strength the contrast step would run at — the
      *                         slider's value, so the user sees what a run would
      *                         produce at that setting
@@ -61,9 +69,9 @@ public final class RetouchPreview {
      *                the photo is decoded at, since it is only ever shown scaled to
      *                fit a panel
      */
-    public static Result render(Path offerDir, boolean whiteBalance, boolean contrast,
-                                double contrastStrength, boolean autoCrop, int maxSize)
-            throws IOException {
+    public static Result render(Path offerDir, int photoIndex, boolean whiteBalance,
+                                boolean contrast, double contrastStrength, boolean autoCrop,
+                                int maxSize) throws IOException {
         Path photosDir = offerDir.resolve("photos");
         if (!Files.isDirectory(photosDir)) {
             return null;
@@ -73,8 +81,8 @@ public final class RetouchPreview {
             return null;
         }
 
-        Path first = photos.get(0);
-        Sample original = decodeSampled(first, maxSize);
+        int index = Math.max(0, Math.min(photoIndex, photos.size() - 1));
+        Sample original = decodeSampled(photos.get(index), maxSize);
 
         BufferedImage after = original.image();
         if (whiteBalance) {
@@ -95,7 +103,7 @@ public final class RetouchPreview {
             }
         }
 
-        return new Result(original.image(), after);
+        return new Result(original.image(), after, index, photos.size());
     }
 
     /**
