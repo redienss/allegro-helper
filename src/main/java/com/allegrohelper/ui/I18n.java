@@ -138,6 +138,10 @@ final class I18n {
         put("Rendering the preview…", "Tworzenie podglądu…");
         put("Brightness of the photo's pixels: shadows left, highlights right.",
                 "Jasność pikseli zdjęcia: cienie po lewej, światła po prawej.");
+        put("Show clipping", "Pokaż przycięcia");
+        put("Marks pixels clipped to black or white — detail no slider can bring back.",
+                "Zaznacza piksele przycięte do czerni lub bieli — szczegółów stamtąd "
+                + "nie przywróci żaden suwak.");
         put("First photo", "Pierwsze zdjęcie");
         put("Last photo", "Ostatnie zdjęcie");
         put("< Prev", "< Wstecz");

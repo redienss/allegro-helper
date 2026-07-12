@@ -301,6 +301,16 @@ public final class MainWindow {
     // Stepping through the offer's photos, under the Before panel. The count is not
     // known until a render has listed the photo directory, so the label and the
     // buttons are driven by the Result, not by the click that asked for it.
+    /**
+     * Marks the clipped pixels on both photos. Off by default: the marks cover the
+     * photo they are diagnosing, so they are a thing to reach for when a histogram
+     * looks piled against an edge, not a permanent overlay. Not one of the step
+     * checkboxes — it changes nothing a run would do — so it sits under the After
+     * photo, opposite the stepper, rather than in the column of things that will
+     * happen.
+     */
+    private final JCheckBox showClippingBox = new JCheckBox("Show clipping", false);
+
     private final JButton firstPhotoButton = new JButton("|<");
     private final JButton previousPhotoButton = new JButton("< Prev");
     private final JButton nextPhotoButton = new JButton("Next >");
@@ -968,8 +978,22 @@ public final class MainWindow {
         panel.add(images);
         panel.add(histograms);
         panel.add(photoStepper());
+        panel.add(clippingToggle());
         panel.add(boxes);
         return panel;
+    }
+
+    /** The clipping toggle, centered under the After photo. */
+    private JPanel clippingToggle() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 0));
+        showClippingBox.setToolTipText(I18n.t(
+                "Marks pixels clipped to black or white — detail no slider can bring back."));
+        showClippingBox.addActionListener(e -> {
+            beforePanel.setShowClipping(showClippingBox.isSelected());
+            afterPanel.setShowClipping(showClippingBox.isSelected());
+        });
+        row.add(showClippingBox);
+        return row;
     }
 
     /**
@@ -1314,9 +1338,9 @@ public final class MainWindow {
                 failure = I18n.t("Could not render the preview: {0}", e.getMessage());
             }
             RetouchPreview.Result rendered = result;
-            // Counting every pixel belongs on this thread, not the EDT.
-            int[] beforeBins = rendered == null ? null : HistogramPanel.count(rendered.before());
-            int[] afterBins = rendered == null ? null : HistogramPanel.count(rendered.after());
+            // Reading every pixel belongs on this thread, not the EDT.
+            Exposure beforeExposure = rendered == null ? null : Exposure.of(rendered.before());
+            Exposure afterExposure = rendered == null ? null : Exposure.of(rendered.after());
             String message = failure;
             SwingUtilities.invokeLater(() -> {
                 if (previewToken.get() != my) {
@@ -1329,10 +1353,10 @@ public final class MainWindow {
                     showPhotoIndex();
                     showPreviewStatus(I18n.t("No photos."));
                 } else {
-                    beforePanel.setImage(rendered.before());
-                    afterPanel.setImage(rendered.after());
-                    beforeHistogram.setBins(beforeBins);
-                    afterHistogram.setBins(afterBins);
+                    beforePanel.setImage(rendered.before(), beforeExposure.clipped());
+                    afterPanel.setImage(rendered.after(), afterExposure.clipped());
+                    beforeHistogram.setExposure(beforeExposure);
+                    afterHistogram.setExposure(afterExposure);
                     // The render is the only thing that has counted the photos, and
                     // it clamps the index — so take both back from it.
                     previewPhotoCount = rendered.count();
@@ -1350,8 +1374,8 @@ public final class MainWindow {
     private void showPreviewStatus(String text) {
         beforePanel.setStatus(text);
         afterPanel.setStatus(text);
-        beforeHistogram.setBins(null);
-        afterHistogram.setBins(null);
+        beforeHistogram.setExposure(null);
+        afterHistogram.setExposure(null);
     }
 
     /**
@@ -2148,9 +2172,9 @@ public final class MainWindow {
 
     /**
      * The Retouch Preview tab: the photo row at the top, only as tall as the photos
-     * need; each photo's histogram beneath it; the photo stepper under the left
-     * (Before) half; the step checkboxes below that. Whatever height is left over
-     * stays empty at the bottom.
+     * need; each photo's histogram beneath it; the photo stepper and the clipping
+     * toggle under the left and right halves; the step checkboxes below that.
+     * Whatever height is left over stays empty at the bottom.
      *
      * <p>Neither {@code BorderLayout} nor {@code BoxLayout} can do this, because the
      * photo row's height depends on the width it is given (the halves keep their
@@ -2188,13 +2212,14 @@ public final class MainWindow {
 
         @Override
         public void layoutContainer(Container parent) {
-            if (parent.getComponentCount() < 4) {
+            if (parent.getComponentCount() < 5) {
                 return;
             }
             Container images = (Container) parent.getComponent(0);
             Component histograms = parent.getComponent(1);
             Component stepper = parent.getComponent(2);
-            Component boxes = parent.getComponent(3);
+            Component clipping = parent.getComponent(3);
+            Component boxes = parent.getComponent(4);
 
             Insets insets = parent.getInsets();
             int width = parent.getWidth() - insets.left - insets.right;
@@ -2207,7 +2232,8 @@ public final class MainWindow {
             // take what is left, so a short tab shrinks them rather than pushing the
             // sliders out of sight.
             int histogramsHeight = histograms.getPreferredSize().height;
-            int stepperHeight = stepper.getPreferredSize().height;
+            int stepperHeight = Math.max(stepper.getPreferredSize().height,
+                    clipping.getPreferredSize().height);
             int boxesHeight = boxes.getPreferredSize().height;
             int room = Math.max(0, available - histogramsHeight - stepperHeight
                     - boxesHeight - 3 * gap);
@@ -2220,10 +2246,12 @@ public final class MainWindow {
             y += imagesHeight + gap;
             histograms.setBounds(insets.left, y, width, histogramsHeight);
             y += histogramsHeight + gap;
-            // Centered under the Before half, whose width the row layout decides.
+            // The stepper under the Before half, the clipping toggle under the After
+            // half; the halves are whatever the photo row's layout made them.
             int half = images.getLayout() instanceof PreviewRowLayout row
                     ? row.halfWidth(width) : width;
             stepper.setBounds(insets.left, y, half, stepperHeight);
+            clipping.setBounds(insets.left + half + PREVIEW_HALF_GAP, y, half, stepperHeight);
             y += stepperHeight + gap;
             boxes.setBounds(insets.left, y, width, boxesHeight);
         }
@@ -2250,12 +2278,89 @@ public final class MainWindow {
      * tones legible: the shape stays honest even though the proportions do not, and
      * it is the shape that is being read.
      */
-    private static final class HistogramPanel extends JPanel {
+    /**
+     * What a preview photo's pixels are doing: the luminance histogram, how much of
+     * the frame is clipped at each end, and where — one pass over the photo, off the
+     * EDT, feeding both the {@link HistogramPanel} under it and the blinkies over it.
+     *
+     * <p>Clipping is the reason this exists. Brightness scales channels and saturates
+     * them at 255, and on a white item against a pale backdrop that destroys detail
+     * you cannot get back by dialling the slider down again — the pixels are already
+     * flat white. The histogram shows it as a pile against the right edge, but only
+     * if you are reading the histogram; the mask paints it on the photo, where you
+     * cannot miss it.
+     */
+    private record Exposure(int[] bins, double shadowFraction, double highlightFraction,
+                            BufferedImage clipped) {
 
         /** One bin per 8-bit luminance level. */
         private static final int BINS = 256;
 
-        private int[] bins;
+        /**
+         * A channel this high counts as blown, this low as crushed. Not 255/0: JPEG
+         * quantization moves a truly clipped channel a level or two off the rail, and
+         * a pixel that came back 253 is just as gone as one that came back 255.
+         */
+        private static final int HIGHLIGHT_CLIP = 253;
+        private static final int SHADOW_CLIP = 2;
+
+        /** Blown highlights, in the red every camera marks them in. */
+        private static final int HIGHLIGHT_MARK = 0xB0FF3B30;
+        /** Crushed shadows, in a blue that reads against a dark item. */
+        private static final int SHADOW_MARK = 0xB0308BFF;
+
+        /** Below this share of the frame, clipping is a stray pixel and not worth a number. */
+        private static final double NEGLIGIBLE = 0.0005; // 0.05%
+
+        /** Measures a photo. Call off the EDT: it reads every pixel. */
+        static Exposure of(BufferedImage img) {
+            int w = img.getWidth();
+            int h = img.getHeight();
+            int[] px = img.getRGB(0, 0, w, h, null, 0, w);
+            int[] bins = new int[BINS];
+            int[] marks = new int[px.length]; // transparent where nothing is clipped
+            int shadows = 0;
+            int highlights = 0;
+
+            for (int i = 0; i < px.length; i++) {
+                int p = px[i];
+                int r = (p >> 16) & 0xFF;
+                int g = (p >> 8) & 0xFF;
+                int b = p & 0xFF;
+                // The luminance weights the retouching steps themselves use.
+                bins[(int) Math.round(0.299 * r + 0.587 * g + 0.114 * b)]++;
+
+                // Any channel, not the luminance: a blown red channel is lost detail
+                // even where the pixel as a whole is not especially bright.
+                if (r >= HIGHLIGHT_CLIP || g >= HIGHLIGHT_CLIP || b >= HIGHLIGHT_CLIP) {
+                    marks[i] = HIGHLIGHT_MARK;
+                    highlights++;
+                } else if (r <= SHADOW_CLIP && g <= SHADOW_CLIP && b <= SHADOW_CLIP) {
+                    // All three, or every deep shadow with a color cast would light up.
+                    marks[i] = SHADOW_MARK;
+                    shadows++;
+                }
+            }
+
+            BufferedImage clipped = null;
+            if (shadows > 0 || highlights > 0) {
+                clipped = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                clipped.setRGB(0, 0, w, h, marks, 0, w);
+            }
+            double n = px.length;
+            return new Exposure(bins, shadows / n, highlights / n, clipped);
+        }
+
+        /** The clipped share as a percentage, or null when it is not worth reporting. */
+        String label(double fraction) {
+            return fraction < NEGLIGIBLE ? null
+                    : String.format(Locale.ROOT, "%.1f%%", fraction * 100);
+        }
+    }
+
+    private static final class HistogramPanel extends JPanel {
+
+        private Exposure exposure;
 
         HistogramPanel() {
             setBorder(BorderFactory.createLineBorder(UIManager.getColor("controlShadow")));
@@ -2264,31 +2369,16 @@ public final class MainWindow {
                     "Brightness of the photo's pixels: shadows left, highlights right."));
         }
 
-        /** Counts a photo's pixels per luminance level. Call off the EDT: it reads every pixel. */
-        static int[] count(BufferedImage img) {
-            int w = img.getWidth();
-            int h = img.getHeight();
-            int[] px = img.getRGB(0, 0, w, h, null, 0, w);
-            int[] bins = new int[BINS];
-            for (int p : px) {
-                // The luminance weights the retouching steps themselves use.
-                int luma = (int) Math.round(0.299 * ((p >> 16) & 0xFF)
-                        + 0.587 * ((p >> 8) & 0xFF) + 0.114 * (p & 0xFF));
-                bins[Math.max(0, Math.min(BINS - 1, luma))]++;
-            }
-            return bins;
-        }
-
-        /** Shows a photo's histogram, or nothing when {@code bins} is null. */
-        void setBins(int[] bins) {
-            this.bins = bins;
+        /** Shows a photo's histogram, or nothing when {@code exposure} is null. */
+        void setExposure(Exposure exposure) {
+            this.exposure = exposure;
             repaint();
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
-            if (bins == null) {
+            if (exposure == null) {
                 return;
             }
             Insets insets = getInsets();
@@ -2297,6 +2387,7 @@ public final class MainWindow {
             if (w <= 0 || h <= 0) {
                 return;
             }
+            int[] bins = exposure.bins();
             double peak = 0;
             for (int count : bins) {
                 peak = Math.max(peak, Math.sqrt(count));
@@ -2311,8 +2402,8 @@ public final class MainWindow {
             // One filled shape rather than 256 bars, so it reads as a curve at any width.
             Path2D shape = new Path2D.Double();
             shape.moveTo(insets.left, insets.top + h);
-            for (int i = 0; i < BINS; i++) {
-                double x = insets.left + (i + 0.5) * w / (double) BINS;
+            for (int i = 0; i < Exposure.BINS; i++) {
+                double x = insets.left + (i + 0.5) * w / (double) Exposure.BINS;
                 double y = insets.top + h - Math.sqrt(bins[i]) / peak * h;
                 shape.lineTo(x, y);
             }
@@ -2321,7 +2412,26 @@ public final class MainWindow {
             Color fg = getForeground();
             g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), 150));
             g2.fill(shape);
+
+            // How much is clipped, at the end of the histogram it is clipped at, in
+            // the color the photo's blinkies mark it in. Absent when there is none.
+            paintClipped(g2, exposure.label(exposure.shadowFraction()),
+                    new Color(Exposure.SHADOW_MARK, true), insets.left + 4, insets.top + 4, false);
+            paintClipped(g2, exposure.label(exposure.highlightFraction()),
+                    new Color(Exposure.HIGHLIGHT_MARK, true), insets.left + w - 4, insets.top + 4,
+                    true);
             g2.dispose();
+        }
+
+        /** Draws a clipped-percentage tag, right-aligned at {@code x} when {@code rightAlign}. */
+        private void paintClipped(Graphics2D g2, String label, Color color, int x, int y,
+                                  boolean rightAlign) {
+            if (label == null) {
+                return;
+            }
+            g2.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue()));
+            FontMetrics fm = g2.getFontMetrics();
+            g2.drawString(label, rightAlign ? x - fm.stringWidth(label) : x, y + fm.getAscent());
         }
     }
 
@@ -2331,6 +2441,9 @@ public final class MainWindow {
         private static final double DEFAULT_ASPECT = 4.0 / 3.0;
 
         private BufferedImage image;
+        /** Clipped pixels of {@link #image}, painted over it while {@link #showClipping}. */
+        private BufferedImage clipped;
+        private boolean showClipping;
         private String status = "";
         /**
          * Width/height of the last image shown, which the panel keeps its shape at
@@ -2346,17 +2459,26 @@ public final class MainWindow {
             setBorder(BorderFactory.createTitledBorder(title));
         }
 
-        void setImage(BufferedImage img) {
+        /** @param clipped the photo's clipped pixels, or null when it has none */
+        void setImage(BufferedImage img, BufferedImage clipped) {
             image = img;
+            this.clipped = clipped;
             status = "";
             aspect = img.getWidth() / (double) img.getHeight();
             revalidate(); // the row's height follows the image's shape
             repaint();
         }
 
+        /** Whether clipped pixels are marked on the photo. */
+        void setShowClipping(boolean show) {
+            showClipping = show;
+            repaint();
+        }
+
         /** Shows {@code text} instead of an image (already translated), at the current shape. */
         void setStatus(String text) {
             image = null;
+            clipped = null;
             status = text;
             revalidate();
             repaint();
@@ -2395,8 +2517,16 @@ public final class MainWindow {
                         h / (double) image.getHeight());
                 int iw = Math.max(1, (int) Math.round(image.getWidth() * scale));
                 int ih = Math.max(1, (int) Math.round(image.getHeight() * scale));
-                g2.drawImage(image, insets.left + (w - iw) / 2, insets.top + (h - ih) / 2,
-                        iw, ih, null);
+                int x = insets.left + (w - iw) / 2;
+                int y = insets.top + (h - ih) / 2;
+                g2.drawImage(image, x, y, iw, ih, null);
+                if (showClipping && clipped != null) {
+                    // Nearest-neighbour, so a thin run of blown pixels stays visible
+                    // instead of being blended away by the downscale.
+                    g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                            RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                    g2.drawImage(clipped, x, y, iw, ih, null);
+                }
             }
             g2.dispose();
         }
