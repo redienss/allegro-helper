@@ -35,7 +35,7 @@ public final class GenerateDescription {
 
     /** Default system prompt, used when {@code OPENAI_SYSTEM_PROMPT} is not set. */
     public static final String SYSTEM_PROMPT =
-            "Piszesz krótkie, rzeczowe opisy ofert sprzedaży używanych przedmiotów prywatnych "
+            "Piszesz rzeczowe opisy ofert sprzedaży używanych przedmiotów prywatnych "
                     + "na Allegro Lokalnie, w języku polskim.\n\n"
                     + "Dane o KONKRETNYM egzemplarzu (pola 'condition', 'damage', 'quantity') pochodzą "
                     + "WYŁĄCZNIE z podanego JSON-a - nie zmyślaj ani nie upiększaj tych informacji. Pole "
@@ -72,7 +72,7 @@ public final class GenerateDescription {
                     + "Styl: konkretny, rzeczowy, bez marketingowego zachwytu - unikaj sformułowań typu 'idealny "
                     + "do', 'świetny wybór', 'gwarantuje najwyższą jakość', a także wezwań do zakupu typu "
                     + "'zapraszam do zakupu', 'zachęcam do zakupu', 'kup teraz', również przy opisywaniu "
-                    + "specyfikacji technicznych. 3-6 zdań.\n\n"
+                    + "specyfikacji technicznych.\n\n"
                     + "Nie podawaj w treści opisu pól 'price' ani 'inpost_size' (cena i gabaryt paczki) - te "
                     + "informacje są dodawane automatycznie osobno, pod opisem.";
 
