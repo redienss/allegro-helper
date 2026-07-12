@@ -29,6 +29,8 @@ public final class Config {
     public final int photosPerOffer;
     public final int seriesGapThresholdSeconds;
     public final SeriesRecognition.Mode seriesRecognition;
+    /** The brightness step's strength dial; see {@link Retouch#DEFAULT_BRIGHTNESS}. */
+    public final double brightnessStrength;
     /** The contrast step's strength dial; see {@link Retouch#DEFAULT_CONTRAST}. */
     public final double contrastStrength;
     public final String ocrLanguages;
@@ -56,6 +58,8 @@ public final class Config {
         this.photosPerOffer = intOrDefault(env, "PHOTOS_PER_OFFER", 20);
         this.seriesGapThresholdSeconds = intOrDefault(env, "SERIES_GAP_THRESHOLD_SECONDS", 60);
         this.seriesRecognition = SeriesRecognition.Mode.parse(env.get("SERIES_RECOGNITION"));
+        this.brightnessStrength = Retouch.clampStrength(
+                doubleOrDefault(env, "BRIGHTNESS_STRENGTH", Retouch.DEFAULT_BRIGHTNESS));
         this.contrastStrength = Retouch.clampStrength(
                 doubleOrDefault(env, "CONTRAST_STRENGTH", Retouch.DEFAULT_CONTRAST));
         this.ocrLanguages = env.getOrDefault("OCR_LANGUAGES", "pol+eng");

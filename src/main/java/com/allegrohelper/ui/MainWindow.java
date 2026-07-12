@@ -193,11 +193,17 @@ public final class MainWindow {
     /** Vertical gap above and below each row of the Retouch Preview's checkbox column. */
     private static final int PREVIEW_ROW_GAP = 8;
 
-    /** One wheel notch on the contrast slider, in its hundredths: 0.05x. */
-    private static final int CONTRAST_WHEEL_STEP = 5;
+    /** Pipeline steps, i.e. checkboxes in the Workflow section — {@link Workflow.Step}'s count. */
+    private static final int WORKFLOW_STEPS = Workflow.Step.values().length;
 
-    /** How long the wheel must be still before the contrast slider's value counts as settled. */
-    private static final int CONTRAST_WHEEL_SETTLE_MS = 300;
+    /** How many step checkboxes the Workflow section puts on one row. */
+    private static final int WORKFLOW_BOX_COLUMNS = 4;
+
+    /** One wheel notch on a strength slider, in its hundredths: 0.05x. */
+    private static final int WHEEL_STEP = 5;
+
+    /** How long the wheel must be still before a strength slider's value counts as settled. */
+    private static final int WHEEL_SETTLE_MS = 300;
 
     private static final String ALLEGRO_FORM_URL = "https://allegrolokalnie.pl/o/oferty/wystaw";
 
@@ -220,6 +226,7 @@ public final class MainWindow {
     private final JCheckBox importBox = new JCheckBox("Import", true);
     private final JCheckBox matchBox = new JCheckBox("Match", true);
     private final JCheckBox whiteBalanceBox = new JCheckBox("White balance", true);
+    private final JCheckBox brightnessBox = new JCheckBox("Brightness", true);
     private final JCheckBox contrastBox = new JCheckBox("Contrast", true);
     private final JCheckBox autoCropBox = new JCheckBox("Auto-crop", true);
     private final JCheckBox ocrBox = new JCheckBox("OCR", true);
@@ -256,21 +263,15 @@ public final class MainWindow {
     private final ImagePanel beforePanel = new ImagePanel("Before");
     private final ImagePanel afterPanel = new ImagePanel("After");
     private final JCheckBox previewWhiteBalanceBox = new JCheckBox("White balance", true);
+    private final JCheckBox previewBrightnessBox = new JCheckBox("Brightness", true);
     private final JCheckBox previewContrastBox = new JCheckBox("Contrast", true);
     private final JCheckBox previewAutoCropBox = new JCheckBox("Auto-crop", true);
-    private final JSlider contrastSlider = new JSlider(
-            scaledStrength(Retouch.MIN_CONTRAST),
-            scaledStrength(Retouch.MAX_CONTRAST),
-            scaledStrength(Retouch.DEFAULT_CONTRAST));
-    private final JLabel contrastValueLabel = new JLabel();
-    /**
-     * Ends the "adjusting" state a wheel notch put the slider in, once the wheel has
-     * been still for {@link #CONTRAST_WHEEL_SETTLE_MS}. That fires the slider's own
-     * change event with nothing adjusting any more, so a scroll re-renders the
-     * preview exactly once, through the same path a finished drag takes.
-     */
-    private final Timer wheelSettle = new Timer(CONTRAST_WHEEL_SETTLE_MS,
-            e -> contrastSlider.setValueIsAdjusting(false));
+    private final StrengthDial brightnessDial = new StrengthDial(previewBrightnessBox,
+            Retouch.DEFAULT_BRIGHTNESS,
+            "1.00x leaves the photo as it is; less darkens it, more brightens it.");
+    private final StrengthDial contrastDial = new StrengthDial(previewContrastBox,
+            Retouch.DEFAULT_CONTRAST,
+            "1.00x leaves the photo as it is; less flattens it, more deepens it.");
     private final ExecutorService previewLoader = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "retouch-preview");
         t.setDaemon(true);
@@ -767,12 +768,17 @@ public final class MainWindow {
         JPanel panel = titled("Workflow");
         panel.setLayout(new BorderLayout(6, 6));
 
-        // Tight gap: all seven boxes must fit one row at the default window size,
-        // or the height-capped section cuts off whatever wraps to a second row.
-        JPanel boxes = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
+        // A fixed grid, in pipeline order, reading left to right and top to bottom.
+        // A FlowLayout would wrap whatever does not fit the window's width onto a
+        // row the height-capped section then cuts off — invisibly, which is how the
+        // eighth step could go missing. WORKFLOW_BOX_COLUMNS is the only thing to
+        // change when a step is added.
+        int rows = (int) Math.ceil(WORKFLOW_STEPS / (double) WORKFLOW_BOX_COLUMNS);
+        JPanel boxes = new JPanel(new GridLayout(rows, WORKFLOW_BOX_COLUMNS, 5, 2));
         boxes.add(importBox);
         boxes.add(matchBox);
         boxes.add(whiteBalanceBox);
+        boxes.add(brightnessBox);
         boxes.add(contrastBox);
         boxes.add(autoCropBox);
         boxes.add(ocrBox);
@@ -905,12 +911,12 @@ public final class MainWindow {
      * judge them before committing a run to disk. The rendering is
      * {@link RetouchPreview} — the pipeline's own code, not a lookalike.
      *
-     * <p>Its three checkboxes are the Workflow section's, mirrored: ticking one
+     * <p>Its four checkboxes are the Workflow section's, mirrored: ticking one
      * here ticks its twin there and vice versa, so there is only one truth about
      * which steps will run. Only {@link #linkRetouchBoxes} writes the twin, and
      * {@code setSelected} does not fire an {@code ActionListener}, so the mirror
-     * cannot loop back. The contrast slider has no twin — this tab is the only
-     * place it lives, and {@link #currentConfig} passes its value to the run.
+     * cannot loop back. The strength sliders have no twins — this tab is the only
+     * place they live, and {@link #currentConfig} passes their values to the run.
      */
     private JComponent buildRetouchPreviewTab() {
         // Equal halves, so before and after are compared at the same scale.
@@ -919,17 +925,19 @@ public final class MainWindow {
         images.add(afterPanel);
 
         linkRetouchBoxes(previewWhiteBalanceBox, whiteBalanceBox);
+        linkRetouchBoxes(previewBrightnessBox, brightnessBox);
         linkRetouchBoxes(previewContrastBox, contrastBox);
         linkRetouchBoxes(previewAutoCropBox, autoCropBox);
 
-        // One step per row, in pipeline order, so the contrast slider can sit with
-        // the box it belongs to instead of trailing a row of unrelated boxes.
+        // One step per row, in pipeline order, so each strength slider sits with the
+        // box it belongs to instead of trailing a row of unrelated boxes.
+        Config cfg = Config.forBaseDir(Path.of(baseDirField.getText().strip()));
         JPanel boxes = new JPanel();
         boxes.setLayout(new BoxLayout(boxes, BoxLayout.Y_AXIS));
         boxes.add(leftRow(previewWhiteBalanceBox));
-        boxes.add(contrastRow());
+        boxes.add(brightnessDial.row(cfg.brightnessStrength));
+        boxes.add(contrastDial.row(cfg.contrastStrength));
         boxes.add(leftRow(previewAutoCropBox));
-        configureContrastSlider();
 
         // The photo row, the photo stepper, then the steps right under them — a
         // BorderLayout would put the last at the bottom of the tab, a long way below
@@ -1031,73 +1039,101 @@ public final class MainWindow {
     }
 
     /**
-     * The Contrast row: its checkbox, then the slider across all the width the tab
-     * has left, then the value. A {@link BorderLayout} rather than {@link #leftRow}
-     * because only its center stretches — in a {@code FlowLayout} the slider would
-     * sit at its preferred width, and a wider tab would just pad around it.
+     * One retouching step's strength dial: its Retouch Preview checkbox, a slider
+     * across all the width the tab has left, and the value it is set to
+     * ("1.20x"). Brightness and contrast each get one — same widget, same
+     * behavior, different {@link Retouch} mode.
+     *
+     * <p>The slider re-renders the preview only once its value settles: a render
+     * costs a decode and a series scan, and every value the knob passes through on
+     * the way would queue one. A drag says when it has settled
+     * ({@code getValueIsAdjusting}); the wheel cannot, so {@link #wheelSettle}
+     * calls it settled once the scrolling stops.
      */
-    private JPanel contrastRow() {
-        JPanel row = previewRow(new BorderLayout(6, 0));
-        // leftRow's FlowLayout gaps, so the three rows are evenly spaced.
-        row.setBorder(BorderFactory.createEmptyBorder(PREVIEW_ROW_GAP, 5, PREVIEW_ROW_GAP, 5));
-        row.add(previewContrastBox, BorderLayout.WEST);
-        row.add(contrastSlider, BorderLayout.CENTER);
-        row.add(contrastValueLabel, BorderLayout.EAST);
-        return row;
-    }
+    private final class StrengthDial {
 
-    /**
-     * Sets the contrast slider up from the config — so a {@code CONTRAST_STRENGTH}
-     * in {@code .env} is what the user sees — and has it re-render the preview.
-     * Only once the value settles: a render costs a full-size decode, and every
-     * value the knob passes through on the way would queue one. A drag says when it
-     * has settled ({@code getValueIsAdjusting}); the wheel cannot, so
-     * {@link #wheelSettle} calls it settled once the scrolling stops.
-     */
-    private void configureContrastSlider() {
-        wheelSettle.setRepeats(false); // one shot per scroll, restarted by each notch
-        contrastSlider.addMouseWheelListener(e -> {
-            if (!contrastSlider.isEnabled()) {
-                return;
-            }
-            // Wheel up (a negative rotation) means more contrast, the direction the
-            // knob moves under the same gesture.
-            contrastSlider.setValueIsAdjusting(true); // no render per notch
-            contrastSlider.setValue(
-                    contrastSlider.getValue() - e.getWheelRotation() * CONTRAST_WHEEL_STEP);
-            wheelSettle.restart();
-        });
-        contrastSlider.setValue(scaledStrength(
-                Config.forBaseDir(Path.of(baseDirField.getText().strip())).contrastStrength));
-        contrastSlider.setMajorTickSpacing(scaledStrength(Retouch.NEUTRAL_CONTRAST)
-                - scaledStrength(Retouch.MIN_CONTRAST));
-        contrastSlider.setPaintTicks(true);
-        contrastSlider.setToolTipText(I18n.t(
-                "1.00x leaves the photo as it is; less flattens it, more deepens it."));
-        contrastSlider.addChangeListener(e -> {
-            showContrastValue();
-            if (!contrastSlider.getValueIsAdjusting()) {
-                refreshRetouchPreview();
-            }
-        });
-        showContrastValue();
-    }
+        private final JCheckBox box;
+        private final JSlider slider = new JSlider(
+                scaledStrength(Retouch.MIN_STRENGTH),
+                scaledStrength(Retouch.MAX_STRENGTH),
+                scaledStrength(Retouch.NEUTRAL_STRENGTH));
+        private final JLabel valueLabel = new JLabel();
+        /**
+         * Ends the "adjusting" state a wheel notch put the slider in, once the wheel
+         * has been still for {@link #WHEEL_SETTLE_MS}. That fires the slider's own
+         * change event with nothing adjusting any more, so a scroll re-renders the
+         * preview exactly once, through the same path a finished drag takes.
+         */
+        private final Timer wheelSettle = new Timer(WHEEL_SETTLE_MS,
+                e -> slider.setValueIsAdjusting(false));
 
-    /**
-     * Shows the slider's setting beside it, as the multiplier it stands for, and
-     * greys the pair out while the step is unticked. {@code Locale.ROOT} keeps the
-     * decimal point a point in both languages: it is the same number the
-     * {@code CONTRAST_STRENGTH} config key takes, which is not localized.
-     */
-    private void showContrastValue() {
-        contrastValueLabel.setText(String.format(Locale.ROOT, "%.2fx", contrastStrength()));
-        contrastSlider.setEnabled(previewContrastBox.isSelected());
-        contrastValueLabel.setEnabled(previewContrastBox.isSelected());
-    }
+        /**
+         * @param box the step's Retouch Preview checkbox; the dial greys out with it
+         * @param initial the strength to show until {@link #row} reads the config
+         * @param tooltip what the numbers mean, in English for {@link I18n}
+         */
+        StrengthDial(JCheckBox box, double initial, String tooltip) {
+            this.box = box;
+            slider.setValue(scaledStrength(initial));
+            slider.setMajorTickSpacing(scaledStrength(Retouch.NEUTRAL_STRENGTH)
+                    - scaledStrength(Retouch.MIN_STRENGTH));
+            slider.setPaintTicks(true);
+            slider.setToolTipText(I18n.t(tooltip));
 
-    /** The contrast strength the slider is set to. */
-    private double contrastStrength() {
-        return contrastSlider.getValue() / 100.0;
+            wheelSettle.setRepeats(false); // one shot per scroll, restarted by each notch
+            slider.addMouseWheelListener(e -> {
+                if (!slider.isEnabled()) {
+                    return;
+                }
+                // Wheel up (a negative rotation) means more, the direction the knob
+                // moves under the same gesture.
+                slider.setValueIsAdjusting(true); // no render per notch
+                slider.setValue(slider.getValue() - e.getWheelRotation() * WHEEL_STEP);
+                wheelSettle.restart();
+            });
+            slider.addChangeListener(e -> {
+                showValue();
+                if (!slider.getValueIsAdjusting()) {
+                    refreshRetouchPreview();
+                }
+            });
+        }
+
+        /**
+         * The dial's row, set to {@code strength} — the config's, so a
+         * {@code *_STRENGTH} in {@code .env} is what the user sees. A
+         * {@link BorderLayout} rather than {@link #leftRow} because only its center
+         * stretches: in a {@code FlowLayout} the slider would sit at its preferred
+         * width and a wider tab would just pad around it.
+         */
+        JPanel row(double strength) {
+            slider.setValue(scaledStrength(strength));
+            JPanel row = previewRow(new BorderLayout(6, 0));
+            // leftRow's FlowLayout gaps, so the rows are evenly spaced.
+            row.setBorder(BorderFactory.createEmptyBorder(PREVIEW_ROW_GAP, 5, PREVIEW_ROW_GAP, 5));
+            row.add(box, BorderLayout.WEST);
+            row.add(slider, BorderLayout.CENTER);
+            row.add(valueLabel, BorderLayout.EAST);
+            showValue();
+            return row;
+        }
+
+        /** The strength the slider is set to. */
+        double strength() {
+            return slider.getValue() / 100.0;
+        }
+
+        /**
+         * Shows the setting beside the slider, as the multiplier it stands for, and
+         * greys the pair out while the step is unticked. {@code Locale.ROOT} keeps
+         * the decimal point a point in both languages: it is the same number the
+         * {@code *_STRENGTH} config key takes, which is not localized.
+         */
+        void showValue() {
+            valueLabel.setText(String.format(Locale.ROOT, "%.2fx", strength()));
+            valueLabel.setEnabled(box.isSelected());
+            slider.setEnabled(box.isSelected());
+        }
     }
 
     /** A strength in the slider's units: hundredths, because a {@link JSlider} only speaks int. */
@@ -1115,14 +1151,20 @@ public final class MainWindow {
     private void linkRetouchBoxes(JCheckBox preview, JCheckBox workflow) {
         preview.addActionListener(e -> {
             workflow.setSelected(preview.isSelected());
-            showContrastValue();
+            showDialValues();
             refreshRetouchPreview();
         });
         workflow.addActionListener(e -> {
             preview.setSelected(workflow.isSelected());
-            showContrastValue();
+            showDialValues();
             refreshRetouchPreview();
         });
+    }
+
+    /** Both dials follow their checkbox, whichever of the mirrored pair was clicked. */
+    private void showDialValues() {
+        brightnessDial.showValue();
+        contrastDial.showValue();
     }
 
     /**
@@ -1152,17 +1194,17 @@ public final class MainWindow {
         }
 
         int photoIndex = previewPhotoIndex;
-        boolean whiteBalance = previewWhiteBalanceBox.isSelected();
-        boolean contrast = previewContrastBox.isSelected();
-        double strength = contrastStrength();
-        boolean autoCrop = previewAutoCropBox.isSelected();
+        RetouchPreview.Settings steps = new RetouchPreview.Settings(
+                previewWhiteBalanceBox.isSelected(),
+                previewBrightnessBox.isSelected(), brightnessDial.strength(),
+                previewContrastBox.isSelected(), contrastDial.strength(),
+                previewAutoCropBox.isSelected());
         showPreviewStatus(I18n.t("Rendering the preview…"));
         previewLoader.submit(() -> {
             String failure = null;
             RetouchPreview.Result result = null;
             try {
-                result = RetouchPreview.render(offerDir, photoIndex, whiteBalance, contrast,
-                        strength, autoCrop, PREVIEW_MAX_SIZE);
+                result = RetouchPreview.render(offerDir, photoIndex, steps, PREVIEW_MAX_SIZE);
             } catch (IOException e) {
                 failure = I18n.t("Could not render the preview: {0}", e.getMessage());
             }
@@ -1416,12 +1458,13 @@ public final class MainWindow {
 
     /**
      * The final photos of an offer: the output of the latest pipeline step that
-     * has run — cropped, else contrasted, else white-balanced, else the
-     * pre-split {@code retouched/} kept for offers processed before the retouch
-     * step was split in two.
+     * has run — cropped, else contrasted, else brightened, else white-balanced,
+     * else the pre-split {@code retouched/} kept for offers processed before the
+     * retouch step was split up.
      */
     private static Path outputPhotoDir(Path offerDir) {
-        for (String dirName : new String[] {"cropped", "contrasted", "white_balanced", "retouched"}) {
+        for (String dirName : new String[] {
+                "cropped", "contrasted", "brightened", "white_balanced", "retouched"}) {
             Path dir = offerDir.resolve(dirName);
             if (Files.isDirectory(dir)) {
                 return dir;
@@ -1601,7 +1644,7 @@ public final class MainWindow {
                     "row {0} — <i>not matched yet (photos and Description output appear after Match)</i>",
                     rowNumber) + "</html>");
             photosInputGallery.message(I18n.t("Not matched yet — run Match."));
-            photosOutputGallery.message(I18n.t("Not retouched yet — run White balance or Contrast."));
+            photosOutputGallery.message(I18n.t("Not retouched yet — run a retouching step."));
             formGallery.message(I18n.t("Not matched yet — run Match."));
             formDescriptionArea.setText("");
         } else {
@@ -2747,6 +2790,9 @@ public final class MainWindow {
         if (whiteBalanceBox.isSelected()) {
             steps.add(Workflow.Step.WHITE_BALANCE);
         }
+        if (brightnessBox.isSelected()) {
+            steps.add(Workflow.Step.BRIGHTNESS);
+        }
         if (contrastBox.isSelected()) {
             steps.add(Workflow.Step.CONTRAST);
         }
@@ -2764,10 +2810,11 @@ public final class MainWindow {
 
     /**
      * The config for the current base directory, with the photo directory, the
-     * recognition mode and the contrast strength the user set in the UI overriding
-     * {@code .env} and the environment — those three are UI controls, so what is on
-     * screen must win. The contrast strength in particular is what the Retouch
-     * Preview showed, so a run reproduces the preview rather than some other value.
+     * recognition mode and the two retouch strengths the user set in the UI
+     * overriding {@code .env} and the environment — they are UI controls, so what is
+     * on screen must win. The strengths in particular are the ones the Retouch
+     * Preview rendered, so a run reproduces the preview rather than some other
+     * value.
      */
     private Config currentConfig() {
         Map<String, String> overrides = new HashMap<>();
@@ -2777,7 +2824,8 @@ public final class MainWindow {
         }
         overrides.put("SERIES_RECOGNITION",
                 SeriesRecognition.Mode.values()[seriesModeCombo.getSelectedIndex()].key);
-        overrides.put("CONTRAST_STRENGTH", String.valueOf(contrastStrength()));
+        overrides.put("BRIGHTNESS_STRENGTH", String.valueOf(brightnessDial.strength()));
+        overrides.put("CONTRAST_STRENGTH", String.valueOf(contrastDial.strength()));
         return Config.forBaseDir(Path.of(baseDirField.getText().strip()), overrides);
     }
 

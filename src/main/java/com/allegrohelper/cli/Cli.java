@@ -10,11 +10,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Headless command-line entry point:
- * {@code import | match | whitebalance | contrast | autocrop | ocr | describe | all}
- * ({@code retouch} is an alias for white balance + contrast). Useful for
- * scripting and for running the pipeline without a display. The contrast
- * strength is the {@code CONTRAST_STRENGTH} config key — the slider that sets it
- * lives in the UI, and headless runs have no other way to reach it.
+ * {@code import | match | whitebalance | brightness | contrast | autocrop | ocr | describe | all}
+ * ({@code retouch} is an alias for the three retouching steps). Useful for
+ * scripting and for running the pipeline without a display. The brightness and
+ * contrast strengths are the {@code BRIGHTNESS_STRENGTH} / {@code CONTRAST_STRENGTH}
+ * config keys — the sliders that set them live in the UI, and headless runs have
+ * no other way to reach them.
  */
 public final class Cli {
 
@@ -34,8 +35,9 @@ public final class Cli {
     public static int run(String[] args) {
         if (args.length == 0) {
             System.err.println(
-                    "Usage: allegro-helper --cli <import|match|whitebalance|contrast|autocrop|ocr|describe|all> [baseDir]\n"
-                    + "       (retouch = whitebalance + contrast)");
+                    "Usage: allegro-helper --cli "
+                    + "<import|match|whitebalance|brightness|contrast|autocrop|ocr|describe|all> [baseDir]\n"
+                    + "       (retouch = whitebalance + brightness + contrast)");
             return 2;
         }
         String step = args[0].toLowerCase();
@@ -46,16 +48,18 @@ public final class Cli {
             case "import" -> List.of(Workflow.Step.IMPORT);
             case "match" -> List.of(Workflow.Step.MATCH);
             case "whitebalance", "white-balance", "wb" -> List.of(Workflow.Step.WHITE_BALANCE);
+            case "brightness" -> List.of(Workflow.Step.BRIGHTNESS);
             // The autocontrast spellings are what the step was called before it
             // became a strength dial; scripts passing them keep working.
             case "contrast", "autocontrast", "auto-contrast" -> List.of(Workflow.Step.CONTRAST);
-            // Pre-split alias: retouch used to be one step doing both.
-            case "retouch" -> List.of(Workflow.Step.WHITE_BALANCE, Workflow.Step.CONTRAST);
+            // Pre-split alias: retouch used to be one step doing all the retouching.
+            case "retouch" -> List.of(Workflow.Step.WHITE_BALANCE, Workflow.Step.BRIGHTNESS,
+                    Workflow.Step.CONTRAST);
             case "autocrop", "auto-crop" -> List.of(Workflow.Step.AUTOCROP);
             case "ocr" -> List.of(Workflow.Step.OCR);
             case "describe" -> List.of(Workflow.Step.DESCRIBE);
             case "all" -> List.of(Workflow.Step.IMPORT, Workflow.Step.MATCH,
-                    Workflow.Step.WHITE_BALANCE, Workflow.Step.CONTRAST,
+                    Workflow.Step.WHITE_BALANCE, Workflow.Step.BRIGHTNESS, Workflow.Step.CONTRAST,
                     Workflow.Step.AUTOCROP, Workflow.Step.OCR, Workflow.Step.DESCRIBE);
             default -> null;
         };

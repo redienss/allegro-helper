@@ -14,32 +14,43 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * The two photo-retouching steps: gray-world white balance and a contrast
- * adjustment, each saved as JPEG quality 90. They are separate pipeline steps
- * so either can run without the other; contrast reads the white-balanced photos
- * when that step has run, the originals otherwise. Running both re-encodes the
- * JPEG twice — at quality 90 the extra generation loss is negligible, and it
- * buys per-step control.
+ * The three photo-retouching steps: gray-world white balance, brightness and
+ * contrast, each saved as JPEG quality 90. They are separate pipeline steps so
+ * any can run without the others; each reads the most-processed input available
+ * ({@link #inputDir}), so unticking one simply drops it out of the chain. Every
+ * step re-encodes the JPEG — at quality 90 the extra generation loss is
+ * negligible, and it buys per-step control.
  * Cropping is a separate step ({@link AutoCrop}); background removal is
  * deliberately left manual.
  *
- * <p>Contrast is a <em>strength dial</em>, not an automatic stretch: the user
- * sets it on the Retouch Preview tab's slider (or {@code CONTRAST_STRENGTH})
- * and sees the result before committing a run. The earlier step reproduced
- * PIL's {@code ImageOps.autocontrast(cutoff=1)}, which adapts to each photo's
- * own histogram and therefore cannot be dialled up or down — a knob the user
- * can turn is worth more here than one that guesses.
+ * <p>Brightness and contrast are <em>strength dials</em>, not automatic
+ * corrections: the user sets them on the Retouch Preview tab's sliders (or
+ * {@code BRIGHTNESS_STRENGTH} / {@code CONTRAST_STRENGTH}) and sees the result
+ * before committing a run. Contrast used to reproduce PIL's
+ * {@code ImageOps.autocontrast(cutoff=1)}, which adapts to each photo's own
+ * histogram and therefore cannot be dialled up or down — a knob the user can
+ * turn is worth more here than one that guesses.
+ *
+ * <p>Brightness runs <em>before</em> contrast, the order a darkroom works in:
+ * contrast pivots on the photo's mean luminance, so brightening afterwards would
+ * shift the pivot the user just judged the contrast against.
  */
 public final class Retouch {
 
-    /** One retouching operation; each writes its own directory in the offer. */
+    /**
+     * One retouching operation; each writes its own directory in the offer. The
+     * constants are declared in pipeline order, which {@link #inputDir} walks
+     * backwards to find a step's input.
+     */
     public enum Mode {
-        /** Gray-world white balance, from {@code photos/} into {@code white_balanced/}. */
+        /** Gray-world white balance, into {@code white_balanced/}. */
         WHITE_BALANCE("white_balanced", "white balance"),
+        /** Brightness at {@code BRIGHTNESS_STRENGTH}, into {@code brightened/}. */
+        BRIGHTNESS("brightened", "brightness"),
         /**
-         * Contrast, from {@code white_balanced/} (else {@code photos/}) into
-         * {@code contrasted/}. The directory name predates the rename from
-         * auto-contrast and stays, so offers processed before it keep working.
+         * Contrast at {@code CONTRAST_STRENGTH}, into {@code contrasted/}. The
+         * directory name predates the rename from auto-contrast and stays, so
+         * offers processed before it keep working.
          */
         CONTRAST("contrasted", "contrast");
 
@@ -54,14 +65,19 @@ public final class Retouch {
         }
     }
 
-    /** Contrast strength that leaves the photo untouched. */
-    public static final double NEUTRAL_CONTRAST = 1.0;
-    /** Flattest contrast the slider (and {@code CONTRAST_STRENGTH}) allow. */
-    public static final double MIN_CONTRAST = 0.5;
-    /** Punchiest contrast the slider (and {@code CONTRAST_STRENGTH}) allow. */
-    public static final double MAX_CONTRAST = 2.0;
-    /** A mild boost: enough that ticking the step does something visible. */
+    /** A strength that leaves the photo untouched, for either dial. */
+    public static final double NEUTRAL_STRENGTH = 1.0;
+    /** The flattest/darkest either slider (and its config key) allows. */
+    public static final double MIN_STRENGTH = 0.5;
+    /** The punchiest/brightest either slider (and its config key) allows. */
+    public static final double MAX_STRENGTH = 2.0;
+    /** A mild boost: enough that ticking Contrast does something visible. */
     public static final double DEFAULT_CONTRAST = 1.2;
+    /**
+     * Neutral. Unlike contrast, a photo off the turntable is usually exposed about
+     * right, so the step defaults to changing nothing and waits to be dialled.
+     */
+    public static final double DEFAULT_BRIGHTNESS = NEUTRAL_STRENGTH;
 
     private static final float JPEG_QUALITY = 0.90f;
 
@@ -77,14 +93,15 @@ public final class Retouch {
             return;
         }
 
-        if (mode == Mode.CONTRAST) {
-            reporter.log("Contrast strength: " + cfg.contrastStrength + "x");
+        double strength = strengthFor(cfg, mode);
+        if (mode != Mode.WHITE_BALANCE) {
+            reporter.log(mode.label + " strength: " + strength + "x");
         }
         List<Path> offerDirs = listSubdirs(cfg.offersDir);
         int total = offerDirs.size();
         int index = 0;
         for (Path offerDir : offerDirs) {
-            retouchOffer(offerDir, mode, cfg.contrastStrength, reporter);
+            retouchOffer(offerDir, mode, strength, reporter);
             reporter.stepProgress(total == 0 ? 1.0 : (double) (++index) / total);
         }
         if (total == 0) {
@@ -92,14 +109,23 @@ public final class Retouch {
         }
     }
 
+    /** The dial {@code mode} runs at; white balance has none and ignores it. */
+    public static double strengthFor(Config cfg, Mode mode) {
+        return switch (mode) {
+            case WHITE_BALANCE -> NEUTRAL_STRENGTH;
+            case BRIGHTNESS -> cfg.brightnessStrength;
+            case CONTRAST -> cfg.contrastStrength;
+        };
+    }
+
     /**
      * Retouches one offer. Idempotent: an output directory already holding one
      * entry per input photo counts as done and is skipped, so re-running the
-     * step is safe. A skip ignores {@code contrastStrength} — output already on
-     * disk is never silently rewritten; use Delete Output Files to redo it at a
-     * new strength.
+     * step is safe. A skip ignores {@code strength} — output already on disk is
+     * never silently rewritten; use Delete Output Files to redo it at a new
+     * strength.
      */
-    public static void retouchOffer(Path offerDir, Mode mode, double contrastStrength,
+    public static void retouchOffer(Path offerDir, Mode mode, double strength,
                                     Reporter reporter) throws IOException {
         Path inputDir = inputDir(offerDir, mode);
         Path outputDir = offerDir.resolve(mode.dirName);
@@ -116,7 +142,7 @@ public final class Retouch {
 
         Files.createDirectories(outputDir);
         for (Path photo : photos) {
-            writeJpeg(process(photo, mode, contrastStrength),
+            writeJpeg(process(photo, mode, strength),
                     outputDir.resolve(photo.getFileName().toString()));
         }
 
@@ -124,12 +150,18 @@ public final class Retouch {
                 + photos.size() + " photos.");
     }
 
-    /** Each step's input: the previous step's output when it has run, the originals otherwise. */
+    /**
+     * A step's input: the output of the latest earlier step that has run, the
+     * originals in {@code photos/} otherwise. Walking {@link Mode} backwards from
+     * {@code mode} is what lets any of the three be unticked — the chain simply
+     * closes over the gap.
+     */
     private static Path inputDir(Path offerDir, Mode mode) {
-        if (mode == Mode.CONTRAST) {
-            Path whiteBalanced = offerDir.resolve(Mode.WHITE_BALANCE.dirName);
-            if (Files.isDirectory(whiteBalanced)) {
-                return whiteBalanced;
+        Mode[] modes = Mode.values();
+        for (int i = mode.ordinal() - 1; i >= 0; i--) {
+            Path dir = offerDir.resolve(modes[i].dirName);
+            if (Files.isDirectory(dir)) {
+                return dir;
             }
         }
         return offerDir.resolve("photos");
@@ -141,25 +173,25 @@ public final class Retouch {
      * inputs carry no EXIF metadata, so the orientation step is a no-op for
      * them — the call stays unconditional.
      */
-    public static BufferedImage process(Path src, Mode mode, double contrastStrength)
+    public static BufferedImage process(Path src, Mode mode, double strength)
             throws IOException {
         BufferedImage img = ImageIO.read(src.toFile());
         if (img == null) {
             throw new IOException("Could not read image " + src);
         }
-        return apply(Exif.applyOrientation(img, Exif.readOrientation(src)), mode, contrastStrength);
+        return apply(Exif.applyOrientation(img, Exif.readOrientation(src)), mode, strength);
     }
 
     /**
      * Applies the mode's operation to an already-decoded, already-upright image
      * and returns the result; {@code img} is left untouched. Split out of
-     * {@link #process} so the UI's retouch preview can chain the two modes in
-     * memory, without writing the intermediate to disk as the pipeline does.
+     * {@link #process} so the UI's retouch preview can chain the modes in memory,
+     * without writing the intermediates to disk as the pipeline does.
      *
-     * @param contrastStrength the {@link Mode#CONTRAST} dial; ignored by the
-     *                         other modes
+     * @param strength the mode's dial ({@link #strengthFor}); white balance has
+     *                 none and ignores it
      */
-    public static BufferedImage apply(BufferedImage img, Mode mode, double contrastStrength) {
+    public static BufferedImage apply(BufferedImage img, Mode mode, double strength) {
         int w = img.getWidth();
         int h = img.getHeight();
         int n = w * h;
@@ -167,7 +199,8 @@ public final class Retouch {
 
         switch (mode) {
             case WHITE_BALANCE -> grayWorldWhiteBalance(px, n);
-            case CONTRAST -> contrast(px, n, clampStrength(contrastStrength));
+            case BRIGHTNESS -> brightness(px, clampStrength(strength));
+            case CONTRAST -> contrast(px, n, clampStrength(strength));
         }
 
         BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
@@ -175,12 +208,38 @@ public final class Retouch {
         return out;
     }
 
-    /** Holds a strength inside the range the slider offers; a garbled config cannot wreck a photo. */
+    /** Holds a strength inside the range the sliders offer; a garbled config cannot wreck a photo. */
     public static double clampStrength(double strength) {
         if (Double.isNaN(strength)) {
-            return DEFAULT_CONTRAST;
+            return NEUTRAL_STRENGTH;
         }
-        return Math.max(MIN_CONTRAST, Math.min(MAX_CONTRAST, strength));
+        return Math.max(MIN_STRENGTH, Math.min(MAX_STRENGTH, strength));
+    }
+
+    /**
+     * Brightness by a strength factor, reproducing PIL's
+     * {@code ImageEnhance.Brightness}: every channel is scaled towards black, so
+     * 1.0 is a no-op, below it darkens and above it brightens. Scaling (rather
+     * than adding an offset) is what keeps the operation neutral in hue — the
+     * three channels keep their ratios, so a brightened white item stays white
+     * instead of drifting towards gray.
+     *
+     * <p>Highlights clip at 255, as they do in any exposure push: a blown-out
+     * background cannot be brought back by dialling the slider down again, which
+     * is exactly why the preview exists.
+     */
+    private static void brightness(int[] px, double strength) {
+        int[] lut = new int[256];
+        for (int v = 0; v < 256; v++) {
+            lut[v] = clamp((int) Math.round(v * strength));
+        }
+        for (int i = 0; i < px.length; i++) {
+            int p = px[i];
+            int r = lut[(p >> 16) & 0xFF];
+            int g = lut[(p >> 8) & 0xFF];
+            int b = lut[p & 0xFF];
+            px[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+        }
     }
 
     /** Scales each channel so its mean matches the overall gray mean. */

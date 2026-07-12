@@ -19,7 +19,7 @@ import java.util.List;
  * <p>It deliberately reuses {@link Retouch} and {@link AutoCrop} rather than
  * approximating them — a preview that drifts from the pipeline is worse than
  * none. The steps are chained in memory in pipeline order (white balance →
- * contrast → auto-crop), which is what the pipeline does through its
+ * brightness → contrast → auto-crop), which is what the pipeline does through its
  * intermediate directories; the only difference is the JPEG re-encode between
  * them, invisible at quality 90.
  *
@@ -52,6 +52,16 @@ public final class RetouchPreview {
     public record Result(BufferedImage before, BufferedImage after, int index, int count) {
     }
 
+    /**
+     * Which retouching steps to preview and at what strength — the Retouch Preview
+     * tab's checkboxes and sliders, as one value. A record rather than six
+     * parameters because the booleans and their dials belong together, and a
+     * six-argument call is where a caller silently swaps two of them.
+     */
+    public record Settings(boolean whiteBalance, boolean brightness, double brightnessStrength,
+                           boolean contrast, double contrastStrength, boolean autoCrop) {
+    }
+
     /** Not instantiable: the class is a namespace for {@link #render}. */
     private RetouchPreview() {
     }
@@ -62,16 +72,14 @@ public final class RetouchPreview {
      *
      * @param photoIndex which photo of the series, 0-based; clamped into range, so
      *                   an index left over from a longer offer cannot fail a render
-     * @param contrastStrength the strength the contrast step would run at — the
-     *                         slider's value, so the user sees what a run would
-     *                         produce at that setting
+     * @param steps the ticked steps and their slider strengths, so the user sees
+     *              what a run would produce at those settings
      * @param maxSize longest side of the returned images, in pixels — also the size
      *                the photo is decoded at, since it is only ever shown scaled to
      *                fit a panel
      */
-    public static Result render(Path offerDir, int photoIndex, boolean whiteBalance,
-                                boolean contrast, double contrastStrength, boolean autoCrop,
-                                int maxSize) throws IOException {
+    public static Result render(Path offerDir, int photoIndex, Settings steps, int maxSize)
+            throws IOException {
         Path photosDir = offerDir.resolve("photos");
         if (!Files.isDirectory(photosDir)) {
             return null;
@@ -85,13 +93,16 @@ public final class RetouchPreview {
         Sample original = decodeSampled(photos.get(index), maxSize);
 
         BufferedImage after = original.image();
-        if (whiteBalance) {
-            after = Retouch.apply(after, Retouch.Mode.WHITE_BALANCE, contrastStrength);
+        if (steps.whiteBalance()) {
+            after = Retouch.apply(after, Retouch.Mode.WHITE_BALANCE, Retouch.NEUTRAL_STRENGTH);
         }
-        if (contrast) {
-            after = Retouch.apply(after, Retouch.Mode.CONTRAST, contrastStrength);
+        if (steps.brightness()) {
+            after = Retouch.apply(after, Retouch.Mode.BRIGHTNESS, steps.brightnessStrength());
         }
-        if (autoCrop) {
+        if (steps.contrast()) {
+            after = Retouch.apply(after, Retouch.Mode.CONTRAST, steps.contrastStrength());
+        }
+        if (steps.autoCrop()) {
             // detectBox reports full-resolution pixels; the sample is a fraction of
             // that size, so the box has to shrink with it.
             int[] box = scaleBox(AutoCrop.detectBox(photos), original.scale());

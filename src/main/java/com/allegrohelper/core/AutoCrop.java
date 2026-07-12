@@ -129,8 +129,8 @@ public final class AutoCrop {
     }
 
     /**
-     * The most-processed input available: contrasted, else white-balanced,
-     * else the pre-split {@code retouched/}, else the originals in
+     * The most-processed input available: contrasted, else brightened, else
+     * white-balanced, else the pre-split {@code retouched/}, else the originals in
      * {@code photos/}. The retouch outputs are already upright; the originals
      * still carry EXIF orientation, which ImageIO ignores, so every decode in
      * this step applies {@link Exif} orientation itself — otherwise a crop from
@@ -138,8 +138,8 @@ public final class AutoCrop {
      */
     private static Path cropInput(Path offerDir) {
         for (String dirName : new String[] {
-                Retouch.Mode.CONTRAST.dirName, Retouch.Mode.WHITE_BALANCE.dirName,
-                "retouched", "photos"}) {
+                Retouch.Mode.CONTRAST.dirName, Retouch.Mode.BRIGHTNESS.dirName,
+                Retouch.Mode.WHITE_BALANCE.dirName, "retouched", "photos"}) {
             Path dir = offerDir.resolve(dirName);
             if (Files.isDirectory(dir)) {
                 return dir;

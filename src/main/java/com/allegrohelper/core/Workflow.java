@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Runs the enabled pipeline steps in sequence (import → match → white balance →
- * contrast → auto-crop → ocr → describe), emitting a section header per step and
+ * brightness → contrast → auto-crop → ocr → describe), emitting a section header per step and
  * reporting overall progress as
  * {@code (completedSteps + currentStepFraction) / totalSteps}.
  */
@@ -17,6 +17,7 @@ public final class Workflow {
         IMPORT("import"),
         MATCH("match"),
         WHITE_BALANCE("white balance"),
+        BRIGHTNESS("brightness"),
         CONTRAST("contrast"),
         AUTOCROP("auto-crop"),
         OCR("ocr"),
@@ -115,6 +116,7 @@ public final class Workflow {
             case IMPORT -> ImportPhotos.run(cfg, reporter);
             case MATCH -> GroupAndMatch.run(cfg, reporter);
             case WHITE_BALANCE -> Retouch.runAll(cfg, Retouch.Mode.WHITE_BALANCE, reporter);
+            case BRIGHTNESS -> Retouch.runAll(cfg, Retouch.Mode.BRIGHTNESS, reporter);
             case CONTRAST -> Retouch.runAll(cfg, Retouch.Mode.CONTRAST, reporter);
             case AUTOCROP -> AutoCrop.runAll(cfg, reporter);
             case OCR -> Ocr.runAll(cfg, reporter);
