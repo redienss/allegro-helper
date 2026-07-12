@@ -73,6 +73,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Image;
+import java.awt.LayoutManager;
 import java.awt.Graphics2D;
 import java.awt.GraphicsDevice;
 import java.awt.Rectangle;
@@ -872,7 +873,7 @@ public final class MainWindow {
      */
     private JComponent buildRetouchPreviewTab() {
         // Equal halves, so before and after are compared at the same scale.
-        JPanel images = new JPanel(new GridLayout(1, 2, 6, 0));
+        JPanel images = new JPanel(new PreviewRowLayout(6));
         images.add(beforePanel);
         images.add(afterPanel);
 
@@ -1572,6 +1573,68 @@ public final class MainWindow {
      * a file-manager drag would give it.
      */
     /**
+     * Lays the two Retouch Preview halves side by side at equal width — before and
+     * after must be compared at the same scale — but only as tall as their images
+     * need, pinned to the top of the tab. A {@code GridLayout} would stretch the
+     * titled borders to the tab's full height and frame a band of empty space above
+     * and below each photo.
+     *
+     * <p>The two images always share a shape (auto-crop expands its box back to the
+     * source aspect ratio), so the taller requirement decides the row and neither
+     * half is letterboxed in practice.
+     */
+    private static final class PreviewRowLayout implements LayoutManager {
+
+        private final int gap;
+
+        PreviewRowLayout(int gap) {
+            this.gap = gap;
+        }
+
+        @Override
+        public void addLayoutComponent(String name, Component comp) {
+        }
+
+        @Override
+        public void removeLayoutComponent(Component comp) {
+        }
+
+        @Override
+        public Dimension preferredLayoutSize(Container parent) {
+            return new Dimension(0, 0); // the row takes whatever width it is given
+        }
+
+        @Override
+        public Dimension minimumLayoutSize(Container parent) {
+            return new Dimension(0, 0);
+        }
+
+        @Override
+        public void layoutContainer(Container parent) {
+            Insets insets = parent.getInsets();
+            int width = parent.getWidth() - insets.left - insets.right;
+            int available = parent.getHeight() - insets.top - insets.bottom;
+            int half = (width - gap) / 2;
+            if (half <= 0 || available <= 0) {
+                return;
+            }
+            int height = 0;
+            for (Component c : parent.getComponents()) {
+                if (c instanceof ImagePanel panel) {
+                    height = Math.max(height, panel.heightFor(half));
+                }
+            }
+            height = height <= 0 ? available : Math.min(height, available);
+
+            int x = insets.left;
+            for (Component c : parent.getComponents()) {
+                c.setBounds(x, insets.top, half, height);
+                x += half + gap;
+            }
+        }
+    }
+
+    /**
      * One half of the Retouch Preview: a titled panel painting an image scaled to
      * fit, or a status line while there is no image to show. It scales on paint
      * rather than keeping a pre-scaled copy, so the preview follows the split
@@ -1590,6 +1653,7 @@ public final class MainWindow {
         void setImage(BufferedImage img) {
             image = img;
             status = "";
+            revalidate(); // the row's height follows the image's shape
             repaint();
         }
 
@@ -1597,7 +1661,25 @@ public final class MainWindow {
         void setStatus(String text) {
             image = null;
             status = text;
+            revalidate();
             repaint();
+        }
+
+        /**
+         * The height at which an image drawn this wide fills the panel exactly, or
+         * 0 while there is no image (a status line is happy at any height).
+         */
+        int heightFor(int width) {
+            if (image == null) {
+                return 0;
+            }
+            Insets insets = getInsets();
+            int content = width - insets.left - insets.right;
+            if (content <= 0) {
+                return 0;
+            }
+            return (int) Math.round(content * image.getHeight() / (double) image.getWidth())
+                    + insets.top + insets.bottom;
         }
 
         @Override
