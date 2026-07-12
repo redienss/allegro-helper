@@ -25,7 +25,6 @@ import javax.swing.event.DocumentListener;
 import javax.swing.text.JTextComponent;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -248,12 +247,12 @@ final class SettingsDialog extends JDialog {
 
     /**
      * The API keys page as a clickable link: underlined, hand cursor, and
-     * painted in {@link #linkColor()} so it reads as a link against either
-     * theme's background.
+     * painted in {@link MainWindow#linkColor()} so it reads as a link against
+     * either theme's background.
      */
     private JLabel buildApiKeyLink() {
         JLabel link = new JLabel("<html><u>" + API_KEYS_URL + "</u></html>");
-        link.setForeground(linkColor());
+        link.setForeground(MainWindow.linkColor());
         link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         link.setToolTipText(API_KEYS_URL);
         link.addMouseListener(new MouseAdapter() {
@@ -269,15 +268,6 @@ final class SettingsDialog extends JDialog {
         return link;
     }
 
-    /**
-     * Link blue, picked per theme for contrast: a light blue on the dark
-     * background, a deep blue on the light one. The look and feel offers no key
-     * for this, and a single fixed blue would wash out against one of the two.
-     * Both clear WCAG AA against their background (≈6:1 and ≈7:1).
-     */
-    private static Color linkColor() {
-        return Theme.isDark() ? new Color(0x8C, 0xC8, 0xFF) : new Color(0x0A, 0x3D, 0x91);
-    }
 
     /**
      * Adds one labeled row to the OpenAI page.
@@ -455,7 +445,7 @@ final class SettingsDialog extends JDialog {
         // the link blue is picked per theme, so it has to be re-picked here.
         MainWindow.standardizeFonts(getRootPane());
         MainWindow.recolorCarets(getRootPane());
-        apiKeyLink.setForeground(linkColor());
+        apiKeyLink.setForeground(MainWindow.linkColor());
         updateApplyEnabled();
     }
 }

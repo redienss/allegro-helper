@@ -129,6 +129,17 @@ public final class MainWindow {
         return Theme.isDark() ? new Color(0x9E, 0x9E, 0x9E) : new Color(0x6E, 0x6E, 0x6E);
     }
 
+    /**
+     * Hyperlink color, picked per theme for contrast: a light blue on the dark
+     * background, a deep blue on the light one. The look and feel offers no key
+     * for this, HTML's default {@code <a>} blue is unreadable on the dark theme,
+     * and a single fixed color would wash out against one of the two backgrounds.
+     * Both clear WCAG AA against their background (≈6:1 and ≈7:1).
+     */
+    static Color linkColor() {
+        return Theme.isDark() ? new Color(0x8C, 0xC8, 0xFF) : new Color(0x0A, 0x3D, 0x91);
+    }
+
     /** One font size for the whole window, so all text reads at a similar (larger) size. */
     private static final int UI_FONT_SIZE = 16;
 
@@ -219,6 +230,8 @@ public final class MainWindow {
     private JButton clearButton;
     private JButton saveButton;
     private JButton openPhotoDirButton;
+    /** The clickable Allegro form URL; its color is re-picked on a theme change. */
+    private JLabel formUrlLink;
     /** Bottom bar swapped per tab: editor buttons vs. the photo-gallery button. */
     private JPanel bottomBars;
     private static final String CARD_EDITOR = "editor";
@@ -374,6 +387,9 @@ public final class MainWindow {
         styleGridEditors();
         standardizeFonts(frame.getRootPane());
         updateTabStyles();
+        if (formUrlLink != null) {
+            formUrlLink.setForeground(linkColor()); // the link blue is picked per theme
+        }
         // Re-measure the height-capped sections: component heights differ
         // between look and feels, and stale caps clip rows.
         offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
@@ -822,16 +838,18 @@ public final class MainWindow {
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 
         top.add(sectionLabel("Link to Allegro Lokalnie form"));
-        // The default <a> blue is unreadable on the dark theme, hence the explicit color.
-        JLabel link = new JLabel("<html><a href=\"" + ALLEGRO_FORM_URL
-                + "\"><font color=\"#FFD75E\">" + ALLEGRO_FORM_URL + "</font></a></html>");
-        link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        link.addMouseListener(new MouseAdapter() {
+        // Underline only: the color comes from setForeground, so it can follow
+        // the theme (a color baked into the HTML could not).
+        formUrlLink = new JLabel("<html><u>" + ALLEGRO_FORM_URL + "</u></html>");
+        formUrlLink.setForeground(linkColor());
+        formUrlLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        formUrlLink.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 openFormUrl();
             }
         });
+        JLabel link = formUrlLink;
         JButton openUrlButton = new JButton("Open URL");
         openUrlButton.addActionListener(e -> openFormUrl());
         JButton copyAllButton = new JButton("Copy all to Allegro");
