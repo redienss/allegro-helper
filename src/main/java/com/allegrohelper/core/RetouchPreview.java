@@ -1,12 +1,14 @@
 package com.allegrohelper.core;
 
 import javax.imageio.ImageIO;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -20,6 +22,16 @@ import java.util.List;
  * contrast → auto-crop), which is what the pipeline does through its
  * intermediate directories; the only difference is the JPEG re-encode between
  * them, invisible at quality 90.
+ *
+ * <p>The photo is decoded <em>subsampled</em> to display size rather than at its
+ * full 12 megapixels, which is what makes dragging the contrast slider feel
+ * immediate: retouching the sample costs ~0.15s against ~1.2s for the full frame,
+ * and the full-resolution result was only going to be scaled away anyway.
+ * The retouching operations survive the sampling because both are <em>global</em>
+ * — white balance scales each channel by its mean, contrast pivots on the mean
+ * luminance — and a mean over every ninth pixel is the same mean to within a
+ * rounding step. A pipeline run of course still works at full size; only the
+ * preview samples.
  *
  * <p>Auto-crop's box is detected from the <em>originals</em>, because that is
  * all that exists before a run. A real run detects it on the retouched photos,
@@ -45,9 +57,9 @@ public final class RetouchPreview {
      * @param contrastStrength the strength the contrast step would run at — the
      *                         slider's value, so the user sees what a run would
      *                         produce at that setting
-     * @param maxSize longest side of the returned images, in pixels — they are
-     *                only ever shown scaled to fit a panel, and full-resolution
-     *                copies would cost memory and repaint time for nothing
+     * @param maxSize longest side of the returned images, in pixels — also the size
+     *                the photo is decoded at, since it is only ever shown scaled to
+     *                fit a panel
      */
     public static Result render(Path offerDir, boolean whiteBalance, boolean contrast,
                                 double contrastStrength, boolean autoCrop, int maxSize)
@@ -62,13 +74,9 @@ public final class RetouchPreview {
         }
 
         Path first = photos.get(0);
-        BufferedImage original = ImageIO.read(first.toFile());
-        if (original == null) {
-            throw new IOException("Could not read image " + first);
-        }
-        original = Exif.applyOrientation(original, Exif.readOrientation(first));
+        Sample original = decodeSampled(first, maxSize);
 
-        BufferedImage after = original;
+        BufferedImage after = original.image();
         if (whiteBalance) {
             after = Retouch.apply(after, Retouch.Mode.WHITE_BALANCE, contrastStrength);
         }
@@ -76,7 +84,9 @@ public final class RetouchPreview {
             after = Retouch.apply(after, Retouch.Mode.CONTRAST, contrastStrength);
         }
         if (autoCrop) {
-            int[] box = AutoCrop.detectBox(photos);
+            // detectBox reports full-resolution pixels; the sample is a fraction of
+            // that size, so the box has to shrink with it.
+            int[] box = scaleBox(AutoCrop.detectBox(photos), original.scale());
             // A null box is the step declining to crop: the preview then shows
             // the uncropped photo, exactly as a run would leave it.
             if (box != null && box[0] + box[2] <= after.getWidth()
@@ -85,24 +95,67 @@ public final class RetouchPreview {
             }
         }
 
-        return new Result(scaleToFit(original, maxSize), scaleToFit(after, maxSize));
+        return new Result(original.image(), after);
     }
 
-    /** Scales an image down so its longest side is {@code maxSize}; never scales up. */
-    private static BufferedImage scaleToFit(BufferedImage img, int maxSize) {
-        double scale = maxSize / (double) Math.max(img.getWidth(), img.getHeight());
-        if (scale >= 1.0) {
-            return img;
-        }
-        int w = Math.max(1, (int) Math.round(img.getWidth() * scale));
-        int h = Math.max(1, (int) Math.round(img.getHeight() * scale));
-        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = out.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        g.drawImage(img, 0, 0, w, h, null);
-        g.dispose();
-        return out;
+    /**
+     * A decoded photo and how much smaller than the original it is, so a box
+     * measured in full-resolution pixels can be mapped onto it.
+     */
+    private record Sample(BufferedImage image, double scale) {
     }
+
+    /**
+     * Decodes {@code src} at roughly {@code maxSize} on its longest side, upright.
+     * The decoder subsamples while it reads (point-sampling every n-th pixel), so
+     * the full frame is never held or scanned — that is the whole speed-up.
+     *
+     * <p>Subsampling can only divide, so the result is the first size at or below
+     * {@code maxSize}, and a photo already smaller comes back untouched.
+     */
+    private static Sample decodeSampled(Path src, int maxSize) throws IOException {
+        try (ImageInputStream in = ImageIO.createImageInputStream(src.toFile())) {
+            if (in == null) {
+                throw new IOException("Could not read image " + src);
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(in);
+            if (!readers.hasNext()) {
+                throw new IOException("Could not read image " + src);
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(in);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                int step = Math.max(1, Math.max(width, height) / Math.max(1, maxSize));
+
+                ImageReadParam param = reader.getDefaultReadParam();
+                param.setSourceSubsampling(step, step, 0, 0);
+                BufferedImage img = reader.read(0, param);
+
+                // The scale is the decoder's actual one, not 1/step: subsampling
+                // rounds the size up, so a 4000px side at step 3 comes back 1334px.
+                double scale = img.getWidth() / (double) width;
+                return new Sample(Exif.applyOrientation(img, Exif.readOrientation(src)), scale);
+            } finally {
+                reader.dispose();
+            }
+        }
+    }
+
+    /** A full-resolution box in the sample's pixels, or null if there is no box. */
+    private static int[] scaleBox(int[] box, double scale) {
+        if (box == null) {
+            return null;
+        }
+        int[] scaled = new int[4];
+        for (int i = 0; i < 4; i++) {
+            scaled[i] = (int) Math.round(box[i] * scale);
+        }
+        // A box that rounds away to nothing would make getSubimage throw.
+        scaled[2] = Math.max(1, scaled[2]);
+        scaled[3] = Math.max(1, scaled[3]);
+        return scaled;
+    }
+
 }
