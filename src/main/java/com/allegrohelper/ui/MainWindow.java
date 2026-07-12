@@ -114,6 +114,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 
 /**
  * The Allegro Helper main window: photo series detected on the phone, the
@@ -266,6 +267,12 @@ public final class MainWindow {
     private final JCheckBox previewBrightnessBox = new JCheckBox("Brightness", true);
     private final JCheckBox previewContrastBox = new JCheckBox("Contrast", true);
     private final JCheckBox previewAutoCropBox = new JCheckBox("Auto-crop", true);
+    /**
+     * Every strength dial on the tab. {@link DialRowLayout} measures across them, so
+     * the sliders start and end on the same two columns however wide each step's
+     * name happens to be.
+     */
+    private final List<StrengthDial> dials = new ArrayList<>();
     private final StrengthDial brightnessDial = new StrengthDial(previewBrightnessBox,
             Retouch.DEFAULT_BRIGHTNESS,
             "1.00x leaves the photo as it is; less darkens it, more brightens it.");
@@ -1039,6 +1046,88 @@ public final class MainWindow {
     }
 
     /**
+     * A dial's row: {@code [x] Brightness ——[]———— 1.00x}. The checkbox column is as
+     * wide as the widest step name across <em>all</em> the dials, and the value
+     * column as wide as the widest value, so every slider starts and ends on the
+     * same two columns — one exactly under the other, and all the same length. A
+     * plain {@code BorderLayout} sizes each row's edges from its own contents, which
+     * left the contrast slider longer than the brightness one by the difference
+     * between the two words.
+     *
+     * <p>The columns are measured at layout time, not frozen, so File &gt; Settings
+     * &gt; Language re-measures them for the Polish names.
+     */
+    private final class DialRowLayout implements LayoutManager {
+
+        private final int gap;
+
+        DialRowLayout(int gap) {
+            this.gap = gap;
+        }
+
+        @Override
+        public void addLayoutComponent(String name, Component comp) {
+        }
+
+        @Override
+        public void removeLayoutComponent(Component comp) {
+        }
+
+        @Override
+        public Dimension preferredLayoutSize(Container parent) {
+            Insets insets = parent.getInsets();
+            int height = 0;
+            for (Component c : parent.getComponents()) {
+                height = Math.max(height, c.getPreferredSize().height);
+            }
+            // The width is whatever the tab gives the row; only the height is its own.
+            return new Dimension(0, height + insets.top + insets.bottom);
+        }
+
+        @Override
+        public Dimension minimumLayoutSize(Container parent) {
+            return preferredLayoutSize(parent);
+        }
+
+        @Override
+        public void layoutContainer(Container parent) {
+            if (parent.getComponentCount() < 3) {
+                return;
+            }
+            Component box = parent.getComponent(0);
+            Component slider = parent.getComponent(1);
+            Component value = parent.getComponent(2);
+
+            Insets insets = parent.getInsets();
+            int width = parent.getWidth() - insets.left - insets.right;
+            int height = parent.getHeight() - insets.top - insets.bottom;
+            int boxWidth = columnWidth(dial -> dial.box.getPreferredSize().width);
+            int valueWidth = columnWidth(dial -> dial.valueLabel.getPreferredSize().width);
+            int sliderWidth = Math.max(0, width - boxWidth - valueWidth - 2 * gap);
+
+            place(box, insets.left, boxWidth, insets.top, height);
+            place(slider, insets.left + boxWidth + gap, sliderWidth, insets.top, height);
+            place(value, insets.left + boxWidth + gap + sliderWidth + gap, valueWidth,
+                    insets.top, height);
+        }
+
+        /** How wide that part of the row wants to be, across every dial on the tab. */
+        private int columnWidth(ToIntFunction<StrengthDial> part) {
+            int width = 0;
+            for (StrengthDial dial : dials) {
+                width = Math.max(width, part.applyAsInt(dial));
+            }
+            return width;
+        }
+
+        /** Puts {@code c} at {@code x} with {@code w}, vertically centered in the row. */
+        private void place(Component c, int x, int w, int top, int height) {
+            int h = c.getPreferredSize().height;
+            c.setBounds(x, top + Math.max(0, (height - h) / 2), w, h);
+        }
+    }
+
+    /**
      * One retouching step's strength dial: its Retouch Preview checkbox, a slider
      * across all the width the tab has left, and the value it is set to
      * ("1.20x"). Brightness and contrast each get one — same widget, same
@@ -1074,6 +1163,7 @@ public final class MainWindow {
          */
         StrengthDial(JCheckBox box, double initial, String tooltip) {
             this.box = box;
+            dials.add(this);
             slider.setValue(scaledStrength(initial));
             slider.setMajorTickSpacing(scaledStrength(Retouch.NEUTRAL_STRENGTH)
                     - scaledStrength(Retouch.MIN_STRENGTH));
@@ -1101,19 +1191,19 @@ public final class MainWindow {
 
         /**
          * The dial's row, set to {@code strength} — the config's, so a
-         * {@code *_STRENGTH} in {@code .env} is what the user sees. A
-         * {@link BorderLayout} rather than {@link #leftRow} because only its center
-         * stretches: in a {@code FlowLayout} the slider would sit at its preferred
-         * width and a wider tab would just pad around it.
+         * {@code *_STRENGTH} in {@code .env} is what the user sees. Laid out by
+         * {@link DialRowLayout}, which gives the checkbox and the value the same
+         * width in every dial's row, so the sliders line up under each other and
+         * come out the same length.
          */
         JPanel row(double strength) {
             slider.setValue(scaledStrength(strength));
-            JPanel row = previewRow(new BorderLayout(6, 0));
+            JPanel row = previewRow(new DialRowLayout(6));
             // leftRow's FlowLayout gaps, so the rows are evenly spaced.
             row.setBorder(BorderFactory.createEmptyBorder(PREVIEW_ROW_GAP, 5, PREVIEW_ROW_GAP, 5));
-            row.add(box, BorderLayout.WEST);
-            row.add(slider, BorderLayout.CENTER);
-            row.add(valueLabel, BorderLayout.EAST);
+            row.add(box);
+            row.add(slider);
+            row.add(valueLabel);
             showValue();
             return row;
         }
