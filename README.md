@@ -156,7 +156,7 @@ selected offer on the right.
 ### Right: the selected offer
 
 Clicking a row in the grid shows that offer (resolved by matching the row's name
-to each offer's `data.json`, falling back to row position) in six tabs:
+to each offer's `data.json`, falling back to row position) in seven tabs:
 
 - **Description (Input)** — editor for `more_data_<N>.txt` next to `offers.csv`
   (N = the row's 1-based number): extra free-form notes folded into the
@@ -165,6 +165,12 @@ to each offer's `data.json`, falling back to row position) in six tabs:
   directory: the generated description; edit and save to tweak it.
 - **Photos (Input)** — thumbnail gallery of the original photos
   (`offers/<id>/photos/`).
+- **Retouch Preview** — the offer's first photo as it is now next to the same
+  photo with the retouching steps applied, so you can see what White balance,
+  Auto-contrast and Auto-crop will do before running them. The three checkboxes
+  under the photos are the Workflow section's, mirrored: tick one here and it
+  ticks there too, and the preview re-renders. It is a true preview — the same
+  code a run uses — and it writes nothing.
 - **Photos (Output)** — thumbnail gallery of the finished photos: the output of
   the latest step that has run — `offers/<id>/cropped/`, else `contrasted/`,
   else `white_balanced/`.

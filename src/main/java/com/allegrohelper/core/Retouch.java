@@ -120,8 +120,16 @@ public final class Retouch {
         if (img == null) {
             throw new IOException("Could not read image " + src);
         }
-        img = Exif.applyOrientation(img, Exif.readOrientation(src));
+        return apply(Exif.applyOrientation(img, Exif.readOrientation(src)), mode);
+    }
 
+    /**
+     * Applies the mode's operation to an already-decoded, already-upright image
+     * and returns the result; {@code img} is left untouched. Split out of
+     * {@link #process} so the UI's retouch preview can chain the two modes in
+     * memory, without writing the intermediate to disk as the pipeline does.
+     */
+    public static BufferedImage apply(BufferedImage img, Mode mode) {
         int w = img.getWidth();
         int h = img.getHeight();
         int n = w * h;

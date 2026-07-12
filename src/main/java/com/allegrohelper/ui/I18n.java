@@ -131,6 +131,11 @@ final class I18n {
         put("Description (Input)", "Opis (wejście)");
         put("Description (Output)", "Opis (wynik)");
         put("Photos (Input)", "Zdjęcia (wejście)");
+        put("Retouch Preview", "Podgląd retuszu");
+        put("Before", "Przed");
+        put("After", "Po");
+        put("Rendering the preview…", "Tworzenie podglądu…");
+        put("Could not render the preview: {0}", "Nie udało się utworzyć podglądu: {0}");
         put("Photos (Output)", "Zdjęcia (wynik)");
         put("Allegro Lokalnie Form", "Formularz Allegro Lokalnie");
         put("Delete", "Usuń");

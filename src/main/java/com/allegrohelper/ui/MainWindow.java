@@ -4,6 +4,7 @@ import com.allegrohelper.core.AllegroForm;
 import com.allegrohelper.core.Config;
 import com.allegrohelper.core.PhoneScan;
 import com.allegrohelper.core.Reporter;
+import com.allegrohelper.core.RetouchPreview;
 import com.allegrohelper.core.PhotoSeries;
 import com.allegrohelper.core.SeriesRecognition;
 import com.allegrohelper.core.Workflow;
@@ -65,6 +66,9 @@ import java.awt.Dimension;
 import java.awt.Toolkit;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.GridLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -149,10 +153,11 @@ public final class MainWindow {
     /** Right-panel tab indices. */
     private static final int TAB_DESCRIPTION_INPUT = 0;   // more_data_<N>.txt editor
     private static final int TAB_DESCRIPTION_OUTPUT = 1;  // description.txt editor
-    private static final int TAB_PHOTOS_INPUT = 2;   // original photos gallery
-    private static final int TAB_PHOTOS_OUTPUT = 3;  // retouched photos gallery
-    private static final int TAB_OCR = 4;            // ocr.txt editor
-    private static final int TAB_ALLEGRO_FORM = 5;   // copy helper for the Allegro Lokalnie form
+    private static final int TAB_PHOTOS_INPUT = 2;    // original photos gallery
+    private static final int TAB_RETOUCH_PREVIEW = 3; // before/after of the retouching steps
+    private static final int TAB_PHOTOS_OUTPUT = 4;   // retouched photos gallery
+    private static final int TAB_OCR = 5;             // ocr.txt editor
+    private static final int TAB_ALLEGRO_FORM = 6;    // copy helper for the Allegro Lokalnie form
 
     /**
      * Thumbnail box size (px) for the Photos (Input)/(Output) galleries, sized
@@ -171,6 +176,13 @@ public final class MainWindow {
 
     /** Allegro Lokalnie allows at most this many photos per offer. */
     private static final int ALLEGRO_MAX_PHOTOS = 16;
+
+    /**
+     * Longest side (px) of the Retouch Preview images. They are only ever painted
+     * scaled to fit half the right panel, so keeping full-resolution copies of a
+     * 12-megapixel photo around would cost memory and repaint time for nothing.
+     */
+    private static final int PREVIEW_MAX_SIZE = 1200;
 
     private static final String ALLEGRO_FORM_URL = "https://allegrolokalnie.pl/o/oferty/wystaw";
 
@@ -221,6 +233,25 @@ public final class MainWindow {
     private final Gallery photosInputGallery = new Gallery(THUMB_SIZE, 0);
     private final Gallery photosOutputGallery = new Gallery(THUMB_SIZE, 0);
     private final Gallery formGallery = new Gallery(FORM_THUMB_SIZE, ALLEGRO_MAX_PHOTOS);
+
+    // Retouch Preview tab: the offer's first photo before and after the ticked
+    // retouching steps, with checkboxes mirroring their Workflow twins. Rendering
+    // decodes and processes a full-size photo (and, for auto-crop, scans the whole
+    // series), so it runs on its own thread rather than blocking the galleries'.
+    private final ImagePanel beforePanel = new ImagePanel("Before");
+    private final ImagePanel afterPanel = new ImagePanel("After");
+    private final JCheckBox previewWhiteBalanceBox = new JCheckBox("White balance", true);
+    private final JCheckBox previewAutoContrastBox = new JCheckBox("Auto-contrast", true);
+    private final JCheckBox previewAutoCropBox = new JCheckBox("Auto-crop", true);
+    private final ExecutorService previewLoader = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "retouch-preview");
+        t.setDaemon(true);
+        return t;
+    });
+    /** Rising counter identifying the newest preview render; older ones drop their result. */
+    private final AtomicInteger previewToken = new AtomicInteger();
+    /** Set when the preview would have to be re-rendered but its tab is not showing. */
+    private boolean previewStale = true;
 
     // Allegro Lokalnie Form tab: copy sources for the listing form.
     private final JTextField formTitleField = new JTextField();
@@ -747,7 +778,7 @@ public final class MainWindow {
     }
 
     /**
-     * The right panel: the six {@code TAB_*} tabs over the selected offer, with a
+     * The right panel: the seven {@code TAB_*} tabs over the selected offer, with a
      * {@link CardLayout} button bar below that swaps per tab. Tab titles are
      * custom labels so the selected one stays visibly highlighted whatever the
      * look and feel does.
@@ -772,6 +803,7 @@ public final class MainWindow {
         rightTabs.addTab("Description (Input)", new JScrollPane(moreDataArea));
         rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
         rightTabs.addTab("Photos (Input)", photosInputGallery.component());
+        rightTabs.addTab("Retouch Preview", buildRetouchPreviewTab());
         rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
         rightTabs.addTab("OCR", new JScrollPane(ocrArea));
         rightTabs.addTab("Allegro Lokalnie Form", buildAllegroFormTab());
@@ -783,6 +815,9 @@ public final class MainWindow {
         rightTabs.addChangeListener(e -> {
             updateTabStyles();
             updateBottomBar();
+            if (previewStale) {
+                refreshRetouchPreview(); // deferred while the preview tab was hidden
+            }
         });
         updateTabStyles();
         panel.add(rightTabs, BorderLayout.CENTER);
@@ -821,6 +856,112 @@ public final class MainWindow {
 
         updateBottomBar();
         return panel;
+    }
+
+    /**
+     * The Retouch Preview tab: the selected offer's first photo as it is now next
+     * to the same photo with the ticked retouching steps applied, so the user can
+     * judge them before committing a run to disk. The rendering is
+     * {@link RetouchPreview} — the pipeline's own code, not a lookalike.
+     *
+     * <p>Its three checkboxes are the Workflow section's, mirrored: ticking one
+     * here ticks its twin there and vice versa, so there is only one truth about
+     * which steps will run. Only {@link #linkRetouchBoxes} writes the twin, and
+     * {@code setSelected} does not fire an {@code ActionListener}, so the mirror
+     * cannot loop back.
+     */
+    private JComponent buildRetouchPreviewTab() {
+        // Equal halves, so before and after are compared at the same scale.
+        JPanel images = new JPanel(new GridLayout(1, 2, 6, 0));
+        images.add(beforePanel);
+        images.add(afterPanel);
+
+        linkRetouchBoxes(previewWhiteBalanceBox, whiteBalanceBox);
+        linkRetouchBoxes(previewAutoContrastBox, autoContrastBox);
+        linkRetouchBoxes(previewAutoCropBox, autoCropBox);
+        JPanel boxes = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        boxes.add(previewWhiteBalanceBox);
+        boxes.add(previewAutoContrastBox);
+        boxes.add(previewAutoCropBox);
+
+        JPanel panel = new JPanel(new BorderLayout(6, 6));
+        panel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+        panel.add(images, BorderLayout.CENTER);
+        panel.add(boxes, BorderLayout.SOUTH);
+        return panel;
+    }
+
+    /** Keeps a Retouch Preview checkbox and its Workflow twin ticked alike, both ways. */
+    private void linkRetouchBoxes(JCheckBox preview, JCheckBox workflow) {
+        preview.addActionListener(e -> {
+            workflow.setSelected(preview.isSelected());
+            refreshRetouchPreview();
+        });
+        workflow.addActionListener(e -> {
+            preview.setSelected(workflow.isSelected());
+            refreshRetouchPreview();
+        });
+    }
+
+    /**
+     * Re-renders the preview for the selected offer and the ticked steps, off the
+     * EDT. Rendering costs a full-size decode plus a scan of the whole series, so
+     * it is skipped while the tab is hidden — {@link #previewStale} then has the
+     * tab's change listener catch up when it comes into view. Results carrying a
+     * superseded {@link #previewToken} are dropped, so a fast click-through of
+     * offers cannot paint an older render over a newer one.
+     */
+    private void refreshRetouchPreview() {
+        if (rightTabs.getSelectedIndex() != TAB_RETOUCH_PREVIEW) {
+            previewStale = true;
+            return;
+        }
+        previewStale = false;
+        int my = previewToken.incrementAndGet();
+
+        Path offerDir = currentOfferDir;
+        if (offerDir == null) {
+            showPreviewStatus(offerTable.getSelectedRow() < 0
+                    ? I18n.t("Select an offer in the grid.")
+                    : I18n.t("Not matched yet — run Match."));
+            return;
+        }
+
+        boolean whiteBalance = previewWhiteBalanceBox.isSelected();
+        boolean autoContrast = previewAutoContrastBox.isSelected();
+        boolean autoCrop = previewAutoCropBox.isSelected();
+        showPreviewStatus(I18n.t("Rendering the preview…"));
+        previewLoader.submit(() -> {
+            String failure = null;
+            RetouchPreview.Result result = null;
+            try {
+                result = RetouchPreview.render(offerDir, whiteBalance, autoContrast,
+                        autoCrop, PREVIEW_MAX_SIZE);
+            } catch (IOException e) {
+                failure = I18n.t("Could not render the preview: {0}", e.getMessage());
+            }
+            RetouchPreview.Result rendered = result;
+            String message = failure;
+            SwingUtilities.invokeLater(() -> {
+                if (previewToken.get() != my) {
+                    return; // a newer render superseded this one
+                }
+                if (message != null) {
+                    showPreviewStatus(message);
+                } else if (rendered == null) {
+                    showPreviewStatus(I18n.t("No photos."));
+                } else {
+                    beforePanel.setImage(rendered.before());
+                    afterPanel.setImage(rendered.after());
+                }
+            });
+        });
+    }
+
+    /** Shows the same status line in both preview panels, in place of the images. */
+    private void showPreviewStatus(String text) {
+        beforePanel.setStatus(text);
+        afterPanel.setStatus(text);
     }
 
     /**
@@ -1196,6 +1337,7 @@ public final class MainWindow {
             formGallery.message(I18n.t("Select an offer in the grid."));
             formTitleField.setText("");
             formDescriptionArea.setText("");
+            refreshRetouchPreview();
             updateBottomBar();
             return;
         }
@@ -1243,6 +1385,7 @@ public final class MainWindow {
         detailsArea.setCaretPosition(0);
         ocrArea.setCaretPosition(0);
         formDescriptionArea.setCaretPosition(0);
+        refreshRetouchPreview();
         updateBottomBar();
     }
 
@@ -1428,6 +1571,65 @@ public final class MainWindow {
      * {@code text/uri-list} drag on Linux, so a drop target sees the same thing
      * a file-manager drag would give it.
      */
+    /**
+     * One half of the Retouch Preview: a titled panel painting an image scaled to
+     * fit, or a status line while there is no image to show. It scales on paint
+     * rather than keeping a pre-scaled copy, so the preview follows the split
+     * pane as the user drags it.
+     */
+    private static final class ImagePanel extends JPanel {
+
+        private BufferedImage image;
+        private String status = "";
+
+        /** @param title the border title ("Before" / "After"); {@link I18n} translates it in place */
+        ImagePanel(String title) {
+            setBorder(BorderFactory.createTitledBorder(title));
+        }
+
+        void setImage(BufferedImage img) {
+            image = img;
+            status = "";
+            repaint();
+        }
+
+        /** Shows {@code text} instead of an image (already translated). */
+        void setStatus(String text) {
+            image = null;
+            status = text;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Insets insets = getInsets();
+            int w = getWidth() - insets.left - insets.right;
+            int h = getHeight() - insets.top - insets.bottom;
+            if (w <= 0 || h <= 0) {
+                return;
+            }
+            Graphics2D g2 = (Graphics2D) g.create();
+            if (image == null) {
+                FontMetrics fm = g2.getFontMetrics();
+                g2.setColor(getForeground());
+                g2.drawString(status,
+                        insets.left + Math.max(0, (w - fm.stringWidth(status)) / 2),
+                        insets.top + h / 2);
+            } else {
+                g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                        RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                double scale = Math.min(w / (double) image.getWidth(),
+                        h / (double) image.getHeight());
+                int iw = Math.max(1, (int) Math.round(image.getWidth() * scale));
+                int ih = Math.max(1, (int) Math.round(image.getHeight() * scale));
+                g2.drawImage(image, insets.left + (w - iw) / 2, insets.top + (h - ih) / 2,
+                        iw, ih, null);
+            }
+            g2.dispose();
+        }
+    }
+
     private final class Gallery {
         private final DefaultListModel<Object> model = new DefaultListModel<>();
         private final JList<Object> list = new JList<>(model);

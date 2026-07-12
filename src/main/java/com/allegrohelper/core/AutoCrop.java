@@ -153,6 +153,20 @@ public final class AutoCrop {
     }
 
     /**
+     * The box a run would crop this series to, as {@code {x, y, w, h}} in
+     * upright full-resolution pixels, or null where {@link #cropOffer} would
+     * decline to crop (too few frames, no item found). Exposed for the UI's
+     * retouch preview, which needs the box without writing anything.
+     */
+    public static int[] detectBox(List<Path> photos) throws IOException {
+        if (photos.size() < MIN_FRAMES) {
+            return null;
+        }
+        Box box = detect(photos);
+        return box == null ? null : new int[]{box.x(), box.y(), box.w(), box.h()};
+    }
+
+    /**
      * Finds the crop box for a series, or null when the item cannot be located
      * confidently — a subject too small to be plausible, or a box so near
      * full-frame that cropping would achieve nothing.
