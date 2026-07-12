@@ -363,3 +363,14 @@ offers/20260708_0340/
 (Offers processed before the retouch step was split in two have a single
 `retouched/` directory instead; it is still recognized everywhere, just no
 longer written.)
+
+## License
+
+Free for any **noncommercial** use — personal use, hobby projects, study, and
+research. You may read, run, modify, and share it on those terms.
+
+**Commercial use requires a separate license.** To use Allegro Helper
+commercially, contact Tomasz Szneider <redienss@gmail.com>.
+
+See [LICENSE.md](LICENSE.md) for the full terms
+([PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)).
