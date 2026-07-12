@@ -136,6 +136,8 @@ final class I18n {
         put("Before", "Przed");
         put("After", "Po");
         put("Rendering the preview…", "Tworzenie podglądu…");
+        put("Brightness of the photo's pixels: shadows left, highlights right.",
+                "Jasność pikseli zdjęcia: cienie po lewej, światła po prawej.");
         put("First photo", "Pierwsze zdjęcie");
         put("Last photo", "Ostatnie zdjęcie");
         put("< Prev", "< Wstecz");

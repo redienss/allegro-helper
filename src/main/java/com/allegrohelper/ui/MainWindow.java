@@ -95,6 +95,7 @@ import java.awt.dnd.DragSourceMotionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
+import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.net.URI;
 import java.net.URL;
@@ -194,6 +195,12 @@ public final class MainWindow {
     /** Vertical gap above and below each row of the Retouch Preview's checkbox column. */
     private static final int PREVIEW_ROW_GAP = 8;
 
+    /** Gap between the Retouch Preview's two halves, shared by the photos and their histograms. */
+    private static final int PREVIEW_HALF_GAP = 6;
+
+    /** Height of a histogram under a preview photo. */
+    private static final int HISTOGRAM_HEIGHT = 70;
+
     /** Pipeline steps, i.e. checkboxes in the Workflow section — {@link Workflow.Step}'s count. */
     private static final int WORKFLOW_STEPS = Workflow.Step.values().length;
 
@@ -263,6 +270,8 @@ public final class MainWindow {
     // series), so it runs on its own thread rather than blocking the galleries'.
     private final ImagePanel beforePanel = new ImagePanel("Before");
     private final ImagePanel afterPanel = new ImagePanel("After");
+    private final HistogramPanel beforeHistogram = new HistogramPanel();
+    private final HistogramPanel afterHistogram = new HistogramPanel();
     private final JCheckBox previewWhiteBalanceBox = new JCheckBox("White balance", true);
     private final JCheckBox previewBrightnessBox = new JCheckBox("Brightness", true);
     private final JCheckBox previewContrastBox = new JCheckBox("Contrast", true);
@@ -927,9 +936,14 @@ public final class MainWindow {
      */
     private JComponent buildRetouchPreviewTab() {
         // Equal halves, so before and after are compared at the same scale.
-        JPanel images = new JPanel(new PreviewRowLayout(6));
+        JPanel images = new JPanel(new PreviewRowLayout(PREVIEW_HALF_GAP));
         images.add(beforePanel);
         images.add(afterPanel);
+
+        // Each photo's luminance histogram, in the same two columns as the photos.
+        JPanel histograms = new JPanel(new GridLayout(1, 2, PREVIEW_HALF_GAP, 0));
+        histograms.add(beforeHistogram);
+        histograms.add(afterHistogram);
 
         linkRetouchBoxes(previewWhiteBalanceBox, whiteBalanceBox);
         linkRetouchBoxes(previewBrightnessBox, brightnessBox);
@@ -946,12 +960,13 @@ public final class MainWindow {
         boxes.add(contrastDial.row(cfg.contrastStrength));
         boxes.add(leftRow(previewAutoCropBox));
 
-        // The photo row, the photo stepper, then the steps right under them — a
-        // BorderLayout would put the last at the bottom of the tab, a long way below
-        // photos that only take the height they need.
+        // The photo row, its histograms, the photo stepper, then the steps right
+        // under them — a BorderLayout would put the last at the bottom of the tab, a
+        // long way below photos that only take the height they need.
         JPanel panel = new JPanel(new PreviewTabLayout(6));
         panel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
         panel.add(images);
+        panel.add(histograms);
         panel.add(photoStepper());
         panel.add(boxes);
         return panel;
@@ -1299,6 +1314,9 @@ public final class MainWindow {
                 failure = I18n.t("Could not render the preview: {0}", e.getMessage());
             }
             RetouchPreview.Result rendered = result;
+            // Counting every pixel belongs on this thread, not the EDT.
+            int[] beforeBins = rendered == null ? null : HistogramPanel.count(rendered.before());
+            int[] afterBins = rendered == null ? null : HistogramPanel.count(rendered.after());
             String message = failure;
             SwingUtilities.invokeLater(() -> {
                 if (previewToken.get() != my) {
@@ -1313,6 +1331,8 @@ public final class MainWindow {
                 } else {
                     beforePanel.setImage(rendered.before());
                     afterPanel.setImage(rendered.after());
+                    beforeHistogram.setBins(beforeBins);
+                    afterHistogram.setBins(afterBins);
                     // The render is the only thing that has counted the photos, and
                     // it clamps the index — so take both back from it.
                     previewPhotoCount = rendered.count();
@@ -1323,10 +1343,15 @@ public final class MainWindow {
         });
     }
 
-    /** Shows the same status line in both preview panels, in place of the images. */
+    /**
+     * Shows the same status line in both preview panels, in place of the images, and
+     * empties the histograms — they describe a photo, and there is none to describe.
+     */
     private void showPreviewStatus(String text) {
         beforePanel.setStatus(text);
         afterPanel.setStatus(text);
+        beforeHistogram.setBins(null);
+        afterHistogram.setBins(null);
     }
 
     /**
@@ -2123,8 +2148,9 @@ public final class MainWindow {
 
     /**
      * The Retouch Preview tab: the photo row at the top, only as tall as the photos
-     * need; the photo stepper under the left (Before) half; the step checkboxes
-     * below that. Whatever height is left over stays empty at the bottom.
+     * need; each photo's histogram beneath it; the photo stepper under the left
+     * (Before) half; the step checkboxes below that. Whatever height is left over
+     * stays empty at the bottom.
      *
      * <p>Neither {@code BorderLayout} nor {@code BoxLayout} can do this, because the
      * photo row's height depends on the width it is given (the halves keep their
@@ -2162,12 +2188,13 @@ public final class MainWindow {
 
         @Override
         public void layoutContainer(Container parent) {
-            if (parent.getComponentCount() < 3) {
+            if (parent.getComponentCount() < 4) {
                 return;
             }
             Container images = (Container) parent.getComponent(0);
-            Component stepper = parent.getComponent(1);
-            Component boxes = parent.getComponent(2);
+            Component histograms = parent.getComponent(1);
+            Component stepper = parent.getComponent(2);
+            Component boxes = parent.getComponent(3);
 
             Insets insets = parent.getInsets();
             int width = parent.getWidth() - insets.left - insets.right;
@@ -2176,9 +2203,14 @@ public final class MainWindow {
                 return;
             }
 
+            // The controls and the histograms claim their height first; the photos
+            // take what is left, so a short tab shrinks them rather than pushing the
+            // sliders out of sight.
+            int histogramsHeight = histograms.getPreferredSize().height;
             int stepperHeight = stepper.getPreferredSize().height;
             int boxesHeight = boxes.getPreferredSize().height;
-            int room = Math.max(0, available - stepperHeight - boxesHeight - 2 * gap);
+            int room = Math.max(0, available - histogramsHeight - stepperHeight
+                    - boxesHeight - 3 * gap);
             int imagesHeight = images.getLayout() instanceof PreviewRowLayout row
                     ? Math.min(row.neededHeight(images, width), room)
                     : room;
@@ -2186,6 +2218,8 @@ public final class MainWindow {
             int y = insets.top;
             images.setBounds(insets.left, y, width, imagesHeight);
             y += imagesHeight + gap;
+            histograms.setBounds(insets.left, y, width, histogramsHeight);
+            y += histogramsHeight + gap;
             // Centered under the Before half, whose width the row layout decides.
             int half = images.getLayout() instanceof PreviewRowLayout row
                     ? row.halfWidth(width) : width;
@@ -2201,6 +2235,96 @@ public final class MainWindow {
      * rather than keeping a pre-scaled copy, so the preview follows the split
      * pane as the user drags it.
      */
+    /**
+     * The luminance histogram of one preview photo: how many pixels sit at each
+     * brightness, shadows on the left and highlights on the right. It answers the
+     * question the photo itself answers badly on a screen — is this exposed right,
+     * or are the highlights already clipped? — and it is what the Brightness and
+     * Contrast sliders steer: brightness slides the whole shape sideways, contrast
+     * spreads or gathers it around its middle.
+     *
+     * <p>The curve is scaled by the <em>square root</em> of each count, not the count
+     * itself. On a turntable shot the pale, unchanging background is one enormous
+     * spike; against it, linear bars would flatten every tone of the item into a line
+     * along the bottom. The square root compresses the spike and keeps the item's
+     * tones legible: the shape stays honest even though the proportions do not, and
+     * it is the shape that is being read.
+     */
+    private static final class HistogramPanel extends JPanel {
+
+        /** One bin per 8-bit luminance level. */
+        private static final int BINS = 256;
+
+        private int[] bins;
+
+        HistogramPanel() {
+            setBorder(BorderFactory.createLineBorder(UIManager.getColor("controlShadow")));
+            setPreferredSize(new Dimension(0, HISTOGRAM_HEIGHT));
+            setToolTipText(I18n.t(
+                    "Brightness of the photo's pixels: shadows left, highlights right."));
+        }
+
+        /** Counts a photo's pixels per luminance level. Call off the EDT: it reads every pixel. */
+        static int[] count(BufferedImage img) {
+            int w = img.getWidth();
+            int h = img.getHeight();
+            int[] px = img.getRGB(0, 0, w, h, null, 0, w);
+            int[] bins = new int[BINS];
+            for (int p : px) {
+                // The luminance weights the retouching steps themselves use.
+                int luma = (int) Math.round(0.299 * ((p >> 16) & 0xFF)
+                        + 0.587 * ((p >> 8) & 0xFF) + 0.114 * (p & 0xFF));
+                bins[Math.max(0, Math.min(BINS - 1, luma))]++;
+            }
+            return bins;
+        }
+
+        /** Shows a photo's histogram, or nothing when {@code bins} is null. */
+        void setBins(int[] bins) {
+            this.bins = bins;
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (bins == null) {
+                return;
+            }
+            Insets insets = getInsets();
+            int w = getWidth() - insets.left - insets.right;
+            int h = getHeight() - insets.top - insets.bottom;
+            if (w <= 0 || h <= 0) {
+                return;
+            }
+            double peak = 0;
+            for (int count : bins) {
+                peak = Math.max(peak, Math.sqrt(count));
+            }
+            if (peak <= 0) {
+                return;
+            }
+
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+            // One filled shape rather than 256 bars, so it reads as a curve at any width.
+            Path2D shape = new Path2D.Double();
+            shape.moveTo(insets.left, insets.top + h);
+            for (int i = 0; i < BINS; i++) {
+                double x = insets.left + (i + 0.5) * w / (double) BINS;
+                double y = insets.top + h - Math.sqrt(bins[i]) / peak * h;
+                shape.lineTo(x, y);
+            }
+            shape.lineTo(insets.left + w, insets.top + h);
+            shape.closePath();
+            Color fg = getForeground();
+            g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), 150));
+            g2.fill(shape);
+            g2.dispose();
+        }
+    }
+
     private static final class ImagePanel extends JPanel {
 
         /** The shape of a panel that has never shown an image: a camera's usual 4:3. */
