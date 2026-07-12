@@ -135,6 +135,8 @@ final class I18n {
         put("Before", "Przed");
         put("After", "Po");
         put("Rendering the preview…", "Tworzenie podglądu…");
+        put("First photo", "Pierwsze zdjęcie");
+        put("Last photo", "Ostatnie zdjęcie");
         put("< Prev", "< Wstecz");
         put("Next >", "Dalej >");
         put("1.00x leaves the photo as it is; less flattens it, more deepens it.",

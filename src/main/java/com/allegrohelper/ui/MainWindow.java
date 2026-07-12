@@ -284,8 +284,10 @@ public final class MainWindow {
     // Stepping through the offer's photos, under the Before panel. The count is not
     // known until a render has listed the photo directory, so the label and the
     // buttons are driven by the Result, not by the click that asked for it.
+    private final JButton firstPhotoButton = new JButton("|<");
     private final JButton previousPhotoButton = new JButton("< Prev");
     private final JButton nextPhotoButton = new JButton("Next >");
+    private final JButton lastPhotoButton = new JButton(">|");
     private final JLabel photoIndexLabel = new JLabel();
     /** Which photo of the selected offer the preview shows, 0-based. */
     private int previewPhotoIndex;
@@ -941,21 +943,29 @@ public final class MainWindow {
     }
 
     /**
-     * The photo stepper under the Before panel: {@code [< Prev] 3/20 [Next >]},
-     * which photo of the offer's series the preview is showing. Both panels show the
-     * same photo — before and after are only worth comparing on one — so the stepper
-     * sits under Before, where the eye starts.
+     * The photo stepper under the Before panel:
+     * {@code [|<] [< Prev] 3/20 [Next >] [>|]}, which photo of the offer's series the
+     * preview is showing. Both panels show the same photo — before and after are only
+     * worth comparing on one — so the stepper sits under Before, where the eye
+     * starts.
      *
      * <p>Stepping only re-renders; nothing is written, and the photo the pipeline
      * would process is unaffected by which one is on screen.
      */
     private JPanel photoStepper() {
         JPanel row = new JPanel(new StepperLayout(6));
+        firstPhotoButton.addActionListener(e -> showPreviewPhoto(0));
         previousPhotoButton.addActionListener(e -> showPreviewPhoto(previewPhotoIndex - 1));
         nextPhotoButton.addActionListener(e -> showPreviewPhoto(previewPhotoIndex + 1));
+        lastPhotoButton.addActionListener(e -> showPreviewPhoto(previewPhotoCount - 1));
+        firstPhotoButton.setToolTipText(I18n.t("First photo"));
+        lastPhotoButton.setToolTipText(I18n.t("Last photo"));
+        // StepperLayout addresses these by position: ends outermost, counter middle.
+        row.add(firstPhotoButton);
         row.add(previousPhotoButton);
         row.add(photoIndexLabel);
         row.add(nextPhotoButton);
+        row.add(lastPhotoButton);
         showPhotoIndex();
         return row;
     }
@@ -985,8 +995,11 @@ public final class MainWindow {
         photoIndexLabel.setPreferredSize(new Dimension(
                 photoIndexLabel.getFontMetrics(photoIndexLabel.getFont()).stringWidth(widest),
                 photoIndexLabel.getPreferredSize().height));
+        boolean more = previewPhotoIndex < previewPhotoCount - 1;
+        firstPhotoButton.setEnabled(previewPhotoIndex > 0);
         previousPhotoButton.setEnabled(previewPhotoIndex > 0);
-        nextPhotoButton.setEnabled(previewPhotoIndex < previewPhotoCount - 1);
+        nextPhotoButton.setEnabled(more);
+        lastPhotoButton.setEnabled(more);
     }
 
     /** One row of the preview's control column: its components, left-aligned. */
@@ -1877,16 +1890,23 @@ public final class MainWindow {
     }
 
     /**
-     * The photo stepper's three parts — {@code [< Prev] 3/20 [Next >]} — with the
-     * <em>counter</em> centered in the row and an equally wide button either side of
-     * it. A {@code FlowLayout} would center the group instead, so the wider button
-     * would push the counter off the photo's middle.
+     * The photo stepper's five parts — {@code [|<] [< Prev] 3/20 [Next >] [>|]} —
+     * with the <em>counter</em> centered in the row and a matched pair of buttons
+     * either side of it. A {@code FlowLayout} would center the group instead, so the
+     * wider button would push the counter off the photo's middle.
      *
-     * <p>Both the centering and the shared button width are measured from the
+     * <p>Both the centering and each pair's shared width are measured from the
      * components, not baked in, so File &gt; Settings &gt; Language swapping the
      * labels for longer Polish ones re-centers them instead of clipping.
      */
     private static final class StepperLayout implements LayoutManager {
+
+        /** The five children, in the order {@link #photoStepper} adds them. */
+        private static final int FIRST = 0;
+        private static final int PREVIOUS = 1;
+        private static final int COUNTER = 2;
+        private static final int NEXT = 3;
+        private static final int LAST = 4;
 
         private final int gap;
 
@@ -1904,20 +1924,20 @@ public final class MainWindow {
 
         @Override
         public Dimension preferredLayoutSize(Container parent) {
-            if (parent.getComponentCount() < 3) {
+            if (parent.getComponentCount() < 5) {
                 return new Dimension(0, 0);
             }
-            Dimension previous = parent.getComponent(0).getPreferredSize();
-            Dimension counter = parent.getComponent(1).getPreferredSize();
-            Dimension next = parent.getComponent(2).getPreferredSize();
-            // Room for the wider button on both sides, so a centered counter has
-            // space for either of them without clipping.
-            int side = Math.max(previous.width, next.width);
             Insets insets = parent.getInsets();
+            int counter = parent.getComponent(COUNTER).getPreferredSize().width;
+            int height = 0;
+            for (Component c : parent.getComponents()) {
+                height = Math.max(height, c.getPreferredSize().height);
+            }
+            // Each pair at its wider member's width, on both sides of the counter.
             return new Dimension(
-                    2 * side + counter.width + 2 * gap + insets.left + insets.right,
-                    Math.max(counter.height, Math.max(previous.height, next.height))
-                            + insets.top + insets.bottom);
+                    2 * (jumpWidth(parent) + stepWidth(parent) + 2 * gap) + counter
+                            + insets.left + insets.right,
+                    height + insets.top + insets.bottom);
         }
 
         @Override
@@ -1927,35 +1947,44 @@ public final class MainWindow {
 
         @Override
         public void layoutContainer(Container parent) {
-            if (parent.getComponentCount() < 3) {
+            if (parent.getComponentCount() < 5) {
                 return;
             }
-            Component previous = parent.getComponent(0);
-            Component counter = parent.getComponent(1);
-            Component next = parent.getComponent(2);
-
             Insets insets = parent.getInsets();
             int width = parent.getWidth() - insets.left - insets.right;
             int height = parent.getHeight() - insets.top - insets.bottom;
-            Dimension pd = previous.getPreferredSize();
-            Dimension cd = counter.getPreferredSize();
-            Dimension nd = next.getPreferredSize();
+            int step = stepWidth(parent);
+            int jump = jumpWidth(parent);
+            int counterWidth = parent.getComponent(COUNTER).getPreferredSize().width;
 
-            // One width for both buttons: a symmetric stepper around a centered
-            // counter, whichever label is the longer one.
-            int side = Math.max(pd.width, nd.width);
-            int counterX = insets.left + (width - cd.width) / 2;
-            previous.setBounds(counterX - gap - side, centered(insets.top, height, pd.height),
-                    side, pd.height);
-            counter.setBounds(counterX, centered(insets.top, height, cd.height),
-                    cd.width, cd.height);
-            next.setBounds(counterX + cd.width + gap, centered(insets.top, height, nd.height),
-                    side, nd.height);
+            // Out from the centered counter, so the pairs stay mirror images and the
+            // number keeps sitting on the photo's middle.
+            int counterX = insets.left + (width - counterWidth) / 2;
+            place(parent.getComponent(COUNTER), counterX, counterWidth, insets.top, height);
+            place(parent.getComponent(PREVIOUS), counterX - gap - step, step, insets.top, height);
+            place(parent.getComponent(FIRST), counterX - gap - step - gap - jump, jump,
+                    insets.top, height);
+            int right = counterX + counterWidth + gap;
+            place(parent.getComponent(NEXT), right, step, insets.top, height);
+            place(parent.getComponent(LAST), right + step + gap, jump, insets.top, height);
         }
 
-        /** Vertical center of a component of {@code h} inside a band of {@code height}. */
-        private static int centered(int top, int height, int h) {
-            return top + Math.max(0, (height - h) / 2);
+        /** One width for [< Prev] and [Next >], whichever of the two labels is longer. */
+        private static int stepWidth(Container parent) {
+            return Math.max(parent.getComponent(PREVIOUS).getPreferredSize().width,
+                    parent.getComponent(NEXT).getPreferredSize().width);
+        }
+
+        /** One width for the [|<] and [>|] jumps. */
+        private static int jumpWidth(Container parent) {
+            return Math.max(parent.getComponent(FIRST).getPreferredSize().width,
+                    parent.getComponent(LAST).getPreferredSize().width);
+        }
+
+        /** Puts {@code c} at {@code x} with {@code w}, vertically centered in the row. */
+        private static void place(Component c, int x, int w, int top, int height) {
+            int h = c.getPreferredSize().height;
+            c.setBounds(x, top + Math.max(0, (height - h) / 2), w, h);
         }
     }
 
