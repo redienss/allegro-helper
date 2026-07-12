@@ -895,7 +895,7 @@ public final class MainWindow {
         JPanel boxes = new JPanel();
         boxes.setLayout(new BoxLayout(boxes, BoxLayout.Y_AXIS));
         boxes.add(leftRow(previewWhiteBalanceBox));
-        boxes.add(leftRow(previewContrastBox, contrastSlider, contrastValueLabel));
+        boxes.add(contrastRow());
         boxes.add(leftRow(previewAutoCropBox));
         configureContrastSlider();
 
@@ -920,6 +920,23 @@ public final class MainWindow {
     }
 
     /**
+     * The Contrast row: its checkbox, then the slider across all the width the tab
+     * has left, then the value. A {@link BorderLayout} rather than {@link #leftRow}
+     * because only its center stretches — in a {@code FlowLayout} the slider would
+     * sit at its preferred width, and a wider tab would just pad around it.
+     */
+    private JPanel contrastRow() {
+        JPanel row = new JPanel(new BorderLayout(6, 0));
+        row.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5)); // leftRow's FlowLayout gaps
+        row.add(previewContrastBox, BorderLayout.WEST);
+        row.add(contrastSlider, BorderLayout.CENTER);
+        row.add(contrastValueLabel, BorderLayout.EAST);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return row;
+    }
+
+    /**
      * Sets the contrast slider up from the config — so a {@code CONTRAST_STRENGTH}
      * in {@code .env} is what the user sees — and has it re-render the preview.
      * Only once the drag ends: a render costs a full-size decode, and every value
@@ -931,8 +948,6 @@ public final class MainWindow {
         contrastSlider.setMajorTickSpacing(scaledStrength(Retouch.NEUTRAL_CONTRAST)
                 - scaledStrength(Retouch.MIN_CONTRAST));
         contrastSlider.setPaintTicks(true);
-        contrastSlider.setPreferredSize(
-                new Dimension(180, contrastSlider.getPreferredSize().height));
         contrastSlider.setToolTipText(I18n.t(
                 "1.00x leaves the photo as it is; less flattens it, more deepens it."));
         contrastSlider.addChangeListener(e -> {
