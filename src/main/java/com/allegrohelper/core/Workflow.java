@@ -22,6 +22,7 @@ public final class Workflow {
         OCR("ocr"),
         DESCRIBE("describe");
 
+        /** The step name in the log's {@code == <label> ==} header. */
         public final String label;
 
         Step(String label) {
@@ -31,17 +32,30 @@ public final class Workflow {
 
     /** Receives log output and overall (0..1) progress for the whole run. */
     public interface Listener {
+        /** Appends one line to the run log — step headers included. */
         void log(String line);
 
+        /** Reports progress across the whole run, from 0.0 to 1.0. */
         void overallProgress(double fraction);
 
         /** Called once the run finishes, whether it succeeded or aborted. */
         void finished(boolean success);
     }
 
+    /** Not instantiable: the class is a namespace for {@link #run}. */
     private Workflow() {
     }
 
+    /**
+     * Runs {@code steps} in the given order, logging a header per step and
+     * scaling each step's own 0..1 progress into the run's overall progress.
+     *
+     * <p>Aborts on the first failure — a {@link PipelineException} is a step
+     * refusing to guess and is reported as {@code Aborted: <message>} — and
+     * always ends by calling {@link Listener#finished}. Errors are reported to
+     * the listener rather than thrown, since both front ends run this off the
+     * UI thread.
+     */
     public static void run(Config cfg, List<Step> steps, Listener listener) {
         List<Step> enabled = new ArrayList<>(steps);
         int total = enabled.size();
@@ -91,6 +105,10 @@ public final class Workflow {
         listener.finished(true);
     }
 
+    /**
+     * Dispatches one step to its implementation. The switch is exhaustive over
+     * {@link Step}, so adding an enum constant makes the compiler point here.
+     */
     private static void runStep(Config cfg, Step step, Reporter reporter)
             throws IOException, PipelineException {
         switch (step) {

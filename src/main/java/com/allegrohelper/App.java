@@ -22,9 +22,17 @@ public final class App {
     /** WM class advertised on X11 so a .desktop launcher's StartupWMClass can match this window. */
     public static final String WM_CLASS = "AllegroHelper";
 
+    /** Not instantiable: the class is a namespace for {@link #main}. */
     private App() {
     }
 
+    /**
+     * Dispatches to the CLI or the desktop UI.
+     *
+     * @param args {@code --cli <step> [baseDir]} for a headless run; otherwise
+     *             an optional base directory for the UI, defaulting to the
+     *             working directory
+     */
     public static void main(String[] args) {
         if (args.length > 0 && args[0].equals("--cli")) {
             String[] rest = new String[args.length - 1];

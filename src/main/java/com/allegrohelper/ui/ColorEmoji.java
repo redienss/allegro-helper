@@ -51,6 +51,7 @@ final class ColorEmoji {
     private static final Map<Integer, BufferedImage> imageCache = new HashMap<>();
     private static final Map<Long, ImageIcon> iconCache = new HashMap<>();
 
+    /** Not instantiable: the class is a namespace for {@link #icon}. */
     private ColorEmoji() {
     }
 
@@ -78,6 +79,12 @@ final class ColorEmoji {
         return icon;
     }
 
+    /**
+     * The bitmap for a code point, or null when the font has none. Both outcomes
+     * are cached — a miss included, so a non-emoji character is not looked up
+     * again on every repaint — and any parse failure counts as a miss, since a
+     * broken font must degrade to monochrome glyphs rather than break the view.
+     */
     private static synchronized BufferedImage image(int codePoint) {
         if (imageCache.containsKey(codePoint)) {
             return imageCache.get(codePoint);
@@ -102,6 +109,15 @@ final class ColorEmoji {
 
     // ------------------------------------------------------------------ sfnt
 
+    /**
+     * Memory-maps the emoji font and locates its {@code cmap}, {@code CBLC} and
+     * {@code CBDT} tables.
+     *
+     * <p>Runs at most once: a font that is absent or unusable sets {@code font}
+     * to null for good, so the failure is not retried per glyph.
+     *
+     * @return whether color emoji are available
+     */
     private static synchronized boolean init() throws IOException {
         if (initialized) {
             return font != null;
@@ -141,6 +157,11 @@ final class ColorEmoji {
         return true;
     }
 
+    /**
+     * The emoji font file: {@code ALLEGRO_EMOJI_FONT} if set, else the first of
+     * {@link #FONT_CANDIDATES} present. Null when none is installed — the caller
+     * then falls back to monochrome glyphs.
+     */
     private static Path findFont() {
         String override = System.getenv("ALLEGRO_EMOJI_FONT");
         if (override != null && !override.isBlank() && Files.isRegularFile(Path.of(override))) {
@@ -179,7 +200,10 @@ final class ColorEmoji {
         return true;
     }
 
-    /** Binary search of the sorted format-12 groups. */
+    /**
+     * The glyph id for a code point, or 0 when the font does not cover it.
+     * Binary search of the sorted format-12 groups.
+     */
     private static int glyphId(int codePoint) {
         int lo = 0;
         int hi = cmapGroupCount - 1;
@@ -247,6 +271,11 @@ final class ColorEmoji {
         return null;
     }
 
+    /**
+     * Copies the PNG bytes out of a CBDT record, whose header depends on the
+     * image format. Returns null for an unknown format or an offset that would
+     * read past the font, so a malformed table cannot crash the paint.
+     */
     private static byte[] extractPng(int dataStart, int dataLen, int imageFormat) {
         int pngOffset;
         int pngLen;
@@ -277,14 +306,17 @@ final class ColorEmoji {
         return png;
     }
 
+    /** Unsigned byte at {@code i} of the mapped font. */
     private static int u8(int i) {
         return font.get(i) & 0xFF;
     }
 
+    /** Unsigned big-endian 16-bit value at {@code i} — sfnt is big-endian throughout. */
     private static int u16(int i) {
         return ((font.get(i) & 0xFF) << 8) | (font.get(i + 1) & 0xFF);
     }
 
+    /** Unsigned big-endian 32-bit value at {@code i}, widened to a long so it stays unsigned. */
     private static long u32(int i) {
         return ((long) (font.get(i) & 0xFF) << 24)
                 | ((long) (font.get(i + 1) & 0xFF) << 16)

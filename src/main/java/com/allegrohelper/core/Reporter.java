@@ -6,6 +6,11 @@ package com.allegrohelper.core;
  */
 public interface Reporter {
 
+    /**
+     * Appends one line to the run log. The steps in {@code core/} never print
+     * to stdout themselves — routing everything through here is what lets the
+     * same step code serve both the UI and the CLI.
+     */
     void log(String line);
 
     /** Reports progress within the current step, from 0.0 to 1.0. */

@@ -16,9 +16,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class Cli {
 
+    /** Not instantiable: the class is a namespace for {@link #run}. */
     private Cli() {
     }
 
+    /**
+     * Parses the step name, builds the config from the base directory and runs
+     * the selected steps, printing the log to stdout.
+     *
+     * @param args {@code <step> [baseDir]}; the base directory defaults to the
+     *             working directory
+     * @return the process exit code: 0 on success, 1 if the run aborted,
+     *         2 on a usage error (missing or unknown step)
+     */
     public static int run(String[] args) {
         if (args.length == 0) {
             System.err.println(

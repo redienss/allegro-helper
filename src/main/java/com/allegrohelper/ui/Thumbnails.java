@@ -23,6 +23,7 @@ import java.util.Iterator;
  */
 final class Thumbnails {
 
+    /** Not instantiable: the class is a namespace for {@link #load}. */
     private Thumbnails() {
     }
 
@@ -56,6 +57,7 @@ final class Thumbnails {
         }
     }
 
+    /** Scales the subsampled image down to fit a {@code maxSize} box, keeping its aspect ratio. */
     private static Image scaleToFit(BufferedImage img, int maxSize) {
         int w = img.getWidth();
         int h = img.getHeight();

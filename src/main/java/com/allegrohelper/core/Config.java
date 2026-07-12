@@ -38,6 +38,10 @@ public final class Config {
     public final String chromeBin;
     public final Path chromeProfileDir;
 
+    /**
+     * @param env the merged lookup — {@code .env}, overridden by the real
+     *            environment, overridden by caller-supplied values
+     */
     private Config(Path baseDir, Map<String, String> env) {
         this.baseDir = baseDir;
         this.csvPath = pathOrDefault(env, "CSV_PATH", baseDir.resolve("offers.csv"));
@@ -67,6 +71,7 @@ public final class Config {
                 pathOrDefault(env, "CHROME_PROFILE_DIR", baseDir.resolve(".chrome-profile"));
     }
 
+    /** Drops a trailing slash so the endpoint paths can be appended verbatim. */
     private static String stripTrailingSlash(String url) {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
@@ -90,6 +95,12 @@ public final class Config {
         return new Config(base, env);
     }
 
+    /**
+     * Parses a {@code .env} file into key/value pairs, tolerating comments,
+     * blank lines, {@code export } prefixes and quoted values. A malformed or
+     * unreadable file yields whatever parsed, rather than failing startup — the
+     * app must still open so the user can fix the file in Settings.
+     */
     private static Map<String, String> loadDotenv(Path envFile) {
         Map<String, String> values = new HashMap<>();
         if (!Files.isRegularFile(envFile)) {
@@ -209,16 +220,19 @@ public final class Config {
                 .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
     }
 
+    /** The value as a path; the fallback if absent or blank. */
     private static Path pathOrDefault(Map<String, String> env, String key, Path fallback) {
         String v = env.get(key);
         return (v == null || v.isBlank()) ? fallback : Path.of(v);
     }
 
+    /** The value as-is; the fallback if absent or blank. */
     private static String stringOrDefault(Map<String, String> env, String key, String fallback) {
         String v = env.get(key);
         return (v == null || v.isBlank()) ? fallback : v;
     }
 
+    /** The value as an int; the fallback if absent, blank or not a number. */
     private static int intOrDefault(Map<String, String> env, String key, int fallback) {
         String v = env.get(key);
         if (v == null || v.isBlank()) {
@@ -231,6 +245,11 @@ public final class Config {
         }
     }
 
+    /**
+     * The current user's uid, which the default MTP glob needs to find the
+     * gvfs mount under {@code /run/user/<uid>}. Falls back to 1000 (the usual
+     * first user) off Linux or with a restricted {@code /proc}.
+     */
     private static String detectUid() {
         try {
             Object uid = Files.getAttribute(Path.of("/proc/self"), "unix:uid");

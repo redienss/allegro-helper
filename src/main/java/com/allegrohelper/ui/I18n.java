@@ -47,6 +47,7 @@ import java.util.Map;
  */
 final class I18n {
 
+    /** Not instantiable: the class is a namespace for {@link #t} and {@link #retranslate}. */
     private I18n() {
     }
 
@@ -217,11 +218,17 @@ final class I18n {
                 "Nie udało się zapisać ustawień do {0}: {1}");
     }
 
+    /**
+     * Registers one translation in both directions. The Polish values must stay
+     * unique, or the reverse map would normalize a displayed text back to the
+     * wrong English key.
+     */
     private static void put(String en, String pl) {
         TRANSLATIONS.put(en, pl);
         REVERSE.put(pl, en);
     }
 
+    /** The active language. */
     static Language language() {
         return language;
     }
@@ -272,6 +279,11 @@ final class I18n {
         return language == Language.POLISH ? TRANSLATIONS.getOrDefault(en, en) : en;
     }
 
+    /**
+     * Recursively translates every text property the walk knows about. A menu's
+     * items live in its popup rather than among its children, so {@link JMenu}
+     * is descended into explicitly.
+     */
     private static void walk(Component c) {
         if (c instanceof JComponent jc) {
             jc.setToolTipText(translate(jc.getToolTipText()));
@@ -311,6 +323,7 @@ final class I18n {
         }
     }
 
+    /** Translates a titled border's title, descending into compound borders. */
     private static void translateBorder(Border border) {
         if (border instanceof TitledBorder titled) {
             titled.setTitle(translate(titled.getTitle()));

@@ -87,9 +87,17 @@ public final class Ocr {
     /** ...with at least this many characters. */
     private static final int GATE_LEN = 4;
 
+    /** Not instantiable: the class is a namespace for {@link #runAll}. */
     private Ocr() {
     }
 
+    /**
+     * OCRs every offer's photos into {@code ocr.txt}, working in a temp
+     * directory that is removed afterwards.
+     *
+     * @throws PipelineException if tesseract is missing, or if an offer's every
+     *         photo failed — that means a broken setup, not textless photos
+     */
     public static void runAll(Config cfg, Reporter reporter) throws IOException, PipelineException {
         requireTesseract();
 
@@ -118,6 +126,7 @@ public final class Ocr {
 
     /** Per-offer progress callback (0..1 within the offer). */
     private interface OfferProgress {
+        /** Reports how far this offer has got; the caller scales it into the step's progress. */
         void at(double fraction);
     }
 
@@ -141,6 +150,15 @@ public final class Ocr {
         }
     }
 
+    /**
+     * OCRs one offer's photos, appending each frame's text to {@code ocr.txt}
+     * as it goes and skipping text already read off an earlier frame — a
+     * turntable series shows the same label many times over.
+     *
+     * <p>Idempotent through the {@code .ocr-in-progress} marker: a finished
+     * {@code ocr.txt} (even an empty one) means the offer is done, while one
+     * left behind by an interrupted run is redone from scratch.
+     */
     private static void ocrOffer(Config cfg, Path offerDir, Path tmpDir, Reporter reporter,
                                  OfferProgress progress) throws IOException, PipelineException {
         Path ocrPath = offerDir.resolve("ocr.txt");
@@ -277,6 +295,12 @@ public final class Ocr {
         }
     }
 
+    /**
+     * Runs the tesseract CLI on one image and returns its TSV output. Killed
+     * after {@link #TESSERACT_TIMEOUT_SECONDS}, so one pathological frame cannot
+     * hang the run; its stderr (DPI and quality warnings on every photo) is
+     * discarded.
+     */
     private static String runTesseractTsv(Config cfg, Path image) throws IOException {
         Process process = new ProcessBuilder(
                 "tesseract", image.toString(), "stdout", "-l", cfg.ocrLanguages, "tsv")
@@ -299,7 +323,9 @@ public final class Ocr {
         return output;
     }
 
+    /** One rotation's reading of a frame: the text kept, and the score it is judged by. */
     private record Variant(String text, double score) {
+        /** No usable text — also the starting point the two rotations are compared against. */
         static final Variant EMPTY = new Variant("", 0);
     }
 
@@ -354,6 +380,7 @@ public final class Ocr {
         return text.toLowerCase().replaceAll("\\s+", " ");
     }
 
+    /** Removes the step's temp directory; leftovers there are harmless, so failures are ignored. */
     private static void deleteRecursively(Path dir) throws IOException {
         if (!Files.exists(dir)) {
             return;
@@ -369,6 +396,7 @@ public final class Ocr {
         }
     }
 
+    /** The offer directories under {@code dir}, in name order. */
     private static List<Path> listSubdirs(Path dir) throws IOException {
         List<Path> dirs = new ArrayList<>();
         try (var stream = Files.list(dir)) {

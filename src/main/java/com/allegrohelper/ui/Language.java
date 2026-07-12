@@ -9,7 +9,9 @@ import java.util.prefs.Preferences;
  * directory is known. The actual translations live in {@link I18n}.
  */
 public enum Language {
+    /** The language the UI strings are written in, so it needs no lookups. */
     ENGLISH("English"),
+    /** Translated through {@link I18n}'s map. */
     POLISH("Polish");
 
     private final String label;
@@ -18,6 +20,7 @@ public enum Language {
         this.label = label;
     }
 
+    /** The name as shown in the Settings combo, itself translated. */
     @Override
     public String toString() {
         return I18n.t(label); // rendered by the Settings combo — "Polish" shows as "Polski" under Polish
@@ -48,10 +51,12 @@ public enum Language {
         }
     }
 
+    /** Persists the choice for the next start. */
     public static void save(Language language) {
         prefs().put(PREF_KEY, language.name());
     }
 
+    /** The preference node the choice is stored in. */
     private static Preferences prefs() {
         return Preferences.userNodeForPackage(Language.class);
     }

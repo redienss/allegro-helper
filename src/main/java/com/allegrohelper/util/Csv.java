@@ -19,6 +19,7 @@ import java.util.Map;
  */
 public final class Csv {
 
+    /** Not instantiable: the class is a namespace for {@link #read} and {@link #write}. */
     private Csv() {
     }
 
@@ -71,12 +72,14 @@ public final class Csv {
         Files.writeString(path, sb.toString(), StandardCharsets.UTF_8);
     }
 
+    /** Splits one line on the delimiter, keeping trailing empty cells. */
     private static String[] splitLine(String line, char delimiter) {
         // Simple split: the tab-delimited offers file uses no quoting, and cell
         // values themselves never contain the delimiter.
         return line.split(java.util.regex.Pattern.quote(String.valueOf(delimiter)), -1);
     }
 
+    /** Makes one cell safe for the unquoted tab-delimited format. */
     private static String sanitize(String value) {
         if (value == null) {
             return "";

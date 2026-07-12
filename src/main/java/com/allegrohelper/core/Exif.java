@@ -15,6 +15,7 @@ import java.nio.file.Path;
  */
 public final class Exif {
 
+    /** Not instantiable: the class is a namespace for its static helpers. */
     private Exif() {
     }
 
@@ -53,6 +54,15 @@ public final class Exif {
         }
     }
 
+    /**
+     * Pulls tag 0x0112 (Orientation) out of an APP1 segment: the {@code Exif\0\0}
+     * preamble, then a TIFF block whose byte order the {@code II}/{@code MM}
+     * marker gives, then the first IFD's entries.
+     *
+     * @return the orientation (1..8), or -1 if the segment carries none — every
+     *         malformed offset bails out this way rather than throwing, since a
+     *         missing tag is normal and simply means "upright"
+     */
     private static int parseExifOrientation(byte[] seg) {
         // Expect "Exif\0\0" then a TIFF block.
         if (seg.length < 8 || seg[0] != 'E' || seg[1] != 'x' || seg[2] != 'i' || seg[3] != 'f'
@@ -135,6 +145,7 @@ public final class Exif {
         return out;
     }
 
+    /** Reads a big-endian 16-bit value (JPEG markers and lengths), or -1 at end of stream. */
     private static int read16be(InputStream in) throws IOException {
         int a = in.read();
         int b = in.read();
@@ -144,12 +155,14 @@ public final class Exif {
         return (a << 8) | b;
     }
 
+    /** Reads a 16-bit value from the TIFF block, honouring its byte order. */
     private static int readU16(byte[] data, int off, boolean little) {
         int a = data[off] & 0xFF;
         int b = data[off + 1] & 0xFF;
         return little ? (b << 8) | a : (a << 8) | b;
     }
 
+    /** Reads a 32-bit value from the TIFF block, honouring its byte order. */
     private static int readU32(byte[] data, int off, boolean little) {
         int a = data[off] & 0xFF;
         int b = data[off + 1] & 0xFF;

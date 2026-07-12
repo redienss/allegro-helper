@@ -13,6 +13,7 @@ import java.util.List;
  */
 public record PhotoSeries(String label, LocalDateTime start, LocalDateTime end, List<Path> photos) {
 
+    /** How many photos the series holds — what the match step checks against {@code PHOTOS_PER_OFFER}. */
     public int count() {
         return photos.size();
     }

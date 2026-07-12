@@ -17,6 +17,7 @@ import java.util.Map;
  */
 public final class ImportPhotos {
 
+    /** Not instantiable: the class is a namespace for {@link #run}. */
     private ImportPhotos() {
     }
 
@@ -36,6 +37,16 @@ public final class ImportPhotos {
         return matches.get(0);
     }
 
+    /**
+     * Copies every photo from the phone into {@code raw_photos/}.
+     *
+     * <p>Idempotent: a photo whose destination already exists is skipped, so
+     * the step can be re-run freely. A copy is verified by size and deleted if
+     * it comes up short — an MTP mount can truncate a transfer — and a failure
+     * on one photo is logged and does not abort the import. In per-subfolder
+     * mode the subfolder structure is preserved, because there it <em>is</em>
+     * the series grouping.
+     */
     public static void run(Config cfg, Reporter reporter) throws IOException {
         Path sourceDir = findSourceDir(cfg, reporter);
         Files.createDirectories(cfg.rawPhotosDir);
@@ -99,6 +110,7 @@ public final class ImportPhotos {
                 copied, skipped, failed));
     }
 
+    /** The JPEGs directly in {@code dir}, sorted by name; empty if it is not a directory. */
     static List<Path> listJpegs(Path dir) throws IOException {
         List<Path> photos = new ArrayList<>();
         if (!Files.isDirectory(dir)) {
@@ -111,6 +123,7 @@ public final class ImportPhotos {
         return photos;
     }
 
+    /** Whether the file name ends in {@code .jpg}/{@code .jpeg} (case-insensitive). */
     static boolean isJpeg(Path p) {
         String name = p.getFileName().toString().toLowerCase();
         return name.endsWith(".jpg") || name.endsWith(".jpeg");

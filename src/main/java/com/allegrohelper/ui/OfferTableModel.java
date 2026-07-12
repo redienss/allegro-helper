@@ -27,39 +27,47 @@ public final class OfferTableModel extends AbstractTableModel {
             "Name", "Brand", "Model", "Condition", "Damage", "Quantity", "Price", "InPost Size"
     };
 
+    /** One {@code String[KEYS.length]} per row, in the order the match step pairs them with photos. */
     private final List<String[]> rows = new ArrayList<>();
 
+    /** {@inheritDoc} */
     @Override
     public int getRowCount() {
         return rows.size();
     }
 
+    /** {@inheritDoc} */
     @Override
     public int getColumnCount() {
         return KEYS.length;
     }
 
+    /** The English header; {@link I18n#retranslate} swaps it when the language changes. */
     @Override
     public String getColumnName(int column) {
         return HEADERS[column];
     }
 
+    /** {@inheritDoc} */
     @Override
     public Object getValueAt(int rowIndex, int columnIndex) {
         return rows.get(rowIndex)[columnIndex];
     }
 
+    /** Every cell is editable: the grid is how the user writes the CSV. */
     @Override
     public boolean isCellEditable(int rowIndex, int columnIndex) {
         return true;
     }
 
+    /** Stores an edited cell, treating null as an empty string so no cell ever holds null. */
     @Override
     public void setValueAt(Object value, int rowIndex, int columnIndex) {
         rows.get(rowIndex)[columnIndex] = value == null ? "" : value.toString();
         fireTableCellUpdated(rowIndex, columnIndex);
     }
 
+    /** Appends a blank row for a new offer. */
     public void addEmptyRow() {
         rows.add(new String[KEYS.length]);
         int i = rows.size() - 1;
@@ -67,6 +75,7 @@ public final class OfferTableModel extends AbstractTableModel {
         fireTableRowsInserted(i, i);
     }
 
+    /** Removes the row at {@code index}; out-of-range indices are ignored (nothing selected). */
     public void removeRow(int index) {
         if (index >= 0 && index < rows.size()) {
             rows.remove(index);
@@ -113,6 +122,11 @@ public final class OfferTableModel extends AbstractTableModel {
         return out.size();
     }
 
+    /**
+     * A row's value for a canonical key, matched case-insensitively so a CSV
+     * from elsewhere ({@code Name}, {@code NAME}) still lines up. Absent columns
+     * come back empty rather than null.
+     */
     private static String lookup(Map<String, String> row, String key) {
         for (Map.Entry<String, String> e : row.entrySet()) {
             if (e.getKey() != null && e.getKey().strip().equalsIgnoreCase(key)) {

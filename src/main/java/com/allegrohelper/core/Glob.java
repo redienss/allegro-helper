@@ -16,10 +16,19 @@ import java.util.List;
  */
 public final class Glob {
 
+    /** Not instantiable: the class is a namespace for {@link #expand}. */
     private Glob() {
     }
 
-    /** Returns matching existing paths, sorted lexicographically. */
+    /**
+     * Returns matching existing paths, sorted lexicographically.
+     *
+     * <p>Walks the pattern segment by segment, so a wildcard is matched against
+     * the directory entries at that level rather than against the whole path —
+     * which is what makes the multi-wildcard MTP pattern work. Unreadable
+     * directories are skipped rather than failing the expansion, since a phone
+     * can vanish mid-scan.
+     */
     public static List<Path> expand(String pattern) {
         boolean absolute = pattern.startsWith("/");
         String[] segments = pattern.split("/");

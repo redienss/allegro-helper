@@ -87,6 +87,13 @@ final class SettingsDialog extends JDialog {
     private String savedSystemPrompt = "";
     private String savedUserPrompt = "";
 
+    /**
+     * @param baseDir the base directory whose {@code .env} the OpenAI settings
+     *                are read from and written back to
+     * @param onSettingsApplied run after a theme or language change, so
+     *                          {@link MainWindow} can re-apply the styling its
+     *                          build baked in
+     */
     SettingsDialog(JFrame owner, Path baseDir, Runnable onSettingsApplied) {
         super(owner, "Settings", true);
         this.onSettingsApplied = onSettingsApplied;
@@ -207,6 +214,13 @@ final class SettingsDialog extends JDialog {
         return page;
     }
 
+    /**
+     * Adds one labeled row to the OpenAI page.
+     *
+     * @param weighty share of the page's spare vertical space the field takes —
+     *                what makes the prompt areas grow with the dialog while the
+     *                key and model rows stay single-line
+     */
     private static void addRow(JPanel page, GridBagConstraints c, int row,
                                String label, Component field, int fill, double weighty) {
         c.gridx = 0;
@@ -249,6 +263,7 @@ final class SettingsDialog extends JDialog {
         return item == null ? "" : item.toString().strip();
     }
 
+    /** Whether any OpenAI field was edited since the last load or save. */
     private boolean openaiDirty() {
         return !new String(apiKeyField.getPassword()).strip().equals(savedApiKey)
                 || !currentModel().equals(savedModel)
@@ -256,6 +271,11 @@ final class SettingsDialog extends JDialog {
                 || !userPromptArea.getText().equals(savedUserPrompt);
     }
 
+    /**
+     * Re-evaluates the Apply button on every keystroke in a text component —
+     * an {@code ActionListener} would only fire on commit, leaving Apply
+     * disabled while the user types.
+     */
     private void watchDocument(JTextComponent component) {
         component.getDocument().addDocumentListener(new DocumentListener() {
             @Override
@@ -308,6 +328,7 @@ final class SettingsDialog extends JDialog {
         return true;
     }
 
+    /** The OK / Cancel / Apply bar. OK is the default button, so Enter accepts the dialog. */
     private JPanel buildButtonBar() {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         JButton ok = new JButton("OK");
@@ -325,6 +346,7 @@ final class SettingsDialog extends JDialog {
         return bar;
     }
 
+    /** Enables Apply exactly when something on any page differs from what is in effect. */
     private void updateApplyEnabled() {
         applyButton.setEnabled(themeCombo.getSelectedItem() != Theme.current()
                 || languageCombo.getSelectedItem() != Language.current()

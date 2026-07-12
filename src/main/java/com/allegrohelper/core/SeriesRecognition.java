@@ -49,10 +49,19 @@ public final class SeriesRecognition {
         }
     }
 
+    /** Not instantiable: the class is a namespace for {@link #recognize}. */
     private SeriesRecognition() {
     }
 
-    /** Recognizes the photo series present in {@code dir} according to {@code mode}. */
+    /**
+     * Recognizes the photo series present in {@code dir} according to
+     * {@code mode}. The single entry point for grouping, used by both the match
+     * step and the UI's Photos preview, so the preview always shows exactly
+     * what a run would produce.
+     *
+     * @param gapThreshold only meaningful for {@link Mode#AUTO}: the pause that
+     *                     separates two series
+     */
     public static List<PhotoSeries> recognize(Mode mode, Path dir, Duration gapThreshold)
             throws IOException {
         return switch (mode) {

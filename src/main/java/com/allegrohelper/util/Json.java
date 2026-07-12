@@ -16,13 +16,27 @@ import java.util.Map;
  */
 public final class Json {
 
+    /** Not instantiable: the class is a namespace for {@link #parse} and {@link #write}. */
     private Json() {
     }
 
+    /**
+     * Parses any JSON value.
+     *
+     * @throws IllegalArgumentException on malformed input, including trailing
+     *         characters after the value
+     */
     public static Object parse(String s) {
         return new Parser(s).parseTopLevel();
     }
 
+    /**
+     * Parses JSON expected to be an object — {@code data.json} and the API
+     * responses always are.
+     *
+     * @throws IllegalArgumentException if the input is malformed or its top
+     *         level is not an object
+     */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> parseObject(String s) {
         Object o = parse(s);
@@ -32,6 +46,16 @@ public final class Json {
         throw new IllegalArgumentException("Expected a JSON object at the top level");
     }
 
+    /**
+     * Serializes a value.
+     *
+     * <p>The output is also a valid JavaScript literal, which is what lets
+     * {@code AllegroForm} embed a string straight into the JS it evaluates in
+     * the page.
+     *
+     * @param pretty two-space indented and multi-line when true; compact when
+     *               false (what the HTTP request bodies use)
+     */
     public static String write(Object value, boolean pretty) {
         StringBuilder sb = new StringBuilder();
         writeValue(sb, value, pretty, 0);
@@ -40,6 +64,7 @@ public final class Json {
 
     // ------------------------------------------------------------------ parse
 
+    /** A recursive-descent parser over the input string, {@code i} being the read cursor. */
     private static final class Parser {
         private final String s;
         private int i;
@@ -48,6 +73,7 @@ public final class Json {
             this.s = s;
         }
 
+        /** Parses the single value the input must consist of, rejecting anything after it. */
         Object parseTopLevel() {
             Object v = parseValue();
             skipWs();
@@ -57,6 +83,7 @@ public final class Json {
             return v;
         }
 
+        /** Parses whichever value starts at the cursor, dispatching on its first character. */
         Object parseValue() {
             skipWs();
             char c = peek();
@@ -73,6 +100,7 @@ public final class Json {
             };
         }
 
+        /** Parses an object into an insertion-ordered map, so a round-trip keeps the key order. */
         Map<String, Object> parseObj() {
             LinkedHashMap<String, Object> m = new LinkedHashMap<>();
             i++; // consume '{'
@@ -103,6 +131,7 @@ public final class Json {
             }
         }
 
+        /** Parses an array. */
         List<Object> parseArr() {
             ArrayList<Object> a = new ArrayList<>();
             i++; // consume '['
@@ -126,6 +155,7 @@ public final class Json {
             }
         }
 
+        /** Parses a quoted string, decoding the backslash escapes including {@code \\uXXXX}. */
         String parseStr() {
             if (peek() != '"') {
                 throw err("expected string");
@@ -163,6 +193,7 @@ public final class Json {
             }
         }
 
+        /** Parses a number. Every number becomes a {@link Double}; {@link #formatNumber} prints integral ones without a decimal point. */
         Double parseNum() {
             int start = i;
             while (i < s.length() && "+-0123456789.eE".indexOf(s.charAt(i)) >= 0) {
@@ -174,6 +205,7 @@ public final class Json {
             return Double.parseDouble(s.substring(start, i));
         }
 
+        /** Parses {@code true} or {@code false}. */
         Boolean parseBool() {
             if (peek() == 't') {
                 expect("true");
@@ -183,6 +215,7 @@ public final class Json {
             return Boolean.FALSE;
         }
 
+        /** Consumes a literal word at the cursor, or fails. */
         void expect(String word) {
             if (!s.startsWith(word, i)) {
                 throw err("expected '" + word + "'");
@@ -190,12 +223,14 @@ public final class Json {
             i += word.length();
         }
 
+        /** Advances the cursor past any whitespace. */
         void skipWs() {
             while (i < s.length() && Character.isWhitespace(s.charAt(i))) {
                 i++;
             }
         }
 
+        /** The character at the cursor, failing at end of input rather than returning a sentinel. */
         char peek() {
             if (i >= s.length()) {
                 throw err("unexpected end of input");
@@ -203,6 +238,7 @@ public final class Json {
             return s.charAt(i);
         }
 
+        /** A parse error naming the cursor position, so a bad {@code data.json} can be found. */
         RuntimeException err(String message) {
             return new IllegalArgumentException("JSON parse error at index " + i + ": " + message);
         }
@@ -210,6 +246,11 @@ public final class Json {
 
     // ------------------------------------------------------------------ write
 
+    /**
+     * Appends any value. Types outside the supported set fall back to their
+     * {@code toString} as a JSON string, which is what lets a {@code Path} or an
+     * enum be handed to {@link #write} directly.
+     */
     private static void writeValue(StringBuilder sb, Object value, boolean pretty, int depth) {
         switch (value) {
             case null -> sb.append("null");
@@ -222,6 +263,7 @@ public final class Json {
         }
     }
 
+    /** Appends an object, keys in the map's own iteration order. */
     private static void writeObject(StringBuilder sb, Map<?, ?> map, boolean pretty, int depth) {
         if (map.isEmpty()) {
             sb.append("{}");
@@ -243,6 +285,7 @@ public final class Json {
         sb.append('}');
     }
 
+    /** Appends an array. */
     private static void writeArray(StringBuilder sb, List<?> list, boolean pretty, int depth) {
         if (list.isEmpty()) {
             sb.append("[]");
@@ -261,6 +304,7 @@ public final class Json {
         sb.append(']');
     }
 
+    /** Breaks the line and indents two spaces per level — a no-op in compact mode. */
     private static void newlineIndent(StringBuilder sb, boolean pretty, int depth) {
         if (pretty) {
             sb.append('\n');
@@ -268,6 +312,12 @@ public final class Json {
         }
     }
 
+    /**
+     * Formats a number, printing an integral value without a decimal point —
+     * parsing turns every number into a {@link Double}, so without this a
+     * round-tripped {@code data.json} would grow {@code 20.0} where it had 20.
+     * Non-finite values become {@code null}, which JSON has no literal for.
+     */
     private static String formatNumber(Number n) {
         if (n instanceof Integer || n instanceof Long || n instanceof Short || n instanceof Byte) {
             return n.toString();
@@ -282,6 +332,11 @@ public final class Json {
         return Double.toString(d);
     }
 
+    /**
+     * Appends a quoted string, escaping what JSON requires and leaving
+     * everything else literal — Polish text stays readable in {@code data.json}
+     * rather than turning into a wall of {@code \\uXXXX}.
+     */
     private static void writeString(StringBuilder sb, String s) {
         sb.append('"');
         for (int i = 0; i < s.length(); i++) {

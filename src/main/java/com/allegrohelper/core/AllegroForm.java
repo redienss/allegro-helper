@@ -35,13 +35,17 @@ import java.util.Map;
  */
 public final class AllegroForm {
 
+    /** The offer title input. Its presence is also what {@link #waitForForm} waits for. */
     private static final String TITLE_SELECTOR = "input[data-testid=\"offer-title-input\"]";
+    /** The hidden file input the photos are handed to. */
     private static final String PHOTOS_SELECTOR = "input[data-testid=\"drag-drop-photo-upload\"]";
+    /** The ProseMirror editor. Not a {@code data-testid}: the editor carries none. */
     private static final String DESCRIPTION_SELECTOR = ".ProseMirror[contenteditable=\"true\"]";
 
     /** How long to wait for the form — generous, the user may need to log in first. */
     private static final int FORM_WAIT_SECONDS = 180;
 
+    /** Not instantiable: the class is a namespace for {@link #fill}. */
     private AllegroForm() {
     }
 
@@ -116,6 +120,14 @@ public final class AllegroForm {
                 + FORM_WAIT_SECONDS + "s. Log in to Allegro in the Chrome window and retry.");
     }
 
+    /**
+     * Writes the title through the native {@code value} setter and dispatches
+     * {@code input}/{@code change}, then reads the field back — a silent no-op
+     * here would leave the user submitting an untitled offer.
+     *
+     * @throws IOException if the value did not stick, i.e. the framework
+     *         overwrote it or the selector no longer matches
+     */
     private static void fillTitle(Cdp cdp, String title) throws IOException {
         // Json.write produces a valid JS string literal, escaping included.
         String js = "(() => {"
@@ -134,6 +146,12 @@ public final class AllegroForm {
         }
     }
 
+    /**
+     * Focuses the ProseMirror editor and types the description into it, line by
+     * line with Enter keystrokes between them. Typing rather than setting is
+     * not a preference: the editor ignores DOM mutation and only reacts to real
+     * editing input.
+     */
     private static void fillDescription(Cdp cdp, String description) throws IOException {
         Object focused = cdp.eval("(() => {"
                 + "const el = document.querySelector('" + DESCRIPTION_SELECTOR + "');"

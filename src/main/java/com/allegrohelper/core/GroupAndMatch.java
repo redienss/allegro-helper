@@ -21,9 +21,21 @@ import java.util.Map;
  */
 public final class GroupAndMatch {
 
+    /** Not instantiable: the class is a namespace for {@link #run}. */
     private GroupAndMatch() {
     }
 
+    /**
+     * Groups {@code raw_photos/} into series, pairs each with a CSV row
+     * <em>by position</em> (so row order is load-bearing) and moves the photos
+     * into {@code offers/<label>/photos/}, writing {@code data.json} alongside.
+     *
+     * <p>Refuses to move anything when the series count differs from the row
+     * count: a positional match that is off by one would mislabel every
+     * following offer, and the photos have already left the phone's ordering
+     * behind — so it logs what it detected and aborts the run. Idempotent: an
+     * offer directory that already exists is left alone.
+     */
     public static void run(Config cfg, Reporter reporter) throws IOException, PipelineException {
         List<Map<String, String>> offers = loadOffers(cfg.csvPath);
         if (cfg.seriesRecognition == SeriesRecognition.Mode.SINGLE_ITEM && offers.size() > 1) {
@@ -119,6 +131,12 @@ public final class GroupAndMatch {
         }
     }
 
+    /**
+     * Reads the offer rows from the CSV.
+     *
+     * @throws PipelineException if the file is missing or holds no rows — with
+     *         nothing to match against, guessing would be worse than stopping
+     */
     static List<Map<String, String>> loadOffers(Path csvPath) throws IOException, PipelineException {
         if (!Files.isRegularFile(csvPath)) {
             throw new PipelineException("CSV file " + csvPath + " does not exist.");
@@ -130,6 +148,11 @@ public final class GroupAndMatch {
         return rows;
     }
 
+    /**
+     * Writes the offer's {@code data.json}: every CSV column of the row, plus
+     * the photo count, the photo file names and a creation timestamp. This file
+     * is what every later step reads the offer's facts from.
+     */
     private static void writeDataJson(Path path, Map<String, String> offer, PhotoSeries cluster)
             throws IOException {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>(offer);

@@ -52,9 +52,11 @@ public final class AutoCrop {
     /** Detecting movement needs at least this many frames. */
     private static final int MIN_FRAMES = 2;
 
+    /** Not instantiable: the class is a namespace for {@link #runAll}. */
     private AutoCrop() {
     }
 
+    /** Crops every offer under {@code offers/}. */
     public static void runAll(Config cfg, Reporter reporter) throws IOException {
         if (!Files.isDirectory(cfg.offersDir)) {
             reporter.log("Directory " + cfg.offersDir + " does not exist, no offers to crop.");
@@ -74,7 +76,16 @@ public final class AutoCrop {
         }
     }
 
-    /** Crops one offer's photos into its {@code cropped/} directory. */
+    /**
+     * Crops one offer's photos into its {@code cropped/} directory, all by the
+     * same box so the series stays consistent.
+     *
+     * <p>Bails out rather than guessing wherever a wrong crop would be worse
+     * than none — too few frames to tell the item from the background, or
+     * {@link #detect} declining — and says so in the log, leaving the offer
+     * uncropped for the user to handle. Idempotent: a {@code cropped/} already
+     * holding one entry per photo is left alone.
+     */
     public static void cropOffer(Path offerDir, Reporter reporter) throws IOException {
         Path inputDir = cropInput(offerDir);
         Path croppedDir = offerDir.resolve("cropped");
@@ -143,7 +154,15 @@ public final class AutoCrop {
 
     /**
      * Finds the crop box for a series, or null when the item cannot be located
-     * confidently.
+     * confidently — a subject too small to be plausible, or a box so near
+     * full-frame that cropping would achieve nothing.
+     *
+     * <p>Works on the per-pixel luminance <em>range</em> across the series:
+     * on a turntable only the item's pixels change, so the range separates it
+     * from the background where brightness or edges would fail on a white item
+     * against a white backdrop. The range image is Otsu-thresholded, reduced to
+     * its largest connected blob, grown by {@link #MARGIN} and expanded to the
+     * source aspect ratio.
      */
     private static Box detect(List<Path> photos) throws IOException {
         Frame first = readLuma(photos.get(0));
@@ -243,7 +262,11 @@ public final class AutoCrop {
         return new Box(ix, iy, iw, ih);
     }
 
-    /** Otsu's threshold: the value maximising between-class variance. */
+    /**
+     * Otsu's threshold: the value maximising between-class variance — the split
+     * of the range histogram into "moved" and "stayed still" that separates the
+     * two most cleanly, without a hand-tuned constant.
+     */
     private static int otsu(int[] hist, int total) {
         long sumAll = 0;
         for (int i = 0; i < 256; i++) {
@@ -276,7 +299,12 @@ public final class AutoCrop {
 
     /**
      * Largest 4-connected blob of the mask, as {@code {x0, y0, x1, y1, area}},
-     * or null when the mask is empty.
+     * or null when the mask is empty. Taking only the largest blob is what
+     * discards the specks the threshold leaves in the background — a shadow
+     * shifting, sensor noise — so the box follows the item alone.
+     *
+     * <p>Flood-filled with an explicit stack rather than recursion: a blob can
+     * cover the whole working image, which would overflow the call stack.
      */
     private static int[] largestComponent(boolean[] mask, int w, int h) {
         boolean[] seen = new boolean[mask.length];
@@ -334,6 +362,12 @@ public final class AutoCrop {
         return best;
     }
 
+    /**
+     * Pushes a neighbouring pixel onto the flood-fill stack if it belongs to the
+     * blob and has not been seen.
+     *
+     * @return whether it was pushed — the caller advances {@code top} on true
+     */
     private static boolean push(boolean[] mask, boolean[] seen, int[] stack, int top, int i) {
         if (!mask[i] || seen[i]) {
             return false;
@@ -399,12 +433,14 @@ public final class AutoCrop {
         }
     }
 
+    /** How many entries {@code dir} holds — the idempotence check's "already done" signal. */
     private static long countEntries(Path dir) throws IOException {
         try (var stream = Files.list(dir)) {
             return stream.count();
         }
     }
 
+    /** The offer directories under {@code dir}, in name order. */
     private static List<Path> listSubdirs(Path dir) throws IOException {
         List<Path> dirs = new ArrayList<>();
         try (var stream = Files.list(dir)) {

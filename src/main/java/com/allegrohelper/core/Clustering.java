@@ -21,9 +21,17 @@ public final class Clustering {
     private static final DateTimeFormatter TS_PARSE = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final DateTimeFormatter DIR_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm");
 
+    /** Not instantiable: the class is a namespace for its static helpers. */
     private Clustering() {
     }
 
+    /**
+     * Reads the capture time out of an OpenCamera file name.
+     *
+     * @throws IllegalArgumentException if the name does not carry a timestamp —
+     *         photos from another camera have none, which is why the non-auto
+     *         recognition modes use file mtimes instead of this
+     */
     public static LocalDateTime parseTimestamp(Path path) {
         Matcher m = FILENAME_RE.matcher(path.getFileName().toString());
         if (!m.find()) {
@@ -34,11 +42,17 @@ public final class Clustering {
         return LocalDateTime.parse(m.group(1) + m.group(2), TS_PARSE);
     }
 
+    /** The offer directory name for a series starting at {@code start}: {@code yyyyMMdd_HHmm}. */
     public static String dirLabel(LocalDateTime start) {
         return start.format(DIR_FORMAT);
     }
 
-    /** Clusters photos into time-contiguous series, ordered by time. */
+    /**
+     * Clusters photos into time-contiguous series, ordered by time: sorted by
+     * timestamp, then split wherever the gap to the previous photo exceeds
+     * {@code gapThreshold} — the pause while the next item is put on the
+     * turntable.
+     */
     public static List<PhotoSeries> cluster(List<Path> photos, Duration gapThreshold) {
         record Stamped(LocalDateTime ts, Path path) {
         }

@@ -27,7 +27,9 @@ public final class Retouch {
 
     /** One retouching operation; each writes its own directory in the offer. */
     public enum Mode {
+        /** Gray-world white balance, from {@code photos/} into {@code white_balanced/}. */
         WHITE_BALANCE("white_balanced", "white balance"),
+        /** Auto-contrast, from {@code white_balanced/} (else {@code photos/}) into {@code contrasted/}. */
         AUTO_CONTRAST("contrasted", "auto-contrast");
 
         /** Output directory name inside the offer directory. */
@@ -44,9 +46,11 @@ public final class Retouch {
     private static final float JPEG_QUALITY = 0.90f;
     private static final int AUTOCONTRAST_CUTOFF = 1;
 
+    /** Not instantiable: the class is a namespace for its static steps. */
     private Retouch() {
     }
 
+    /** Applies {@code mode} to every offer under {@code offers/}. */
     public static void runAll(Config cfg, Mode mode, Reporter reporter) throws IOException {
         if (!Files.isDirectory(cfg.offersDir)) {
             reporter.log("Directory " + cfg.offersDir + " does not exist, no offers to retouch.");
@@ -66,6 +70,11 @@ public final class Retouch {
         }
     }
 
+    /**
+     * Retouches one offer. Idempotent: an output directory already holding one
+     * entry per input photo counts as done and is skipped, so re-running the
+     * step is safe.
+     */
     public static void retouchOffer(Path offerDir, Mode mode, Reporter reporter) throws IOException {
         Path inputDir = inputDir(offerDir, mode);
         Path outputDir = offerDir.resolve(mode.dirName);
@@ -177,6 +186,13 @@ public final class Retouch {
         }
     }
 
+    /**
+     * Builds one channel's contrast lookup table the way PIL does: trim the
+     * cutoff percentile off each end of the histogram, then linearly stretch
+     * what remains across 0..255. The truncation (rather than rounding) below
+     * is PIL's, and matching it is why the output is bit-comparable with the
+     * Python original — deviating here is a behavior change, not a cleanup.
+     */
     private static int[] buildLut(int[] histIn, int n) {
         int[] h = histIn.clone();
 
@@ -242,16 +258,19 @@ public final class Retouch {
         }
     }
 
+    /** Clamps a channel value into 0..255. */
     private static int clamp(int v) {
         return v < 0 ? 0 : Math.min(v, 255);
     }
 
+    /** How many entries {@code dir} holds — the idempotence check's "already done" signal. */
     private static long countEntries(Path dir) throws IOException {
         try (var stream = Files.list(dir)) {
             return stream.count();
         }
     }
 
+    /** The offer directories under {@code dir}, in name order. */
     private static List<Path> listSubdirs(Path dir) throws IOException {
         List<Path> dirs = new ArrayList<>();
         try (var stream = Files.list(dir)) {

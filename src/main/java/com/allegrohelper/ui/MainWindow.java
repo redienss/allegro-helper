@@ -123,6 +123,7 @@ public final class MainWindow {
         return Theme.isDark() ? Color.WHITE : new Color(0x1A, 0x1A, 0x1A);
     }
 
+    /** @see #tabSelectedFg() */
     private static Color tabUnselectedFg() {
         return Theme.isDark() ? new Color(0x9E, 0x9E, 0x9E) : new Color(0x6E, 0x6E, 0x6E);
     }
@@ -236,6 +237,10 @@ public final class MainWindow {
 
     private volatile boolean running = false;
 
+    /**
+     * Builds the window for a base directory and loads its offers. Nothing is
+     * shown until {@link #show()}.
+     */
     public MainWindow(Path initialBaseDir) {
         baseDirField.setText(initialBaseDir.toAbsolutePath().normalize().toString());
         // Seed with the configured photo source (MTP_GLOB_PATTERN or the default
@@ -247,6 +252,7 @@ public final class MainWindow {
         loadOffersFromBaseDir();
     }
 
+    /** Shows the window and scans the phone once, so Photos is populated without a first click. */
     public void show() {
         frame.setVisible(true);
         // Scan the phone on launch so the Photos section is populated without
@@ -266,6 +272,12 @@ public final class MainWindow {
         }
     }
 
+    /**
+     * Assembles the whole window: the control stack and log on the left, the
+     * tabbed offer details on the right. Styling that the look and feel does not
+     * cover (fonts, carets, tab colors) is applied at the end, which is why
+     * {@link #onSettingsApplied()} has to redo it after a theme change.
+     */
     private void build() {
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         frame.setJMenuBar(buildMenuBar());
@@ -420,6 +432,7 @@ public final class MainWindow {
         }
     }
 
+    /** Resizes a titled border's title font, descending into compound borders. */
     private static void resizeTitledBorderFont(Border border) {
         if (border instanceof TitledBorder tb) {
             Font f = tb.getTitleFont();
@@ -436,6 +449,11 @@ public final class MainWindow {
         }
     }
 
+    /**
+     * Resizes the font of a grid cell editor's component — including the text
+     * field inside a combo editor. Editors are not part of the component tree,
+     * so the font walk cannot reach them on its own.
+     */
     private static void resizeCellEditorFont(javax.swing.table.TableCellEditor editor) {
         if (editor instanceof javax.swing.DefaultCellEditor dce) {
             Component comp = dce.getComponent();
@@ -499,6 +517,12 @@ public final class MainWindow {
         return panel;
     }
 
+    /**
+     * Adds one directory row: label, field, Browse, and an optional reset button.
+     *
+     * @param reset null for a row without one — the field then spans that column
+     *              as well, so the Browse buttons of all rows stay aligned
+     */
     private static void addDirRow(JPanel panel, int row, String label,
                                   JTextField field, java.awt.event.ActionListener browse,
                                   java.awt.event.ActionListener reset) {
@@ -541,6 +565,11 @@ public final class MainWindow {
         panel.add(browseButton, c);
     }
 
+    /**
+     * The Photos section: the detected series awaiting import, plus Refresh and
+     * the recognition-mode combo. Changing the mode re-scans, so the list always
+     * previews what the match step would actually do.
+     */
     private JPanel buildPhotosPanel() {
         JPanel panel = titled("Photos");
         panel.setLayout(new BorderLayout(6, 6));
@@ -569,6 +598,7 @@ public final class MainWindow {
         return panel;
     }
 
+    /** The Offer Data section: the editable CSV grid and its load/save/row buttons. */
     private JPanel buildOfferPanel() {
         JPanel panel = titled("Offer Data");
         panel.setLayout(new BorderLayout(6, 6));
@@ -625,6 +655,10 @@ public final class MainWindow {
         }
     }
 
+    /**
+     * Gives the InPost size column a combo editor offering A/B/C. Editable, so
+     * a value outside those three can still be typed.
+     */
     private void configureInpostColumn() {
         int col = indexOfKey("inpost_size");
         if (col < 0) {
@@ -639,6 +673,7 @@ public final class MainWindow {
         column.setCellEditor(new javax.swing.DefaultCellEditor(combo));
     }
 
+    /** The Workflow section: one checkbox per pipeline step, Start, and the destructive buttons. */
     private JPanel buildWorkflowPanel() {
         JPanel panel = titled("Workflow");
         panel.setLayout(new BorderLayout(6, 6));
@@ -672,6 +707,7 @@ public final class MainWindow {
         return panel;
     }
 
+    /** The Progress section: the run's overall progress bar. */
     private JPanel buildProgressPanel() {
         JPanel panel = titled("Progress");
         panel.setLayout(new BorderLayout(6, 6));
@@ -680,6 +716,7 @@ public final class MainWindow {
         return panel;
     }
 
+    /** The Log section: the read-only, monospaced pipeline log (deliberately untranslated). */
     private JPanel buildLogPanel() {
         JPanel panel = titled("Log");
         panel.setLayout(new BorderLayout(6, 6));
@@ -692,6 +729,12 @@ public final class MainWindow {
         return panel;
     }
 
+    /**
+     * The right panel: the six {@code TAB_*} tabs over the selected offer, with a
+     * {@link CardLayout} button bar below that swaps per tab. Tab titles are
+     * custom labels so the selected one stays visibly highlighted whatever the
+     * look and feel does.
+     */
     private JPanel buildDetailsPanel() {
         JPanel panel = new JPanel(new BorderLayout(6, 6));
         panel.setBorder(BorderFactory.createCompoundBorder(
@@ -844,6 +887,7 @@ public final class MainWindow {
         return panel;
     }
 
+    /** A bold heading inside the Allegro form tab. */
     private static JLabel sectionLabel(String text) {
         JLabel label = new JLabel(text);
         label.setFont(label.getFont().deriveFont(Font.BOLD));
@@ -852,6 +896,10 @@ public final class MainWindow {
         return label;
     }
 
+    /**
+     * A left-aligned row of controls whose height is capped, so it cannot stretch
+     * inside the form tab's vertical box layout.
+     */
     private static JPanel flowRow() {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -859,6 +907,11 @@ public final class MainWindow {
         return row;
     }
 
+    /**
+     * Opens the Allegro form in the user's <em>default</em> browser (not the
+     * app-driven Chrome — that is {@link #copyAllToAllegro}). Off the EDT, since
+     * launching a browser can block.
+     */
     private void openFormUrl() {
         new Thread(() -> {
             try {
@@ -916,6 +969,11 @@ public final class MainWindow {
         }, "allegro-form-fill").start();
     }
 
+    /**
+     * Puts text on the system clipboard and notes it in the log.
+     *
+     * @param what what was copied, for the log line
+     */
     private void copyToClipboard(String text, String what) {
         Toolkit.getDefaultToolkit().getSystemClipboard()
                 .setContents(new StringSelection(text), null);
@@ -965,6 +1023,7 @@ public final class MainWindow {
         return offerDir.resolve("contrasted"); // nonexistent: the gallery shows "Not available yet."
     }
 
+    /** Whether the active tab is a text editor (rather than a gallery or the form). */
     private boolean isEditorTab() {
         int i = rightTabs.getSelectedIndex();
         return i == TAB_DESCRIPTION_INPUT || i == TAB_DESCRIPTION_OUTPUT || i == TAB_OCR;
@@ -1072,6 +1131,7 @@ public final class MainWindow {
         }
     }
 
+    /** An empty panel with a titled border — the shell every left-hand section is built in. */
     private JPanel titled(String title) {
         JPanel panel = new JPanel();
         panel.setBorder(BorderFactory.createCompoundBorder(
@@ -1256,6 +1316,11 @@ public final class MainWindow {
         activeEditorPane().setText("");
     }
 
+    /**
+     * A file's contents, or an empty string when it does not exist yet — an
+     * offer that has not reached a step simply shows an empty editor. A read
+     * error is returned as the text, so it is visible rather than silent.
+     */
     private static String readIfExists(Path file) {
         if (file != null && Files.isRegularFile(file)) {
             try {
@@ -1307,10 +1372,12 @@ public final class MainWindow {
         return index >= 0 && index < dirs.size() ? dirs.get(index) : null;
     }
 
+    /** Escapes text for the HTML-rendered details header, so an offer name cannot break its markup. */
     private static String escapeHtml(String s) {
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
+    /** Whether the file name ends in {@code .jpg}/{@code .jpeg} (case-insensitive). */
     private static boolean isJpeg(Path p) {
         String n = p.getFileName().toString().toLowerCase();
         return n.endsWith(".jpg") || n.endsWith(".jpeg");
@@ -1620,6 +1687,7 @@ public final class MainWindow {
 
     // ----------------------------------------------------------------- actions
 
+    /** Picks a new base directory and reloads its offers — every path derives from it. */
     private void chooseBaseDir() {
         JFileChooser chooser = new JFileChooser(baseDirField.getText());
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
@@ -1629,6 +1697,7 @@ public final class MainWindow {
         }
     }
 
+    /** Picks a photo source directory (replacing the MTP glob) and re-scans it. */
     private void choosePhotoDir() {
         // The field usually holds the MTP glob, which no chooser can open;
         // start from the deepest existing prefix of it instead.
@@ -1673,6 +1742,7 @@ public final class MainWindow {
         return result;
     }
 
+    /** Loads the base directory's offers.csv into the grid; a missing file just leaves it empty. */
     private void loadOffersFromBaseDir() {
         Config cfg = currentConfig();
         try {
@@ -1683,6 +1753,7 @@ public final class MainWindow {
         loadSelectedOffer();
     }
 
+    /** Loads offers from a CSV picked by the user (any delimiter; columns match by header name). */
     private void loadCsvViaChooser() {
         JFileChooser chooser = new JFileChooser(baseDirField.getText());
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
@@ -1696,6 +1767,10 @@ public final class MainWindow {
         }
     }
 
+    /**
+     * Writes the grid to the base directory's offers.csv. Commits the cell being
+     * edited first, so the value in an open editor is not lost.
+     */
     private void saveCsvToBaseDir() {
         stopCellEditing();
         Config cfg = currentConfig();
@@ -1707,6 +1782,7 @@ public final class MainWindow {
         }
     }
 
+    /** Opens offers.csv in the system's default .csv application. */
     private void openCsvInEditor() {
         Path csv = currentConfig().csvPath;
         if (!Files.exists(csv)) {
@@ -1733,6 +1809,7 @@ public final class MainWindow {
         }
     }
 
+    /** Removes the selected grid row; does nothing when no row is selected. */
     private void removeSelectedRow() {
         int viewRow = offerTable.getSelectedRow();
         if (viewRow >= 0) {
@@ -1740,6 +1817,10 @@ public final class MainWindow {
         }
     }
 
+    /**
+     * Re-scans the photo source and lists the series waiting to be imported.
+     * Off the EDT: the scan reaches over MTP to the phone, which can stall.
+     */
     private void refreshPhotos() {
         Config cfg = currentConfig();
         refreshPhotosButton.setEnabled(false);
@@ -1835,6 +1916,7 @@ public final class MainWindow {
         }
     }
 
+    /** Deletes a tree depth-first. Unlike the OCR step's, failures here are surfaced, not ignored. */
     private static void deleteRecursively(Path root) throws IOException {
         try (var stream = Files.walk(root)) {
             for (Path p : stream.sorted(Comparator.reverseOrder()).toList()) {
@@ -1843,6 +1925,11 @@ public final class MainWindow {
         }
     }
 
+    /**
+     * Runs the ticked steps on a background thread, streaming the log and
+     * progress back to the EDT. Saves the grid to offers.csv first when the
+     * match step is among them — that step reads the file, not the grid.
+     */
     private void startWorkflow() {
         if (running) {
             return;
@@ -1898,6 +1985,7 @@ public final class MainWindow {
 
     // ------------------------------------------------------------------ helpers
 
+    /** The ticked steps, in pipeline order. */
     private List<Workflow.Step> selectedSteps() {
         List<Workflow.Step> steps = new ArrayList<>();
         if (importBox.isSelected()) {
@@ -1924,6 +2012,11 @@ public final class MainWindow {
         return steps;
     }
 
+    /**
+     * The config for the current base directory, with the photo directory and
+     * recognition mode the user picked in the UI overriding {@code .env} and the
+     * environment — those two are UI controls, so what is on screen must win.
+     */
     private Config currentConfig() {
         Map<String, String> overrides = new HashMap<>();
         String photoDir = photoDirField.getText().strip();
@@ -1935,6 +2028,7 @@ public final class MainWindow {
         return Config.forBaseDir(Path.of(baseDirField.getText().strip()), overrides);
     }
 
+    /** Marks a run as (not) in progress, disabling Start and the destructive buttons meanwhile. */
     private void setRunning(boolean value) {
         running = value;
         startButton.setEnabled(!value);
@@ -1943,12 +2037,14 @@ public final class MainWindow {
         cleanRestartButton.setEnabled(!value);
     }
 
+    /** Commits the cell being edited, so its value is not lost when the grid is read. */
     private void stopCellEditing() {
         if (offerTable.isEditing()) {
             offerTable.getCellEditor().stopCellEditing();
         }
     }
 
+    /** The grid column showing a CSV key, or -1 when the schema has no such column. */
     private int indexOfKey(String key) {
         for (int i = 0; i < OfferTableModel.KEYS.length; i++) {
             if (OfferTableModel.KEYS[i].equals(key)) {
@@ -1958,11 +2054,13 @@ public final class MainWindow {
         return -1;
     }
 
+    /** Appends a line to the log and scrolls to it. Must be called on the EDT. */
     private void appendLog(String line) {
         logArea.append(line + "\n");
         logArea.setCaretPosition(logArea.getDocument().getLength());
     }
 
+    /** Shows an error dialog. The message is expected to be already translated. */
     private void error(String message) {
         JOptionPane.showMessageDialog(frame, message, "Allegro Helper", JOptionPane.ERROR_MESSAGE);
     }

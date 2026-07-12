@@ -7,6 +7,9 @@ package com.allegrohelper.core;
  */
 public class PipelineException extends Exception {
 
+    /**
+     * @param message the user-facing reason, surfaced as {@code Aborted: <message>}
+     */
     public PipelineException(String message) {
         super(message);
     }

@@ -12,9 +12,14 @@ import java.util.List;
  */
 public final class PhoneScan {
 
+    /**
+     * The outcome of a scan: the directory the photos were found in (the first
+     * match of the MTP glob) and the series they group into.
+     */
     public record Result(Path sourceDir, List<PhotoSeries> series) {
     }
 
+    /** Not instantiable: the class is a namespace for {@link #scan}. */
     private PhoneScan() {
     }
 

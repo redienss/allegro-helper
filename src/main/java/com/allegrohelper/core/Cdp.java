@@ -50,6 +50,7 @@ public final class Cdp implements AutoCloseable {
     private final ConcurrentHashMap<Long, CompletableFuture<Map<String, Object>>> pending =
             new ConcurrentHashMap<>();
 
+    /** Wraps an open socket to a tab; use {@link #connect} to obtain one. */
     private Cdp(java.net.http.WebSocket ws) {
         this.ws = ws;
     }
@@ -98,6 +99,13 @@ public final class Cdp implements AutoCloseable {
                 + LAUNCH_WAIT_SECONDS + "s (profile: " + profileDir + ").");
     }
 
+    /**
+     * The Chrome binary to launch: {@code CHROME_BIN} when set, else the first
+     * of {@link #CHROME_CANDIDATES} found on the PATH.
+     *
+     * @throws IOException if none is installed — with an install hint, since the
+     *         user can fix that
+     */
     private static String findChrome(String chromeBin) throws IOException {
         if (chromeBin != null && !chromeBin.isBlank()) {
             return chromeBin;
@@ -114,6 +122,11 @@ public final class Cdp implements AutoCloseable {
                 + "Install it or set CHROME_BIN=/path/to/chrome.");
     }
 
+    /**
+     * The port from the profile's {@code DevToolsActivePort}, or null when the
+     * file is missing or unreadable. The file outlives Chrome, so a port read
+     * here means nothing until {@link #probe} confirms someone is listening.
+     */
     private static Integer readPortFile(Path portFile) {
         try {
             String first = Files.readAllLines(portFile, StandardCharsets.UTF_8).get(0).strip();
@@ -123,6 +136,7 @@ public final class Cdp implements AutoCloseable {
         }
     }
 
+    /** Whether a live Chrome answers the protocol on {@code port}. */
     private static boolean probe(int port) {
         try {
             httpJson("GET", port, "/json/version");
@@ -151,6 +165,7 @@ public final class Cdp implements AutoCloseable {
         return wsUrl.toString();
     }
 
+    /** Calls one of Chrome's {@code /json/*} HTTP endpoints and parses the reply. */
     private static Map<String, Object> httpJson(String method, int port, String path)
             throws IOException {
         HttpClient client = HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build();
@@ -211,6 +226,11 @@ public final class Cdp implements AutoCloseable {
         }
     }
 
+    /**
+     * Routes one incoming frame to the caller waiting on its {@code id}. CDP
+     * also pushes id-less event notifications that nothing here subscribes to;
+     * those, and anything unparseable, are dropped.
+     */
     private void handleMessage(String message) {
         Map<String, Object> msg;
         try {
@@ -302,6 +322,7 @@ public final class Cdp implements AutoCloseable {
         send("DOM.setFileInputFiles", Map.of("nodeId", nodeId, "files", files));
     }
 
+    /** Closes the socket to the tab. Chrome itself keeps running — the user still needs the form. */
     @Override
     public void close() {
         ws.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "done");

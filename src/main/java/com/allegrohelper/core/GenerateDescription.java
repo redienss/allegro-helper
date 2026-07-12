@@ -88,9 +88,16 @@ public final class GenerateDescription {
                     + OFFER_JSON_PLACEHOLDER + "\n"
                     + "<<<END JSON>>>";
 
+    /** Not instantiable: the class is a namespace for {@link #runAll}. */
     private GenerateDescription() {
     }
 
+    /**
+     * Generates a description for every offer that lacks one.
+     *
+     * @throws PipelineException if no API key is configured, or the API rejects
+     *         a request — a failed call must not leave a half-written offer
+     */
     public static void runAll(Config cfg, Reporter reporter) throws IOException, PipelineException {
         if (cfg.openaiApiKey == null || cfg.openaiApiKey.isBlank()) {
             throw new PipelineException(
@@ -120,6 +127,12 @@ public final class GenerateDescription {
         }
     }
 
+    /**
+     * Generates one offer's {@code description.txt}, appending the price and
+     * InPost size from the CSV — those are copied, never generated, so the model
+     * cannot invent them. Idempotent: an offer that already has the file is
+     * skipped, which also means a re-run does not spend money twice.
+     */
     private static void generateForOffer(HttpClient client, Config cfg, Path offerDir, Reporter reporter,
                                          boolean[] omitTemperature)
             throws IOException, PipelineException {
@@ -158,6 +171,12 @@ public final class GenerateDescription {
         reporter.log(offerDir.getFileName() + ": [" + apiLabel(cfg) + "] generated description.txt.");
     }
 
+    /**
+     * The offer as the JSON the model sees: the CSV facts in a fixed key order,
+     * plus {@code additional_notes} ({@code more_data.txt}) and {@code ocr_text}
+     * ({@code ocr.txt}) when those are non-empty — omitted rather than sent
+     * blank, so the model is never handed an empty field to fill in.
+     */
     static String buildOfferJson(Map<String, Object> data, String extraNotes, String ocrText) {
         LinkedHashMap<String, Object> offer = new LinkedHashMap<>();
         offer.put("name", str(data, "name"));
@@ -177,6 +196,12 @@ public final class GenerateDescription {
         return Json.write(offer, true);
     }
 
+    /**
+     * Fills the configured user-prompt template with the offer JSON. A template
+     * the user edited the {@link #OFFER_JSON_PLACEHOLDER} out of would silently
+     * ask the model to describe nothing, so the data is appended in the default
+     * framing instead of being dropped.
+     */
     static String buildUserPrompt(Config cfg, Map<String, Object> data, String extraNotes, String ocrText) {
         String offerJson = buildOfferJson(data, extraNotes, ocrText);
         String template = cfg.openaiUserPrompt;
@@ -188,6 +213,13 @@ public final class GenerateDescription {
         return template + "\nOffer data (JSON):\n<<<JSON>>>\n" + offerJson + "\n<<<END JSON>>>";
     }
 
+    /**
+     * Posts one chat completion and returns the generated text.
+     *
+     * @param omitTemperature a single-element flag shared across the run: set
+     *        once a model rejects the temperature parameter, so only the first
+     *        offer pays for the retry
+     */
     private static String callOpenAi(HttpClient client, Config cfg, String userPrompt,
                                      Reporter reporter, boolean[] omitTemperature)
             throws IOException, PipelineException {
@@ -248,6 +280,11 @@ public final class GenerateDescription {
         }
     }
 
+    /**
+     * Digs the message text out of a chat-completions response. Any shape other
+     * than the documented one becomes a {@link PipelineException} carrying the
+     * raw body — better than writing a description built from a misread reply.
+     */
     @SuppressWarnings("unchecked")
     private static String extractContent(String responseBody) throws PipelineException {
         try {
@@ -262,6 +299,7 @@ public final class GenerateDescription {
         }
     }
 
+    /** One chat message object for the request body. */
     private static Map<String, Object> message(String role, String content) {
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
         m.put("role", role);
@@ -278,11 +316,13 @@ public final class GenerateDescription {
         return "OpenAI API";
     }
 
+    /** A {@code data.json} field as a string; empty when absent. */
     private static String str(Map<String, Object> data, String key) {
         Object v = data.get(key);
         return v == null ? "" : v.toString();
     }
 
+    /** The CSV price as a number; 0 when it is missing or unparseable. */
     private static double parsePrice(String price) {
         try {
             return Double.parseDouble(price.strip());
@@ -291,6 +331,7 @@ public final class GenerateDescription {
         }
     }
 
+    /** The offer directories under {@code dir}, in name order. */
     private static List<Path> listSubdirs(Path dir) throws IOException {
         List<Path> dirs = new ArrayList<>();
         try (var stream = Files.list(dir)) {

@@ -21,8 +21,11 @@ import java.util.prefs.Preferences;
  * is known.
  */
 public enum Theme {
+    /** The platform look and feel, so the app follows the desktop theme. */
     SYSTEM("System"),
+    /** Nimbus with the {@link #DARK_NIMBUS} base colors overridden. */
     DARK("Dark"),
+    /** Nimbus as it ships. */
     LIGHT("Light");
 
     private final String label;
@@ -31,6 +34,7 @@ public enum Theme {
         this.label = label;
     }
 
+    /** The name as shown in the Settings combo, itself translated. */
     @Override
     public String toString() {
         return I18n.t(label); // rendered directly by the Settings combo box, in the active language
@@ -70,6 +74,7 @@ public enum Theme {
         }
     }
 
+    /** Persists the choice for the next start. */
     public static void save(Theme theme) {
         prefs().put(PREF_KEY, theme.name());
     }
@@ -121,6 +126,7 @@ public enum Theme {
         return (bg.getRed() * 299 + bg.getGreen() * 587 + bg.getBlue() * 114) / 1000 < 128;
     }
 
+    /** Nimbus's class name, falling back to Metal should Nimbus ever be absent. */
     private static String nimbusClassName() {
         for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
             if ("Nimbus".equals(info.getName())) {
@@ -130,6 +136,7 @@ public enum Theme {
         return UIManager.getCrossPlatformLookAndFeelClassName(); // Metal, should Nimbus ever be absent
     }
 
+    /** The preference node the choice is stored in. */
     private static Preferences prefs() {
         return Preferences.userNodeForPackage(Theme.class);
     }
