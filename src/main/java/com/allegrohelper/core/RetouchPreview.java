@@ -17,7 +17,7 @@ import java.util.List;
  * <p>It deliberately reuses {@link Retouch} and {@link AutoCrop} rather than
  * approximating them — a preview that drifts from the pipeline is worse than
  * none. The steps are chained in memory in pipeline order (white balance →
- * auto-contrast → auto-crop), which is what the pipeline does through its
+ * contrast → auto-crop), which is what the pipeline does through its
  * intermediate directories; the only difference is the JPEG re-encode between
  * them, invisible at quality 90.
  *
@@ -42,12 +42,16 @@ public final class RetouchPreview {
      * Renders the before/after pair for an offer's first photo, or null when the
      * offer has no photos yet.
      *
+     * @param contrastStrength the strength the contrast step would run at — the
+     *                         slider's value, so the user sees what a run would
+     *                         produce at that setting
      * @param maxSize longest side of the returned images, in pixels — they are
      *                only ever shown scaled to fit a panel, and full-resolution
      *                copies would cost memory and repaint time for nothing
      */
-    public static Result render(Path offerDir, boolean whiteBalance, boolean autoContrast,
-                                boolean autoCrop, int maxSize) throws IOException {
+    public static Result render(Path offerDir, boolean whiteBalance, boolean contrast,
+                                double contrastStrength, boolean autoCrop, int maxSize)
+            throws IOException {
         Path photosDir = offerDir.resolve("photos");
         if (!Files.isDirectory(photosDir)) {
             return null;
@@ -66,10 +70,10 @@ public final class RetouchPreview {
 
         BufferedImage after = original;
         if (whiteBalance) {
-            after = Retouch.apply(after, Retouch.Mode.WHITE_BALANCE);
+            after = Retouch.apply(after, Retouch.Mode.WHITE_BALANCE, contrastStrength);
         }
-        if (autoContrast) {
-            after = Retouch.apply(after, Retouch.Mode.AUTO_CONTRAST);
+        if (contrast) {
+            after = Retouch.apply(after, Retouch.Mode.CONTRAST, contrastStrength);
         }
         if (autoCrop) {
             int[] box = AutoCrop.detectBox(photos);

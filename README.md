@@ -29,8 +29,10 @@ marketplace.
    timestamps in the filenames (the default, made for the turntable workflow),
    the whole directory as one item, or one item per subfolder.
 4. **White balance** — automatic gray-world white balance.
-5. **Auto-contrast** — automatic per-channel contrast stretch. Works on the
-   white-balanced photos when that step has run, on the originals otherwise.
+5. **Contrast** — contrast by a strength you set on the Retouch Preview tab's
+   slider (`1.00x` leaves the photo as it is, less flattens it, more deepens
+   it; the default is `1.20x`). Works on the white-balanced photos when that
+   step has run, on the originals otherwise.
 6. **Auto-crop** — each series is cropped to the item. Because the item rotates
    on the turntable while the background and table stay still, the item is
    simply the part of the frame that changes across the series. That is what the
@@ -38,7 +40,7 @@ marketplace.
    brightness thresholding and edge detection both fail. One crop box is used
    for the whole series (the item does not jump between frames), grown by a
    small margin and kept at the source aspect ratio. Works on the most
-   processed photos available — auto-contrasted, white-balanced, or the
+   processed photos available — contrasted, white-balanced, or the
    originals when no retouching step has run. Results go to `cropped/`; the
    input photos are left untouched.
 7. **OCR** — the text visible on the item and its packaging (labels,
@@ -140,7 +142,7 @@ selected offer on the right.
   file in the system's default `.csv` application, e.g. LibreOffice Calc),
   **Reload CSV** (re-reads the file from disk after such an external edit), and
   add/remove rows.
-- **Workflow** — checkboxes `Import`, `Match`, `White balance`, `Auto-contrast`,
+- **Workflow** — checkboxes `Import`, `Match`, `White balance`, `Contrast`,
   `Auto-crop`, `OCR`, `Describe` (all checked by default), so any subset of the
   pipeline — including either retouching step on its own — can be run.
 - **Start** — runs the selected steps in order. If `Match` is selected, the grid
@@ -167,10 +169,12 @@ to each offer's `data.json`, falling back to row position) in seven tabs:
   (`offers/<id>/photos/`).
 - **Retouch Preview** — the offer's first photo as it is now next to the same
   photo with the retouching steps applied, so you can see what White balance,
-  Auto-contrast and Auto-crop will do before running them. The three checkboxes
-  under the photos are the Workflow section's, mirrored: tick one here and it
-  ticks there too, and the preview re-renders. It is a true preview — the same
-  code a run uses — and it writes nothing.
+  Contrast and Auto-crop will do before running them. The three checkboxes under
+  the photos are the Workflow section's, mirrored: tick one here and it ticks
+  there too, and the preview re-renders. The slider beside `Contrast` sets that
+  step's strength, and a run uses whatever it is set to — so what the preview
+  shows is what you get. It is a true preview — the same code a run uses — and
+  it writes nothing.
 - **Photos (Output)** — thumbnail gallery of the finished photos: the output of
   the latest step that has run — `offers/<id>/cropped/`, else `contrasted/`,
   else `white_balanced/`.
@@ -285,8 +289,8 @@ GNOME shows this icon for the running window too.
 The same pipeline runs without a UI:
 
 ```bash
-./run.sh --cli import      # or match | whitebalance | autocontrast | autocrop | ocr | describe | all
-./run.sh --cli retouch     # alias: whitebalance + autocontrast
+./run.sh --cli import      # or match | whitebalance | contrast | autocrop | ocr | describe | all
+./run.sh --cli retouch     # alias: whitebalance + contrast
 ./run.sh --cli all /path/to/base-dir
 ```
 
@@ -298,14 +302,15 @@ environment variables are honored, from the environment or `.env`:
 `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
 `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION`
 (`auto` | `single` | `subfolders`, the CLI equivalent of the series
-recognition dropdown), `OCR_LANGUAGES` (tesseract languages, default
-`pol+eng`), `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` (for an
+recognition dropdown), `CONTRAST_STRENGTH` (the CLI equivalent of the contrast
+slider: `0.5`–`2.0`, default `1.2`), `OCR_LANGUAGES` (tesseract languages,
+default `pol+eng`), `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` (for an
 OpenAI-compatible endpoint), `CHROME_BIN` and `CHROME_PROFILE_DIR` (the
 browser and profile used by **Copy all to Allegro**; by default Chrome is
 found on the PATH and the profile lives in `.chrome-profile/` under the base
 directory). A real environment variable takes precedence over
-a value in `.env`; the **Photo directory** field and the series recognition
-dropdown in the window take precedence over both.
+a value in `.env`; the **Photo directory** field, the series recognition
+dropdown and the contrast slider in the window take precedence over both.
 
 ## Data layout
 
@@ -359,7 +364,7 @@ offers/20260708_0340/
   data.json        # data from the CSV row + list of photos
   photos/          # original photos of the series
   white_balanced/  # photos after auto white balance
-  contrasted/      # photos after auto-contrast
+  contrasted/      # photos after the Contrast step
   cropped/         # retouched photos cropped to the item (Auto-crop)
   more_data.txt    # optional, copied from more_data_<N>.txt if present
   ocr.txt          # text read off the photos (OCR), editable in the OCR tab

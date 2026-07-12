@@ -114,7 +114,7 @@ final class I18n {
         put("Workflow", "Przebieg pracy");
         put("Match", "Dopasuj");
         put("White balance", "Balans bieli");
-        put("Auto-contrast", "Auto-kontrast");
+        put("Contrast", "Kontrast");
         put("Auto-crop", "Kadrowanie");
         put("Describe", "Opisz"); // not "Opis" — that's the form tab's Description label
         put("Running…", "Działa…");
@@ -135,6 +135,8 @@ final class I18n {
         put("Before", "Przed");
         put("After", "Po");
         put("Rendering the preview…", "Tworzenie podglądu…");
+        put("1.00x leaves the photo as it is; less flattens it, more deepens it.",
+                "1,00x zostawia zdjęcie bez zmian; mniej spłaszcza, więcej pogłębia.");
         put("Could not render the preview: {0}", "Nie udało się utworzyć podglądu: {0}");
         put("Photos (Output)", "Zdjęcia (wynik)");
         put("Allegro Lokalnie Form", "Formularz Allegro Lokalnie");
@@ -151,8 +153,8 @@ final class I18n {
         put("Not available yet.", "Jeszcze niedostępne.");
         put("No photos.", "Brak zdjęć.");
         put("Not matched yet — run Match.", "Jeszcze niedopasowane — uruchom krok Dopasuj.");
-        put("Not retouched yet — run White balance or Auto-contrast.",
-                "Jeszcze nieretuszowane — uruchom Balans bieli lub Auto-kontrast.");
+        put("Not retouched yet — run White balance or Contrast.",
+                "Jeszcze nieretuszowane — uruchom Balans bieli lub Kontrast.");
         put("That photo directory does not exist yet.", "Ten katalog zdjęć jeszcze nie istnieje.");
         put("There is no file to delete yet:\n{0}", "Nie ma jeszcze pliku do usunięcia:\n{0}");
         put("Delete this file? This cannot be undone.\n\n{0}",

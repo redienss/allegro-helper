@@ -10,9 +10,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Headless command-line entry point:
- * {@code import | match | whitebalance | autocontrast | autocrop | ocr | describe | all}
- * ({@code retouch} is an alias for white balance + auto-contrast). Useful for
- * scripting and for running the pipeline without a display.
+ * {@code import | match | whitebalance | contrast | autocrop | ocr | describe | all}
+ * ({@code retouch} is an alias for white balance + contrast). Useful for
+ * scripting and for running the pipeline without a display. The contrast
+ * strength is the {@code CONTRAST_STRENGTH} config key — the slider that sets it
+ * lives in the UI, and headless runs have no other way to reach it.
  */
 public final class Cli {
 
@@ -32,8 +34,8 @@ public final class Cli {
     public static int run(String[] args) {
         if (args.length == 0) {
             System.err.println(
-                    "Usage: allegro-helper --cli <import|match|whitebalance|autocontrast|autocrop|ocr|describe|all> [baseDir]\n"
-                    + "       (retouch = whitebalance + autocontrast)");
+                    "Usage: allegro-helper --cli <import|match|whitebalance|contrast|autocrop|ocr|describe|all> [baseDir]\n"
+                    + "       (retouch = whitebalance + contrast)");
             return 2;
         }
         String step = args[0].toLowerCase();
@@ -44,14 +46,16 @@ public final class Cli {
             case "import" -> List.of(Workflow.Step.IMPORT);
             case "match" -> List.of(Workflow.Step.MATCH);
             case "whitebalance", "white-balance", "wb" -> List.of(Workflow.Step.WHITE_BALANCE);
-            case "autocontrast", "auto-contrast" -> List.of(Workflow.Step.AUTO_CONTRAST);
+            // The autocontrast spellings are what the step was called before it
+            // became a strength dial; scripts passing them keep working.
+            case "contrast", "autocontrast", "auto-contrast" -> List.of(Workflow.Step.CONTRAST);
             // Pre-split alias: retouch used to be one step doing both.
-            case "retouch" -> List.of(Workflow.Step.WHITE_BALANCE, Workflow.Step.AUTO_CONTRAST);
+            case "retouch" -> List.of(Workflow.Step.WHITE_BALANCE, Workflow.Step.CONTRAST);
             case "autocrop", "auto-crop" -> List.of(Workflow.Step.AUTOCROP);
             case "ocr" -> List.of(Workflow.Step.OCR);
             case "describe" -> List.of(Workflow.Step.DESCRIBE);
             case "all" -> List.of(Workflow.Step.IMPORT, Workflow.Step.MATCH,
-                    Workflow.Step.WHITE_BALANCE, Workflow.Step.AUTO_CONTRAST,
+                    Workflow.Step.WHITE_BALANCE, Workflow.Step.CONTRAST,
                     Workflow.Step.AUTOCROP, Workflow.Step.OCR, Workflow.Step.DESCRIBE);
             default -> null;
         };

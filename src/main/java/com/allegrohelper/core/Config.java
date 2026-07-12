@@ -29,6 +29,8 @@ public final class Config {
     public final int photosPerOffer;
     public final int seriesGapThresholdSeconds;
     public final SeriesRecognition.Mode seriesRecognition;
+    /** The contrast step's strength dial; see {@link Retouch#DEFAULT_CONTRAST}. */
+    public final double contrastStrength;
     public final String ocrLanguages;
     public final String openaiApiKey;
     public final String openaiModel;
@@ -54,6 +56,8 @@ public final class Config {
         this.photosPerOffer = intOrDefault(env, "PHOTOS_PER_OFFER", 20);
         this.seriesGapThresholdSeconds = intOrDefault(env, "SERIES_GAP_THRESHOLD_SECONDS", 60);
         this.seriesRecognition = SeriesRecognition.Mode.parse(env.get("SERIES_RECOGNITION"));
+        this.contrastStrength = Retouch.clampStrength(
+                doubleOrDefault(env, "CONTRAST_STRENGTH", Retouch.DEFAULT_CONTRAST));
         this.ocrLanguages = env.getOrDefault("OCR_LANGUAGES", "pol+eng");
         this.openaiApiKey = env.getOrDefault("OPENAI_API_KEY", "");
         this.openaiModel = stringOrDefault(env, "OPENAI_MODEL", DEFAULT_OPENAI_MODEL);
@@ -240,6 +244,19 @@ public final class Config {
         }
         try {
             return Integer.parseInt(v.strip());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /** The value as a double; the fallback if absent, blank or not a number. */
+    private static double doubleOrDefault(Map<String, String> env, String key, double fallback) {
+        String v = env.get(key);
+        if (v == null || v.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Double.parseDouble(v.strip());
         } catch (NumberFormatException e) {
             return fallback;
         }

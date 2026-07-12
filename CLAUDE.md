@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 ./build.sh                 # javac -> build/classes (+ build/allegro-helper.jar if the `jar` tool exists)
 ./run.sh                   # desktop UI
-./run.sh --cli all         # headless: import | match | whitebalance | autocontrast | autocrop | ocr | describe | all
-./run.sh --cli retouch /path/to/base-dir   # retouch = alias for whitebalance + autocontrast
+./run.sh --cli all         # headless: import | match | whitebalance | contrast | autocrop | ocr | describe | all
+./run.sh --cli retouch /path/to/base-dir   # retouch = alias for whitebalance + contrast
 ```
 
 `build.sh` resolves `javac` via `$JAVAC` → `PATH` → `$JAVA_HOME/bin` → `/usr/lib/jvm/*`, `/opt/*/bin`, `/snap/*/*/jbr/bin`. Override with `JAVAC=/path/to/javac ./build.sh`. If `jar` is missing (as on this machine), the jar step is skipped and `run.sh` runs from `build/classes` — that is a supported path, not a failure.
@@ -40,7 +40,7 @@ Java 25, Swing, **zero external dependencies** — JDK standard library only (Sw
 
 ### The pipeline
 
-`core/Workflow` is the spine. It runs an ordered `List<Step>` (`IMPORT → MATCH → WHITE_BALANCE → AUTO_CONTRAST → AUTOCROP → OCR → DESCRIBE`), logging a `== <label> ==` header per step and translating each step's 0..1 `stepProgress` into overall progress. Both front ends (`ui/MainWindow`, `cli/Cli`) do nothing but choose steps and supply a `Workflow.Listener`; all pipeline logic lives in `core/`.
+`core/Workflow` is the spine. It runs an ordered `List<Step>` (`IMPORT → MATCH → WHITE_BALANCE → CONTRAST → AUTOCROP → OCR → DESCRIBE`), logging a `== <label> ==` header per step and translating each step's 0..1 `stepProgress` into overall progress. Both front ends (`ui/MainWindow`, `cli/Cli`) do nothing but choose steps and supply a `Workflow.Listener`; all pipeline logic lives in `core/`.
 
 Each step is a static `run`/`runAll(Config, Reporter)` and talks to the outside world only through `Reporter` (log lines + progress). That indirection is why the same code serves the UI and the CLI — don't print to stdout from `core/`.
 
@@ -51,7 +51,7 @@ offers/<YYYYMMDD_HHMM>/
   data.json       # CSV row + photo list        (match)
   photos/         # originals                   (match)
   white_balanced/ # gray-world white balance    (white balance)
-  contrasted/     # per-channel auto-contrast   (auto-contrast)
+  contrasted/     # contrast at CONTRAST_STRENGTH (contrast)
   cropped/        # cropped to the item         (auto-crop)
   more_data.txt   # copied from more_data_<N>.txt
   ocr.txt         # text read off the photos    (ocr)
@@ -59,7 +59,7 @@ offers/<YYYYMMDD_HHMM>/
 ```
 
 Because either retouching step can be unticked, downstream steps take the
-most-processed input available: auto-contrast reads `white_balanced/` else
+most-processed input available: contrast reads `white_balanced/` else
 `photos/`; auto-crop reads `contrasted/` else `white_balanced/` else the
 legacy `retouched/` (the pre-split combined output — still recognized so old
 offers keep working, but never written anymore) else `photos/`. Originals
@@ -75,7 +75,7 @@ upright coordinates.
 ### Notable step internals
 
 - **`SeriesRecognition`** is the single entry point for grouping the photo dir into series; both `GroupAndMatch` and `PhoneScan` (the UI's Photos list) go through it so the preview always matches what a run would do. Three modes, chosen by `SERIES_RECOGNITION` / the UI dropdown: `auto` delegates to `Clustering` — timestamps from OpenCamera filenames (`IMG_YYYYMMDD_HHMMSS.jpg`), a gap > `SERIES_GAP_THRESHOLD_SECONDS` starts a new series; `single` treats every photo in the dir as one offer and uses **only the first CSV row**; `subfolders` makes each subfolder one offer (name order, offer dirs named after the subfolders; `ImportPhotos` preserves the subfolder structure in this mode). The non-auto modes use file mtimes, not filenames — the photos may come from any camera. Series are matched to CSV rows **by position**, so row order is load-bearing.
-- **`Retouch`** backs both retouching steps (`Retouch.Mode.WHITE_BALANCE` / `AUTO_CONTRAST`): a gray-world white balance and a reproduction of PIL's `ImageOps.autocontrast(cutoff=1)`. `Exif` reproduces `ImageOps.exif_transpose` because ImageIO ignores orientation. Deviating from PIL's semantics here is a behavior change, not a cleanup.
+- **`Retouch`** backs both retouching steps (`Retouch.Mode.WHITE_BALANCE` / `CONTRAST`): a gray-world white balance and a contrast *strength dial* (PIL's `ImageEnhance.Contrast`: push every pixel away from the photo's own mean luminance by `CONTRAST_STRENGTH`, 1.0 = no-op, clamped to 0.5..2.0). Contrast used to be PIL's `ImageOps.autocontrast(cutoff=1)`, which adapts per photo and so cannot be dialled — the slider on the Retouch Preview tab replaced it. `Exif` reproduces `ImageOps.exif_transpose` because ImageIO ignores orientation; deviating from PIL's semantics there is a behavior change, not a cleanup. Note the idempotence skip ignores the strength: an offer already contrasted is not redone at a new setting without Delete Output Files.
 - **`AutoCrop`** separates item from background by *time*, not brightness or edges: on a turntable only the item's pixels change, so the mask is the per-pixel luminance range over the series, Otsu-thresholded, reduced to the largest connected blob. One box per series, grown by a margin and expanded to the source aspect ratio. It decodes via `ImageReadParam.setSourceSubsampling` (point-sampled — Pillow's smoothed resize gives a slightly different Otsu threshold, so Java boxes are tighter than a Python prototype's).
 - **`Ocr`** shells out to the `tesseract` CLI (an external *program*, like the gvfs-mtp mount — the zero-dependency rule is about Java libraries) and writes `ocr.txt`, reading the most-processed photo dir like auto-crop does. Tesseract expects scans, not photos, so each frame is upscaled 2x and OCRed at both 0° and 180° (turntable items often face the camera with their label upside down; tesseract's OSD can't tell on mostly-object frames), keeping the higher-confidence rotation and dropping low-confidence words. Results are logged and appended to `ocr.txt` photo by photo; a `.ocr-in-progress` marker (removed on completion) tells a finished `ocr.txt` — skipped on re-run, even when empty — from one left by an interrupted run, which is redone. Missing tesseract aborts the run with an install hint.
 - **`GenerateDescription`** posts to OpenAI Chat Completions. Price and `inpost_size` are appended from the CSV, never generated. `more_data.txt` and a non-empty `ocr.txt` ride along in the offer JSON (`additional_notes` / `ocr_text`). Skips offers that already have `description.txt`.
@@ -94,7 +94,7 @@ Four places, all of which must agree:
 `MainWindow` (~1200 lines) is the only class that knows about Swing layout.
 
 - The right panel's seven tabs are addressed exclusively through the `TAB_*` constants (`DESCRIPTION_INPUT=0`, `DESCRIPTION_OUTPUT=1`, `PHOTOS_INPUT=2`, `RETOUCH_PREVIEW=3`, `PHOTOS_OUTPUT=4`, `OCR=5`, `ALLEGRO_FORM=6`). Every tab-dependent branch routes through them, which is why reordering tabs is a small change — keep it that way, never compare raw indices.
-- *Retouch Preview* shows the offer's first photo before/after the ticked retouching steps, rendered by `core/RetouchPreview` — the pipeline's own `Retouch`/`AutoCrop` code chained in memory, so the preview cannot drift from a run. Its three checkboxes are the Workflow section's, mirrored (`linkRetouchBoxes`); `setSelected` doesn't fire an `ActionListener`, which is why the mirror can't loop. Rendering costs a full-size decode plus a series scan, so it happens on its own thread and only while the tab is visible (`previewStale` defers it otherwise).
+- *Retouch Preview* shows the offer's first photo before/after the ticked retouching steps, rendered by `core/RetouchPreview` — the pipeline's own `Retouch`/`AutoCrop` code chained in memory, so the preview cannot drift from a run. Its three checkboxes are the Workflow section's, mirrored (`linkRetouchBoxes`); `setSelected` doesn't fire an `ActionListener`, which is why the mirror can't loop. The contrast slider beside its checkbox has no twin: it lives only here, and `currentConfig()` overrides `CONTRAST_STRENGTH` with it so a run reproduces what the preview showed. Rendering costs a full-size decode plus a series scan, so it happens on its own thread, only while the tab is visible (`previewStale` defers it otherwise), and only once a slider drag ends (`getValueIsAdjusting`).
 - A `CardLayout` (`CARD_EDITOR` / `CARD_PHOTOS`) swaps the bottom button bar per tab; `updateBottomBar()` must run after the cards are added.
 - `outputPhotoDir(offerDir)` is the single source of truth for "the finished photos" (`cropped/` if present, else `retouched/`). The gallery and the *Open photo dir* button both call it so they cannot drift.
 - *Copy all to Allegro* (Allegro Lokalnie Form tab) fills the live listing form through `core/AllegroForm` + `core/Cdp` — a hand-rolled Chrome DevTools Protocol client on the JDK's own WebSocket (no library; Chrome is an external program like tesseract). Photos go in via `DOM.setFileInputFiles`, the title via the native value setter + `input` event, the description is *typed* (`Input.insertText` + Enter keystrokes) because it's a ProseMirror editor that ignores DOM mutation. It fills, never submits. The selectors are Allegro's `data-testid` hooks — if the fill breaks, diff those against the live page first.
@@ -104,7 +104,7 @@ Four places, all of which must agree:
 
 ## Configuration
 
-`Config.forBaseDir(baseDir)` derives every path from the base directory, overridable by env var or a `.env` file in it. **A real environment variable wins over `.env`.** Keys: `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_UID`, `MTP_GLOB_PATTERN`, `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION` (`auto` | `single` | `subfolders`), `OCR_LANGUAGES`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_SYSTEM_PROMPT`, `OPENAI_USER_PROMPT`, `CHROME_BIN`, `CHROME_PROFILE_DIR`.
+`Config.forBaseDir(baseDir)` derives every path from the base directory, overridable by env var or a `.env` file in it. **A real environment variable wins over `.env`.** Keys: `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_UID`, `MTP_GLOB_PATTERN`, `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION` (`auto` | `single` | `subfolders`), `CONTRAST_STRENGTH`, `OCR_LANGUAGES`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_SYSTEM_PROMPT`, `OPENAI_USER_PROMPT`, `CHROME_BIN`, `CHROME_PROFILE_DIR`.
 
 The OpenAI keys are editable in File > Settings > OpenAI API, which writes them back to `.env` via `Config.updateDotenv` (only values differing from the built-in defaults; multi-line prompts are stored double-quoted with `\n` escapes). The prompt defaults are `GenerateDescription.SYSTEM_PROMPT` / `USER_PROMPT`; the user prompt is a template whose `{{OFFER_JSON}}` placeholder is replaced with the offer JSON.
 

@@ -14,14 +14,21 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * The two photo-retouching steps: gray-world white balance and per-channel
- * auto-contrast with a 1% cutoff, each saved as JPEG quality 90. They are
- * separate pipeline steps so either can run without the other; auto-contrast
- * reads the white-balanced photos when that step has run, the originals
- * otherwise. Running both re-encodes the JPEG twice — at quality 90 the extra
- * generation loss is negligible, and it buys per-step control.
+ * The two photo-retouching steps: gray-world white balance and a contrast
+ * adjustment, each saved as JPEG quality 90. They are separate pipeline steps
+ * so either can run without the other; contrast reads the white-balanced photos
+ * when that step has run, the originals otherwise. Running both re-encodes the
+ * JPEG twice — at quality 90 the extra generation loss is negligible, and it
+ * buys per-step control.
  * Cropping is a separate step ({@link AutoCrop}); background removal is
  * deliberately left manual.
+ *
+ * <p>Contrast is a <em>strength dial</em>, not an automatic stretch: the user
+ * sets it on the Retouch Preview tab's slider (or {@code CONTRAST_STRENGTH})
+ * and sees the result before committing a run. The earlier step reproduced
+ * PIL's {@code ImageOps.autocontrast(cutoff=1)}, which adapts to each photo's
+ * own histogram and therefore cannot be dialled up or down — a knob the user
+ * can turn is worth more here than one that guesses.
  */
 public final class Retouch {
 
@@ -29,8 +36,12 @@ public final class Retouch {
     public enum Mode {
         /** Gray-world white balance, from {@code photos/} into {@code white_balanced/}. */
         WHITE_BALANCE("white_balanced", "white balance"),
-        /** Auto-contrast, from {@code white_balanced/} (else {@code photos/}) into {@code contrasted/}. */
-        AUTO_CONTRAST("contrasted", "auto-contrast");
+        /**
+         * Contrast, from {@code white_balanced/} (else {@code photos/}) into
+         * {@code contrasted/}. The directory name predates the rename from
+         * auto-contrast and stays, so offers processed before it keep working.
+         */
+        CONTRAST("contrasted", "contrast");
 
         /** Output directory name inside the offer directory. */
         public final String dirName;
@@ -43,8 +54,16 @@ public final class Retouch {
         }
     }
 
+    /** Contrast strength that leaves the photo untouched. */
+    public static final double NEUTRAL_CONTRAST = 1.0;
+    /** Flattest contrast the slider (and {@code CONTRAST_STRENGTH}) allow. */
+    public static final double MIN_CONTRAST = 0.5;
+    /** Punchiest contrast the slider (and {@code CONTRAST_STRENGTH}) allow. */
+    public static final double MAX_CONTRAST = 2.0;
+    /** A mild boost: enough that ticking the step does something visible. */
+    public static final double DEFAULT_CONTRAST = 1.2;
+
     private static final float JPEG_QUALITY = 0.90f;
-    private static final int AUTOCONTRAST_CUTOFF = 1;
 
     /** Not instantiable: the class is a namespace for its static steps. */
     private Retouch() {
@@ -58,11 +77,14 @@ public final class Retouch {
             return;
         }
 
+        if (mode == Mode.CONTRAST) {
+            reporter.log("Contrast strength: " + cfg.contrastStrength + "x");
+        }
         List<Path> offerDirs = listSubdirs(cfg.offersDir);
         int total = offerDirs.size();
         int index = 0;
         for (Path offerDir : offerDirs) {
-            retouchOffer(offerDir, mode, reporter);
+            retouchOffer(offerDir, mode, cfg.contrastStrength, reporter);
             reporter.stepProgress(total == 0 ? 1.0 : (double) (++index) / total);
         }
         if (total == 0) {
@@ -73,9 +95,12 @@ public final class Retouch {
     /**
      * Retouches one offer. Idempotent: an output directory already holding one
      * entry per input photo counts as done and is skipped, so re-running the
-     * step is safe.
+     * step is safe. A skip ignores {@code contrastStrength} — output already on
+     * disk is never silently rewritten; use Delete Output Files to redo it at a
+     * new strength.
      */
-    public static void retouchOffer(Path offerDir, Mode mode, Reporter reporter) throws IOException {
+    public static void retouchOffer(Path offerDir, Mode mode, double contrastStrength,
+                                    Reporter reporter) throws IOException {
         Path inputDir = inputDir(offerDir, mode);
         Path outputDir = offerDir.resolve(mode.dirName);
 
@@ -91,7 +116,8 @@ public final class Retouch {
 
         Files.createDirectories(outputDir);
         for (Path photo : photos) {
-            writeJpeg(process(photo, mode), outputDir.resolve(photo.getFileName().toString()));
+            writeJpeg(process(photo, mode, contrastStrength),
+                    outputDir.resolve(photo.getFileName().toString()));
         }
 
         reporter.log(offerDir.getFileName() + ": " + mode.label + " applied to "
@@ -100,7 +126,7 @@ public final class Retouch {
 
     /** Each step's input: the previous step's output when it has run, the originals otherwise. */
     private static Path inputDir(Path offerDir, Mode mode) {
-        if (mode == Mode.AUTO_CONTRAST) {
+        if (mode == Mode.CONTRAST) {
             Path whiteBalanced = offerDir.resolve(Mode.WHITE_BALANCE.dirName);
             if (Files.isDirectory(whiteBalanced)) {
                 return whiteBalanced;
@@ -115,12 +141,13 @@ public final class Retouch {
      * inputs carry no EXIF metadata, so the orientation step is a no-op for
      * them — the call stays unconditional.
      */
-    public static BufferedImage process(Path src, Mode mode) throws IOException {
+    public static BufferedImage process(Path src, Mode mode, double contrastStrength)
+            throws IOException {
         BufferedImage img = ImageIO.read(src.toFile());
         if (img == null) {
             throw new IOException("Could not read image " + src);
         }
-        return apply(Exif.applyOrientation(img, Exif.readOrientation(src)), mode);
+        return apply(Exif.applyOrientation(img, Exif.readOrientation(src)), mode, contrastStrength);
     }
 
     /**
@@ -128,8 +155,11 @@ public final class Retouch {
      * and returns the result; {@code img} is left untouched. Split out of
      * {@link #process} so the UI's retouch preview can chain the two modes in
      * memory, without writing the intermediate to disk as the pipeline does.
+     *
+     * @param contrastStrength the {@link Mode#CONTRAST} dial; ignored by the
+     *                         other modes
      */
-    public static BufferedImage apply(BufferedImage img, Mode mode) {
+    public static BufferedImage apply(BufferedImage img, Mode mode, double contrastStrength) {
         int w = img.getWidth();
         int h = img.getHeight();
         int n = w * h;
@@ -137,12 +167,20 @@ public final class Retouch {
 
         switch (mode) {
             case WHITE_BALANCE -> grayWorldWhiteBalance(px, n);
-            case AUTO_CONTRAST -> autoContrast(px, n);
+            case CONTRAST -> contrast(px, n, clampStrength(contrastStrength));
         }
 
         BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
         out.setRGB(0, 0, w, h, px, 0, w);
         return out;
+    }
+
+    /** Holds a strength inside the range the slider offers; a garbled config cannot wreck a photo. */
+    public static double clampStrength(double strength) {
+        if (Double.isNaN(strength)) {
+            return DEFAULT_CONTRAST;
+        }
+        return Math.max(MIN_CONTRAST, Math.min(MAX_CONTRAST, strength));
     }
 
     /** Scales each channel so its mean matches the overall gray mean. */
@@ -172,84 +210,39 @@ public final class Retouch {
         }
     }
 
-    /** Per-channel auto-contrast reproducing PIL's {@code ImageOps.autocontrast(cutoff=1)}. */
-    private static void autoContrast(int[] px, int n) {
-        int[] histR = new int[256];
-        int[] histG = new int[256];
-        int[] histB = new int[256];
+    /**
+     * Contrast by a strength factor, reproducing PIL's
+     * {@code ImageEnhance.Contrast}: every pixel is pushed away from (or pulled
+     * towards) the photo's own mean luminance by {@code strength}, so 1.0 is a
+     * no-op, below it flattens and above it deepens. Pivoting on the mean rather
+     * than a fixed mid-gray is what keeps a photo's overall brightness where it
+     * was — a turntable shot of a pale item on a pale background sits well above
+     * mid-gray, and pivoting there would darken the whole frame.
+     *
+     * <p>The pivot is one gray value for all three channels (PIL blends against
+     * a flat gray image), so the operation cannot introduce a color cast; that
+     * is white balance's job, and the two steps stay independent.
+     */
+    private static void contrast(int[] px, int n, double strength) {
+        // PIL's L conversion, and it rounds the mean to an integer before blending.
+        double sum = 0;
         for (int p : px) {
-            histR[(p >> 16) & 0xFF]++;
-            histG[(p >> 8) & 0xFF]++;
-            histB[p & 0xFF]++;
+            sum += 0.299 * ((p >> 16) & 0xFF) + 0.587 * ((p >> 8) & 0xFF) + 0.114 * (p & 0xFF);
         }
-        int[] lutR = buildLut(histR, n);
-        int[] lutG = buildLut(histG, n);
-        int[] lutB = buildLut(histB, n);
+        int mean = clamp((int) Math.round(sum / n));
+
+        // One LUT per 8-bit level: 256 blends instead of one per pixel.
+        int[] lut = new int[256];
+        for (int v = 0; v < 256; v++) {
+            lut[v] = clamp((int) Math.round(mean + strength * (v - mean)));
+        }
         for (int i = 0; i < px.length; i++) {
             int p = px[i];
-            int r = lutR[(p >> 16) & 0xFF];
-            int g = lutG[(p >> 8) & 0xFF];
-            int b = lutB[p & 0xFF];
+            int r = lut[(p >> 16) & 0xFF];
+            int g = lut[(p >> 8) & 0xFF];
+            int b = lut[p & 0xFF];
             px[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
         }
-    }
-
-    /**
-     * Builds one channel's contrast lookup table the way PIL does: trim the
-     * cutoff percentile off each end of the histogram, then linearly stretch
-     * what remains across 0..255. The truncation (rather than rounding) below
-     * is PIL's, and matching it is why the output is bit-comparable with the
-     * Python original — deviating here is a behavior change, not a cleanup.
-     */
-    private static int[] buildLut(int[] histIn, int n) {
-        int[] h = histIn.clone();
-
-        // Trim CUTOFF% of the darkest pixels.
-        int cut = n * AUTOCONTRAST_CUTOFF / 100;
-        for (int lo = 0; lo < 256; lo++) {
-            if (cut > h[lo]) {
-                cut -= h[lo];
-                h[lo] = 0;
-            } else {
-                h[lo] -= cut;
-                break;
-            }
-        }
-        // Trim CUTOFF% of the lightest pixels.
-        cut = n * AUTOCONTRAST_CUTOFF / 100;
-        for (int hi = 255; hi >= 0; hi--) {
-            if (cut > h[hi]) {
-                cut -= h[hi];
-                h[hi] = 0;
-            } else {
-                h[hi] -= cut;
-                break;
-            }
-        }
-
-        int lo = 0;
-        while (lo < 256 && h[lo] == 0) {
-            lo++;
-        }
-        int hi = 255;
-        while (hi >= 0 && h[hi] == 0) {
-            hi--;
-        }
-
-        int[] lut = new int[256];
-        if (hi <= lo) {
-            for (int ix = 0; ix < 256; ix++) {
-                lut[ix] = ix;
-            }
-        } else {
-            double scale = 255.0 / (hi - lo);
-            double offset = -lo * scale;
-            for (int ix = 0; ix < 256; ix++) {
-                int v = (int) (ix * scale + offset); // PIL truncates toward zero
-                lut[ix] = clamp(v);
-            }
-        }
-        return lut;
     }
 
     /** Writes {@code img} as JPEG at the pipeline's quality. Shared with {@link AutoCrop}. */
