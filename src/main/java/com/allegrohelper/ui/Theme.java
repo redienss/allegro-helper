@@ -107,6 +107,14 @@ public enum Theme {
         } catch (Exception ignored) {
             // Keep whatever look and feel is active.
         }
+        // Synth-based look and feels (Nimbus, and GTK under SYSTEM) paint a
+        // slider's raw int value above its knob. The contrast slider already
+        // shows its value beside it, as the multiplier the int stands for
+        // ("1.20x", not "120"), and the painted one overflows the slider's own
+        // bounds into the row above. Off for good: this survives an L&F switch,
+        // because UIManager.put writes to the developer defaults, which
+        // setLookAndFeel does not clear.
+        UIManager.put("Slider.paintValue", Boolean.FALSE);
     }
 
     /**

@@ -188,6 +188,9 @@ public final class MainWindow {
      */
     private static final int PREVIEW_MAX_SIZE = 1200;
 
+    /** Vertical gap above and below each row of the Retouch Preview's checkbox column. */
+    private static final int PREVIEW_ROW_GAP = 8;
+
     private static final String ALLEGRO_FORM_URL = "https://allegrolokalnie.pl/o/oferty/wystaw";
 
     private final JFrame frame = new JFrame("Allegro Helper");
@@ -908,13 +911,28 @@ public final class MainWindow {
 
     /** One row of the preview's control column: its components, left-aligned. */
     private static JPanel leftRow(JComponent... components) {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        JPanel row = previewRow(new FlowLayout(FlowLayout.LEFT, 6, PREVIEW_ROW_GAP));
         for (JComponent c : components) {
             row.add(c);
         }
-        // BoxLayout would otherwise stretch each row to its maximum height and
-        // spread the three of them down the column instead of stacking them.
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+        return row;
+    }
+
+    /**
+     * A row of the preview's control column: as wide as the column, only as tall
+     * as its contents. Without the height cap {@link BoxLayout} would stretch the
+     * rows to their maximum and spread them down the column instead of stacking
+     * them — and the cap is computed on demand rather than frozen at build time,
+     * so a look-and-feel switch (which can change how tall a slider wants to be)
+     * cannot leave the row too short and clip what it holds.
+     */
+    private static JPanel previewRow(LayoutManager layout) {
+        JPanel row = new JPanel(layout) {
+            @Override
+            public Dimension getMaximumSize() {
+                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+            }
+        };
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         return row;
     }
@@ -926,13 +944,12 @@ public final class MainWindow {
      * sit at its preferred width, and a wider tab would just pad around it.
      */
     private JPanel contrastRow() {
-        JPanel row = new JPanel(new BorderLayout(6, 0));
-        row.setBorder(BorderFactory.createEmptyBorder(2, 5, 2, 5)); // leftRow's FlowLayout gaps
+        JPanel row = previewRow(new BorderLayout(6, 0));
+        // leftRow's FlowLayout gaps, so the three rows are evenly spaced.
+        row.setBorder(BorderFactory.createEmptyBorder(PREVIEW_ROW_GAP, 5, PREVIEW_ROW_GAP, 5));
         row.add(previewContrastBox, BorderLayout.WEST);
         row.add(contrastSlider, BorderLayout.CENTER);
         row.add(contrastValueLabel, BorderLayout.EAST);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
         return row;
     }
 
