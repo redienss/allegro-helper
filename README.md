@@ -102,16 +102,31 @@ selected offer on the right.
 ### Menu bar
 
 - **File > Settings…** — a PhpStorm-style settings dialog (page list on the
-  left, the selected page on the right). Its **Appearance** page picks the
-  theme: **System** (the platform look and feel, following the desktop theme —
-  the default), **Dark**, or **Light** (both built on the JDK's own Nimbus
-  look and feel, keeping the app dependency-free). Its **Language** page picks
-  the UI language: **English** (the default) or **Polish** — the whole window
-  is translated on the spot (texts drawn at runtime, like an already-loaded
-  photo list, catch up on their next refresh; the pipeline log stays English).
-  Applying either setting takes effect immediately, no restart, and the
-  choices are remembered across launches.
+  left, the selected page on the right), with three pages:
+  - **Appearance** — the theme: **System** (the platform look and feel,
+    following the desktop theme — the default), **Dark**, or **Light** (both
+    built on the JDK's own Nimbus look and feel, keeping the app
+    dependency-free).
+  - **Language** — the UI language: **English** (the default) or **Polish**.
+    The whole window is translated on the spot (texts drawn at runtime, like an
+    already-loaded photo list, catch up on their next refresh; the pipeline log
+    stays English).
+  - **OpenAI API** — what the Describe step talks to: the **API key** (masked;
+    with a link to OpenAI's key page if you don't have one yet), the **model**,
+    and the two **prompts**. The system prompt is the instruction the model
+    works under — the shipped one is in Polish, and it is where the rules live
+    that keep a generated description honest (the per-item fields come only from
+    the CSV row, never invented; general product specs may be added only when the
+    brand and model make them certain). The user prompt is a template whose
+    `{{OFFER_JSON}}` placeholder is replaced with the offer's data. Both start
+    from the built-in defaults and can be edited freely; **Apply** writes what
+    differs from the defaults back to `.env`.
+
+  Every setting takes effect immediately, no restart, and is remembered across
+  launches.
 - **File > Exit** — closes the app, same as the window's close button.
+
+![The Settings dialog, on its OpenAI API page](screenshots/008.png)
 
 ### Left: controls
 
@@ -181,9 +196,26 @@ to each offer's `data.json`, falling back to row position) in seven tabs:
   them, or scroll the mouse wheel over them), and a run uses whatever they are
   set to — so what the preview shows is what you get. It is a true preview — the
   same code a run uses — and it writes nothing.
+
+  Under each photo is its **luminance histogram**: how many pixels sit at each
+  brightness, shadows on the left and highlights on the right. It is what the two
+  sliders are steering — Brightness slides the whole shape sideways, Contrast
+  spreads or gathers it around its middle — and it shows the thing the photo
+  itself hides on a screen: whether the tones have run into either end of the
+  scale and flattened. (The curve is scaled by the square root of each count. On a
+  turntable shot the pale, unchanging background is one enormous spike, and linear
+  bars would flatten the item's own tones into a line along the bottom.)
+
+  Pixels that *have* run into an end are **clipped** — detail no slider can bring
+  back, because they are already flat white or flat black. Each histogram reports
+  the clipped share at the end it is clipped at, and **Show clipping** marks those
+  pixels on the photos themselves, camera-style: red for blown highlights, blue
+  for crushed shadows. It is off by default — the marks cover the photo they are
+  diagnosing, so they are a thing to reach for when a histogram looks piled
+  against an edge.
 - **Photos (Output)** — thumbnail gallery of the finished photos: the output of
   the latest step that has run — `offers/<id>/cropped/`, else `contrasted/`,
-  else `white_balanced/`.
+  else `brightened/`, else `white_balanced/`.
 - **OCR** — editor for `ocr.txt` in the offer directory: the text the OCR step
   read off the photos, one block per photo that had any. Fix a misread model
   number here and save before running Describe, and the correction flows into
@@ -217,23 +249,35 @@ with a "copy" cursor.
 
 ![The Photos (Input) tab, showing the original photos](screenshots/003.png)
 
+The Retouch Preview tab is where the retouching gets decided, before a single
+file is written. The screenshot below is that judgement being made: photo 3 of
+20 of a book, **Show clipping** ticked, and the *original* is 17.1% blown — the
+red is the backdrop behind the book, already flat white, detail that a run would
+have baked in for good. Brightness pulled back to `0.95x` (with Contrast at
+`1.15x`) is enough to bring it under: the After photo has no red left in it, and
+its histogram comes away from the right edge. None of that is guesswork about
+what a run *might* do — it is the pipeline's own code, on the real photo, and a
+run then uses exactly the slider values shown here.
+
+![The Retouch Preview tab, with Show clipping on](screenshots/004.png)
+
 Comparing the two galleries shows what Auto-crop did: the same series, framed to
 the item.
 
-![The Photos (Output) tab, showing the auto-cropped photos](screenshots/004.png)
+![The Photos (Output) tab, showing the auto-cropped photos](screenshots/005.png)
 
 The OCR tab shows what was legible on the item. For a book it is practically
 the whole back cover — the blurb, the ISBN, the names — which gives Describe
 plenty of true, item-specific material to work with.
 
-![The OCR tab, showing the back-cover text read off the photos](screenshots/005.png)
+![The OCR tab, showing the back-cover text read off the photos](screenshots/006.png)
 
 The last tab collects everything the Allegro Lokalnie listing form needs in one
 place: fill the form with one click (**Copy all to Allegro**), or do it by
 hand — open the form, drag the selected photos onto it, and copy the title and
 description into it.
 
-![The Allegro Lokalnie Form tab, with the first 16 photos selected](screenshots/006.png)
+![The Allegro Lokalnie Form tab, with the first 16 photos selected](screenshots/007.png)
 
 The Description and OCR tabs have a bottom bar with **Delete** and **Clear** in
 the lower-left corner (away from **Save** in the lower-right, to avoid
