@@ -110,8 +110,9 @@ public final class GenerateDescription {
         List<Path> offerDirs = listSubdirs(cfg.offersDir);
         int total = offerDirs.size();
         int index = 0;
+        boolean[] omitTemperature = {false}; // set once per run, on the model's first rejection
         for (Path offerDir : offerDirs) {
-            generateForOffer(client, cfg, offerDir, reporter);
+            generateForOffer(client, cfg, offerDir, reporter, omitTemperature);
             reporter.stepProgress(total == 0 ? 1.0 : (double) (++index) / total);
         }
         if (total == 0) {
@@ -119,7 +120,8 @@ public final class GenerateDescription {
         }
     }
 
-    private static void generateForOffer(HttpClient client, Config cfg, Path offerDir, Reporter reporter)
+    private static void generateForOffer(HttpClient client, Config cfg, Path offerDir, Reporter reporter,
+                                         boolean[] omitTemperature)
             throws IOException, PipelineException {
         Path dataPath = offerDir.resolve("data.json");
         Path descriptionPath = offerDir.resolve("description.txt");
@@ -143,8 +145,8 @@ public final class GenerateDescription {
                 ? Files.readString(ocrPath, StandardCharsets.UTF_8).strip()
                 : "";
 
-        String descriptionText =
-                callOpenAi(client, cfg, buildUserPrompt(cfg, data, extraNotes, ocrText)).strip();
+        String descriptionText = callOpenAi(client, cfg,
+                buildUserPrompt(cfg, data, extraNotes, ocrText), reporter, omitTemperature).strip();
 
         double price = parsePrice(str(data, "price"));
         String content = descriptionText + "\n\n"
@@ -186,7 +188,8 @@ public final class GenerateDescription {
         return template + "\nOffer data (JSON):\n<<<JSON>>>\n" + offerJson + "\n<<<END JSON>>>";
     }
 
-    private static String callOpenAi(HttpClient client, Config cfg, String userPrompt)
+    private static String callOpenAi(HttpClient client, Config cfg, String userPrompt,
+                                     Reporter reporter, boolean[] omitTemperature)
             throws IOException, PipelineException {
         List<Object> messages = new ArrayList<>();
         messages.add(message("system", cfg.openaiSystemPrompt));
@@ -195,7 +198,9 @@ public final class GenerateDescription {
         LinkedHashMap<String, Object> body = new LinkedHashMap<>();
         body.put("model", cfg.openaiModel);
         body.put("messages", messages);
-        body.put("temperature", 0.4);
+        if (!omitTemperature[0]) {
+            body.put("temperature", 0.4);
+        }
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(cfg.openaiBaseUrl + "/chat/completions"))
@@ -214,11 +219,33 @@ public final class GenerateDescription {
         }
 
         if (response.statusCode() != 200) {
+            // Reasoning models (gpt-5, the o-series) accept only the default
+            // temperature and reject the request otherwise. Detect that exact
+            // rejection instead of hardcoding a model list, and drop the
+            // parameter for the rest of the run.
+            if (!omitTemperature[0] && response.statusCode() == 400
+                    && rejectsTemperature(response.body())) {
+                reporter.log("Model " + cfg.openaiModel
+                        + " does not support a custom temperature, retrying without it.");
+                omitTemperature[0] = true;
+                return callOpenAi(client, cfg, userPrompt, reporter, omitTemperature);
+            }
             throw new PipelineException("OpenAI API returned HTTP " + response.statusCode()
                     + ": " + response.body());
         }
 
         return extractContent(response.body());
+    }
+
+    /** Whether an error response rejects the {@code temperature} parameter specifically. */
+    private static boolean rejectsTemperature(String responseBody) {
+        try {
+            Map<String, Object> root = Json.parseObject(responseBody);
+            return root.get("error") instanceof Map<?, ?> error
+                    && "temperature".equals(error.get("param"));
+        } catch (RuntimeException e) {
+            return false; // not the documented error shape - let the caller report it verbatim
+        }
     }
 
     @SuppressWarnings("unchecked")
