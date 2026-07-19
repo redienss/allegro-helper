@@ -27,6 +27,15 @@ import java.util.Map;
  * <p>The prompt and generated text are intentionally kept in Polish, since the
  * listing is published on Allegro Lokalnie (Polish market).
  *
+ * <p>The prompt frames {@code more_data.txt} ({@code additional_notes}) as a
+ * <em>draft to re-edit</em>, not source material to summarize, and says so
+ * repeatedly — the earlier wording ("use only the facts useful to a buyer",
+ * followed by a list of things to drop) read as licence to compress. A 40-line
+ * hand-written note about a bicycle — the full accessory list, the warranty, the
+ * storage history, the pickup terms — came back as a dozen bullet points holding
+ * little more than the CSV row already had. The exclusion list is still there,
+ * but scoped explicitly to pasted shop-page text.
+ *
  * <p>{@link #SYSTEM_PROMPT} and {@link #USER_PROMPT} are the built-in defaults;
  * the values actually sent come from {@link Config} ({@code OPENAI_SYSTEM_PROMPT}
  * / {@code OPENAI_USER_PROMPT}, editable in File &gt; Settings &gt; OpenAI API).
@@ -50,15 +59,23 @@ public final class GenerateDescription {
                     + "konkretnej specyfikacji, po prostu ją pomiń - nie pisz zdań w stylu 'wymiary nie zostały "
                     + "podane' ani innych wzmianek o brakujących danych. Te dane dotyczą produktu jako takiego, "
                     + "a nie stanu czy historii tego konkretnego egzemplarza - nie myl ich z polem 'condition'.\n\n"
-                    + "Czasem JSON zawiera też pole 'additional_notes' z surową notatką o tym produkcie - może "
-                    + "to być np. wynik testu, historia użytkowania, zawartość zestawu, specyfikacja techniczna, "
-                    + "ale może to też być skopiowany fragment strony sklepu/producenta. Wykorzystaj z niej "
-                    + "tylko fakty o samym produkcie, które są przydatne kupującemu (specyfikacja, zawartość "
-                    + "zestawu, kompatybilność, wyniki testów) i przeredaguj je do stylu reszty opisu. Pomiń w "
-                    + "niej wszystko, co nie jest przydatne dla kupującego lub nie dotyczy tego konkretnego, "
-                    + "sprzedawanego egzemplarza: reklamy innych produktów, politykę zwrotów/gwarancji sklepu, "
+                    + "Czasem JSON zawiera też pole 'additional_notes' z notatką sprzedającego o tym "
+                    + "egzemplarzu - np. zawartość zestawu, dodatki, historia użytkowania, gwarancja, wynik "
+                    + "testu, specyfikacja, warunki odbioru i wysyłki. **To jest najważniejsze źródło treści "
+                    + "opisu i twoim zadaniem jest je PRZEREDAGOWAĆ, a nie streścić.** Domyślnie przenieś do "
+                    + "opisu KAŻDY fakt z tej notatki - każdy element zestawu, każdą pozycję listy, każdy "
+                    + "szczegół stanu, gwarancji, odbioru i wysyłki. Nie skracaj listy do 'i inne dodatki', "
+                    + "nie łącz kilku pozycji w jedną ogólną, nie wybieraj 'najciekawszych'. Zachowaj też "
+                    + "podział na sekcje i rozróżnienia, które zrobił sprzedający (np. co jest w komplecie, a "
+                    + "co opcjonalnie). Zmieniaj sformułowania, kolejność i formatowanie - nie zmieniaj "
+                    + "zakresu informacji. Jeśli po napisaniu opisu jakiś fakt z notatki nie ma "
+                    + "odpowiednika w tekście, to znaczy, że opis jest niekompletny - dopisz go.\n\n"
+                    + "Wyjątek: notatka bywa też wklejonym fragmentem strony sklepu/producenta. Tylko takie "
+                    + "fragmenty filtruj - pomiń reklamy innych produktów, politykę zwrotów/gwarancji sklepu, "
                     + "dane kontaktowe, adres producenta, numery katalogowe/EAN oraz ogólne instrukcje "
-                    + "bezpieczeństwa i obsługi (np. ostrzeżenia z instrukcji użytkownika). Jeśli notatka "
+                    + "bezpieczeństwa i obsługi (np. ostrzeżenia z instrukcji użytkownika). To wyliczenie "
+                    + "dotyczy wyłącznie treści przepisanych ze strony sklepu; nie jest powodem do usuwania "
+                    + "czegokolwiek, co sprzedający napisał o swoim egzemplarzu. Jeśli notatka "
                     + "zawiera stwierdzenie o stanie produktu (np. 'stan: nowy'), które jest sprzeczne z polem "
                     + "'condition' - zignoruj je; pole 'condition' zawsze ma pierwszeństwo, bo dotyczy "
                     + "faktycznie sprzedawanego egzemplarza, a nie ogólnej oferty ze strony źródłowej.\n\n"
@@ -69,6 +86,15 @@ public final class GenerateDescription {
                     + "informacje, które potrafisz pewnie zinterpretować (np. dokładne oznaczenie modelu, "
                     + "parametry z tabliczki znamionowej), a niezrozumiałe fragmenty zignoruj. W razie "
                     + "sprzeczności z pozostałymi polami JSON-a pierwszeństwo mają te pola.\n\n"
+                    + "Formatowanie: opis ma być czytelny na telefonie. Podziel go na krótkie sekcje z "
+                    + "nagłówkami (np. Zestaw, Stan, Specyfikacja, Odbiór i wysyłka) - w miarę możliwości "
+                    + "wzorowane na tym, jak podzielił treść sprzedający - i używaj list punktowanych "
+                    + "wszędzie tam, gdzie w notatce jest wyliczenie. Rozbudowana notatka ma dać rozbudowany "
+                    + "opis: liczba punktów w opisie nie może być mniejsza niż liczba faktów w notatce. "
+                    + "Każdy nagłówek sekcji poprzedź pasującą ikonką emoji, a przy punktach używaj ikonek "
+                    + "tam, gdzie coś oznaczają (np. ✅ przy sprawnych elementach, ⚠️ przy uszkodzeniach lub "
+                    + "zastrzeżeniach, 📦 przy zawartości zestawu, 📍 przy odbiorze osobistym). Ikonki mają "
+                    + "porządkować tekst, nie zdobić go - jedna na nagłówek lub punkt wystarczy.\n\n"
                     + "Styl: konkretny, rzeczowy, bez marketingowego zachwytu - unikaj sformułowań typu 'idealny "
                     + "do', 'świetny wybór', 'gwarantuje najwyższą jakość', a także wezwań do zakupu typu "
                     + "'zapraszam do zakupu', 'zachęcam do zakupu', 'kup teraz', również przy opisywaniu "
@@ -81,8 +107,10 @@ public final class GenerateDescription {
 
     /** Default user prompt template, used when {@code OPENAI_USER_PROMPT} is not set. */
     public static final String USER_PROMPT =
-            "Na podstawie danych poniżej wygeneruj opis oferty dla Allegro Lokalnie. "
-                    + "Dodaj trochę ikonek dla czytelności opisu.\n"
+            "Na podstawie danych poniżej przygotuj opis oferty dla Allegro Lokalnie. "
+                    + "Jeśli w danych jest pole 'additional_notes', potraktuj je jako szkic opisu od "
+                    + "sprzedającego: przeredaguj go, uporządkuj i sformatuj, ale zachowaj wszystkie "
+                    + "zawarte w nim fakty - żadnego nie pomijaj. Dodaj ikonki dla czytelności opisu.\n"
                     + "Offer data (JSON):\n"
                     + "<<<JSON>>>\n"
                     + OFFER_JSON_PLACEHOLDER + "\n"
