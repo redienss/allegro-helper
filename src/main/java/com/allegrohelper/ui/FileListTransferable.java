@@ -6,6 +6,7 @@ import java.awt.datatransfer.UnsupportedFlavorException;
 import java.io.File;
 import java.util.List;
 
+/** A drag payload of files, exposed only as {@link DataFlavor#javaFileListFlavor}. */
 final class FileListTransferable implements Transferable {
     private final List<File> files;
 

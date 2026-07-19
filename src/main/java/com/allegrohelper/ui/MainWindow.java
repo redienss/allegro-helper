@@ -33,7 +33,6 @@ import javax.swing.JRootPane;
 import javax.swing.KeyStroke;
 import javax.swing.ImageIcon;
 import javax.swing.JScrollPane;
-import javax.swing.JSlider;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
@@ -41,7 +40,6 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.ListSelectionModel;
-import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.AbstractDocument;
@@ -56,7 +54,6 @@ import javax.swing.table.TableColumn;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Component;
-import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Toolkit;
@@ -67,8 +64,6 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Image;
-import java.awt.LayoutManager;
-import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -85,13 +80,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.ToIntFunction;
 
 /**
  * The Allegro Helper main window: photo series detected on the phone, the
@@ -136,9 +129,6 @@ public final class MainWindow {
      */
     private static final int PREVIEW_MAX_SIZE = 1200;
 
-    /** Vertical gap above and below each row of the Retouch Preview's checkbox column. */
-    private static final int PREVIEW_ROW_GAP = 8;
-
     /** Gap between the Retouch Preview's two halves, shared by the photos and their histograms. */
     static final int PREVIEW_HALF_GAP = 6;
 
@@ -147,12 +137,6 @@ public final class MainWindow {
 
     /** How many step checkboxes the Workflow section puts on one row. */
     private static final int WORKFLOW_BOX_COLUMNS = 4;
-
-    /** One wheel notch on a strength slider, in its hundredths: 0.05x. */
-    private static final int WHEEL_STEP = 5;
-
-    /** How long the wheel must be still before a strength slider's value counts as settled. */
-    private static final int WHEEL_SETTLE_MS = 300;
 
     private static final String ALLEGRO_FORM_URL = "https://allegrolokalnie.pl/o/oferty/wystaw";
 
@@ -221,15 +205,17 @@ public final class MainWindow {
     private final JCheckBox previewContrastBox = new JCheckBox("Contrast", true);
     private final JCheckBox previewAutoCropBox = new JCheckBox("Auto-crop", true);
     /**
-     * Every strength dial on the tab. {@link DialRowLayout} measures across them, so
-     * the sliders start and end on the same two columns however wide each step's
-     * name happens to be.
+     * Every strength dial on the tab. {@code StrengthDial.DialRowLayout} measures
+     * across them, so the sliders start and end on the same two columns however
+     * wide each step's name happens to be.
      */
     private final List<StrengthDial> dials = new ArrayList<>();
     private final StrengthDial brightnessDial = new StrengthDial(previewBrightnessBox,
+            dials, this::refreshRetouchPreview,
             Retouch.DEFAULT_BRIGHTNESS,
             "1.00x leaves the photo as it is; less darkens it, more brightens it.");
     private final StrengthDial contrastDial = new StrengthDial(previewContrastBox,
+            dials, this::refreshRetouchPreview,
             Retouch.DEFAULT_CONTRAST,
             "1.00x leaves the photo as it is; less flattens it, more deepens it.");
     private final ExecutorService previewLoader = Executors.newSingleThreadExecutor(r -> {
@@ -866,10 +852,10 @@ public final class MainWindow {
         Config cfg = Config.forBaseDir(Path.of(baseDirField.getText().strip()));
         JPanel boxes = new JPanel();
         boxes.setLayout(new BoxLayout(boxes, BoxLayout.Y_AXIS));
-        boxes.add(leftRow(previewWhiteBalanceBox));
+        boxes.add(PreviewRow.leftRow(previewWhiteBalanceBox));
         boxes.add(brightnessDial.row(cfg.brightnessStrength));
         boxes.add(contrastDial.row(cfg.contrastStrength));
-        boxes.add(leftRow(previewAutoCropBox));
+        boxes.add(PreviewRow.leftRow(previewAutoCropBox));
 
         // The photo row, its histograms, the photo stepper, then the steps right
         // under them — a BorderLayout would put the last at the bottom of the tab, a
@@ -955,220 +941,6 @@ public final class MainWindow {
         previousPhotoButton.setEnabled(previewPhotoIndex > 0);
         nextPhotoButton.setEnabled(more);
         lastPhotoButton.setEnabled(more);
-    }
-
-    /** One row of the preview's control column: its components, left-aligned. */
-    private static JPanel leftRow(JComponent... components) {
-        JPanel row = previewRow(new FlowLayout(FlowLayout.LEFT, 6, PREVIEW_ROW_GAP));
-        for (JComponent c : components) {
-            row.add(c);
-        }
-        return row;
-    }
-
-    /**
-     * A row of the preview's control column: as wide as the column, only as tall
-     * as its contents. Without the height cap {@link BoxLayout} would stretch the
-     * rows to their maximum and spread them down the column instead of stacking
-     * them — and the cap is computed on demand rather than frozen at build time,
-     * so a look-and-feel switch (which can change how tall a slider wants to be)
-     * cannot leave the row too short and clip what it holds.
-     */
-    private static JPanel previewRow(LayoutManager layout) {
-        JPanel row = new JPanel(layout) {
-            @Override
-            public Dimension getMaximumSize() {
-                return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
-            }
-        };
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return row;
-    }
-
-    /**
-     * A dial's row: {@code [x] Brightness ——[]———— 1.00x}. The checkbox column is as
-     * wide as the widest step name across <em>all</em> the dials, and the value
-     * column as wide as the widest value, so every slider starts and ends on the
-     * same two columns — one exactly under the other, and all the same length. A
-     * plain {@code BorderLayout} sizes each row's edges from its own contents, which
-     * left the contrast slider longer than the brightness one by the difference
-     * between the two words.
-     *
-     * <p>The columns are measured at layout time, not frozen, so File &gt; Settings
-     * &gt; Language re-measures them for the Polish names.
-     */
-    private final class DialRowLayout implements LayoutManager {
-
-        private final int gap;
-
-        DialRowLayout(int gap) {
-            this.gap = gap;
-        }
-
-        @Override
-        public void addLayoutComponent(String name, Component comp) {
-        }
-
-        @Override
-        public void removeLayoutComponent(Component comp) {
-        }
-
-        @Override
-        public Dimension preferredLayoutSize(Container parent) {
-            Insets insets = parent.getInsets();
-            int height = 0;
-            for (Component c : parent.getComponents()) {
-                height = Math.max(height, c.getPreferredSize().height);
-            }
-            // The width is whatever the tab gives the row; only the height is its own.
-            return new Dimension(0, height + insets.top + insets.bottom);
-        }
-
-        @Override
-        public Dimension minimumLayoutSize(Container parent) {
-            return preferredLayoutSize(parent);
-        }
-
-        @Override
-        public void layoutContainer(Container parent) {
-            if (parent.getComponentCount() < 3) {
-                return;
-            }
-            Component box = parent.getComponent(0);
-            Component slider = parent.getComponent(1);
-            Component value = parent.getComponent(2);
-
-            Insets insets = parent.getInsets();
-            int width = parent.getWidth() - insets.left - insets.right;
-            int height = parent.getHeight() - insets.top - insets.bottom;
-            int boxWidth = columnWidth(dial -> dial.box.getPreferredSize().width);
-            int valueWidth = columnWidth(dial -> dial.valueLabel.getPreferredSize().width);
-            int sliderWidth = Math.max(0, width - boxWidth - valueWidth - 2 * gap);
-
-            place(box, insets.left, boxWidth, insets.top, height);
-            place(slider, insets.left + boxWidth + gap, sliderWidth, insets.top, height);
-            place(value, insets.left + boxWidth + gap + sliderWidth + gap, valueWidth,
-                    insets.top, height);
-        }
-
-        /** How wide that part of the row wants to be, across every dial on the tab. */
-        private int columnWidth(ToIntFunction<StrengthDial> part) {
-            int width = 0;
-            for (StrengthDial dial : dials) {
-                width = Math.max(width, part.applyAsInt(dial));
-            }
-            return width;
-        }
-
-        /** Puts {@code c} at {@code x} with {@code w}, vertically centered in the row. */
-        private void place(Component c, int x, int w, int top, int height) {
-            int h = c.getPreferredSize().height;
-            c.setBounds(x, top + Math.max(0, (height - h) / 2), w, h);
-        }
-    }
-
-    /**
-     * One retouching step's strength dial: its Retouch Preview checkbox, a slider
-     * across all the width the tab has left, and the value it is set to
-     * ("1.20x"). Brightness and contrast each get one — same widget, same
-     * behavior, different {@link Retouch} mode.
-     *
-     * <p>The slider re-renders the preview only once its value settles: a render
-     * costs a decode and a series scan, and every value the knob passes through on
-     * the way would queue one. A drag says when it has settled
-     * ({@code getValueIsAdjusting}); the wheel cannot, so {@link #wheelSettle}
-     * calls it settled once the scrolling stops.
-     */
-    private final class StrengthDial {
-
-        private final JCheckBox box;
-        private final JSlider slider = new JSlider(
-                scaledStrength(Retouch.MIN_STRENGTH),
-                scaledStrength(Retouch.MAX_STRENGTH),
-                scaledStrength(Retouch.NEUTRAL_STRENGTH));
-        private final JLabel valueLabel = new JLabel();
-        /**
-         * Ends the "adjusting" state a wheel notch put the slider in, once the wheel
-         * has been still for {@link #WHEEL_SETTLE_MS}. That fires the slider's own
-         * change event with nothing adjusting any more, so a scroll re-renders the
-         * preview exactly once, through the same path a finished drag takes.
-         */
-        private final Timer wheelSettle = new Timer(WHEEL_SETTLE_MS,
-                e -> slider.setValueIsAdjusting(false));
-
-        /**
-         * @param box the step's Retouch Preview checkbox; the dial greys out with it
-         * @param initial the strength to show until {@link #row} reads the config
-         * @param tooltip what the numbers mean, in English for {@link I18n}
-         */
-        StrengthDial(JCheckBox box, double initial, String tooltip) {
-            this.box = box;
-            dials.add(this);
-            slider.setValue(scaledStrength(initial));
-            slider.setMajorTickSpacing(scaledStrength(Retouch.NEUTRAL_STRENGTH)
-                    - scaledStrength(Retouch.MIN_STRENGTH));
-            slider.setPaintTicks(true);
-            slider.setToolTipText(I18n.t(tooltip));
-
-            wheelSettle.setRepeats(false); // one shot per scroll, restarted by each notch
-            slider.addMouseWheelListener(e -> {
-                if (!slider.isEnabled()) {
-                    return;
-                }
-                // Wheel up (a negative rotation) means more, the direction the knob
-                // moves under the same gesture.
-                slider.setValueIsAdjusting(true); // no render per notch
-                slider.setValue(slider.getValue() - e.getWheelRotation() * WHEEL_STEP);
-                wheelSettle.restart();
-            });
-            slider.addChangeListener(e -> {
-                showValue();
-                if (!slider.getValueIsAdjusting()) {
-                    refreshRetouchPreview();
-                }
-            });
-        }
-
-        /**
-         * The dial's row, set to {@code strength} — the config's, so a
-         * {@code *_STRENGTH} in {@code .env} is what the user sees. Laid out by
-         * {@link DialRowLayout}, which gives the checkbox and the value the same
-         * width in every dial's row, so the sliders line up under each other and
-         * come out the same length.
-         */
-        JPanel row(double strength) {
-            slider.setValue(scaledStrength(strength));
-            JPanel row = previewRow(new DialRowLayout(6));
-            // leftRow's FlowLayout gaps, so the rows are evenly spaced.
-            row.setBorder(BorderFactory.createEmptyBorder(PREVIEW_ROW_GAP, 5, PREVIEW_ROW_GAP, 5));
-            row.add(box);
-            row.add(slider);
-            row.add(valueLabel);
-            showValue();
-            return row;
-        }
-
-        /** The strength the slider is set to. */
-        double strength() {
-            return slider.getValue() / 100.0;
-        }
-
-        /**
-         * Shows the setting beside the slider, as the multiplier it stands for, and
-         * greys the pair out while the step is unticked. {@code Locale.ROOT} keeps
-         * the decimal point a point in both languages: it is the same number the
-         * {@code *_STRENGTH} config key takes, which is not localized.
-         */
-        void showValue() {
-            valueLabel.setText(String.format(Locale.ROOT, "%.2fx", strength()));
-            valueLabel.setEnabled(box.isSelected());
-            slider.setEnabled(box.isSelected());
-        }
-    }
-
-    /** A strength in the slider's units: hundredths, because a {@link JSlider} only speaks int. */
-    private static int scaledStrength(double strength) {
-        return (int) Math.round(strength * 100);
     }
 
     /**
@@ -1825,7 +1597,6 @@ public final class MainWindow {
         activeEditorPane().setText("");
     }
 
-    /** A drag payload of files, exposed only as {@link DataFlavor#javaFileListFlavor}. */
     // ----------------------------------------------------------------- actions
 
     /** Picks a new base directory and reloads its offers — every path derives from it. */
