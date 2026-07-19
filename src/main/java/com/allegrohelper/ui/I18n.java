@@ -220,6 +220,11 @@ final class I18n {
                         + " a następnie przeciągnij zaznaczenie na formularz.");
         put("Copy Title", "Kopiuj tytuł");
         put("Copy Description", "Kopiuj opis");
+        put("Copy Raw ASCII", "Kopiuj czysty tekst");
+        put("Copy the description with the icons and typographic punctuation stripped,"
+                        + " for sites that reject them (OLX). Polish letters are kept.",
+                "Kopiuje opis bez ikonek i znaków typograficznych, dla serwisów, które ich nie"
+                        + " przyjmują (OLX). Polskie znaki są zachowane.");
         put("Nothing to copy: select an offer with photos, a title or a description first.",
                 "Nie ma nic do skopiowania: najpierw wybierz ofertę ze zdjęciami, tytułem lub opisem.");
         put("Copy to Allegro failed: {0}", "Kopiowanie do Allegro nie powiodło się: {0}");

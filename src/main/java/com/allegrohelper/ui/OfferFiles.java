@@ -145,6 +145,69 @@ final class OfferFiles {
         return result;
     }
 
+    /** The Polish letters kept alongside ASCII: everything else outside 0x20..0x7E is dropped. */
+    private static final String POLISH_LETTERS = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
+
+    /**
+     * Strips a description down to ASCII plus the Polish letters, for pasting
+     * into sites that reject anything else — OLX drops emoji and typographic
+     * punctuation from a listing body.
+     *
+     * <p>Punctuation is <em>transliterated</em> rather than deleted, because the
+     * generated descriptions are full of characters that carry meaning between
+     * words: an en dash in {@code 24–29"}, an em dash in {@code Rozmiar L — 175 cm}.
+     * Deleting those would run the words together, so they become {@code -}, and
+     * curly quotes, ellipses and non-breaking spaces get the same treatment.
+     * Emoji have no ASCII equivalent and are simply removed — including the
+     * invisible variation selector that trails ⚠️, which is why filtering by
+     * code point beats a list of emoji to strip.
+     *
+     * <p>Removing a character leaves a gap where it stood, so each line is
+     * re-tidied afterwards: an icon at the start of a heading would otherwise
+     * leave the heading indented, and one mid-line a double space.
+     */
+    static String toPlainText(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        for (String line : text.split("\n", -1)) {
+            if (out.length() > 0) {
+                out.append('\n');
+            }
+            out.append(plainLine(line));
+        }
+        return out.toString();
+    }
+
+    /** Filters one line and closes the gaps the dropped characters left behind. */
+    private static String plainLine(String line) {
+        StringBuilder sb = new StringBuilder(line.length());
+        line.codePoints().forEach(cp -> sb.append(transliterate(cp)));
+        String filtered = sb.toString().replaceAll(" {2,}", " ").stripTrailing();
+        // A line that did not start with a space, but does now, lost an icon there.
+        return line.startsWith(" ") ? filtered : filtered.stripLeading();
+    }
+
+    /** One code point as ASCII: itself, a plain-text stand-in, or nothing. */
+    private static String transliterate(int cp) {
+        if (cp == '\t' || (cp >= 0x20 && cp <= 0x7E) || POLISH_LETTERS.indexOf(cp) >= 0) {
+            return Character.toString(cp);
+        }
+        return switch (cp) {
+            // The non-breaking hyphen is the one that bites: the model writes it
+            // inside product names (USB‑C, U‑lock), where dropping it welds the
+            // word together instead of merely closing a gap.
+            case '‑', '‐', '‒', '–', '—', '―', '−' -> "-";
+            case '‘', '’', '‚', '′' -> "'";             // ‘ ’ ‚ ′
+            case '“', '”', '„', '″' -> "\"";            // “ ” „ ″
+            case '…' -> "...";                                         // …
+            case ' ', ' ', ' ', ' ' -> " ";             // no-break/thin spaces
+            case '•', '·', '●' -> "-";                       // • · ●
+            case '×' -> "x";                                           // ×
+            case '°' -> " st.";                                        // °
+            case '€' -> "EUR";                                         // €
+            default -> "";
+        };
+    }
+
     /** Deletes a tree depth-first. Unlike the OCR step's, failures here are surfaced, not ignored. */
     static void deleteRecursively(Path root) throws IOException {
         try (var stream = Files.walk(root)) {

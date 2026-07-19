@@ -1176,7 +1176,15 @@ public final class MainWindow {
         JButton copyDescriptionButton = new JButton("Copy Description");
         copyDescriptionButton.addActionListener(e ->
                 copyToClipboard(formDescriptionArea.getText(), "description"));
-        descHeader.add(copyDescriptionButton, BorderLayout.EAST);
+        JButton copyPlainButton = new JButton("Copy Raw ASCII");
+        copyPlainButton.setToolTipText("Copy the description with the icons and typographic"
+                + " punctuation stripped, for sites that reject them (OLX). Polish letters are kept.");
+        copyPlainButton.addActionListener(e -> copyToClipboard(
+                OfferFiles.toPlainText(formDescriptionArea.getText()), "description as plain text"));
+        JPanel descButtons = UiStyle.flowRow();
+        descButtons.add(copyPlainButton);
+        descButtons.add(copyDescriptionButton);
+        descHeader.add(descButtons, BorderLayout.EAST);
         descSection.add(descHeader, BorderLayout.NORTH);
         descSection.add(new JScrollPane(formDescriptionArea), BorderLayout.CENTER);
         panel.add(descSection, BorderLayout.CENTER);

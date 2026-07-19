@@ -230,4 +230,51 @@ class OfferFilesTest {
         org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
                 () -> OfferFiles.deleteRecursively(dir.resolve("does-not-exist")));
     }
+    // ------------------------------------------------------------ toPlainText
+
+    @Test
+    void plainTextDropsIconsAndClosesTheGapTheyLeave() {
+        // The icon at the start of a heading must not leave the heading indented,
+        // and one mid-line must not leave a double space.
+        assertEquals("Zestaw (w cenie)", OfferFiles.toPlainText("\uD83D\uDCE6 Zestaw (w cenie)"));
+        assertEquals("- Roweru nie wysyłam",
+                OfferFiles.toPlainText("- \u26A0\uFE0F Roweru nie wysyłam"));
+    }
+
+    @Test
+    void plainTextKeepsPolishLetters() {
+        assertEquals("Zapięcie rowerowe Elops U-lock, żółć ĄĆĘŁŃÓŚŹŻ",
+                OfferFiles.toPlainText("Zapięcie rowerowe Elops U-lock, żółć ĄĆĘŁŃÓŚŹŻ"));
+    }
+
+    @Test
+    void plainTextTransliteratesPunctuationRatherThanDroppingIt() {
+        // Deleting a dash between words would run them together.
+        assertEquals("Rozmiar L - 175-184 cm", OfferFiles.toPlainText("Rozmiar L \u2014 175\u2013184 cm"));
+        assertEquals("regulowana 24-29\"", OfferFiles.toPlainText("regulowana 24\u201329\u201D"));
+        assertEquals("2x adapter", OfferFiles.toPlainText("2\u00D7 adapter"));
+        assertEquals("'cyt.'...", OfferFiles.toPlainText("\u2018cyt.\u2019\u2026"));
+    }
+
+    @Test
+    void plainTextKeepsTheNonBreakingHyphenAsAHyphen() {
+        // U+2011 inside a product name: dropping it would weld the word together.
+        assertEquals("Lampki ładowane przez USB-C",
+                OfferFiles.toPlainText("Lampki ładowane przez USB\u2011C"));
+        assertEquals("Zapięcie Elops U-lock D 900",
+                OfferFiles.toPlainText("Zapięcie Elops U\u2011lock D 900"));
+    }
+
+    @Test
+    void plainTextPreservesLineStructure() {
+        String in = "\uD83D\uDCCC Przedmiot\n- Kolor: Błękit pruski\n\n\uD83D\uDCE6 Zestaw\n- Lampki";
+        assertEquals("Przedmiot\n- Kolor: Błękit pruski\n\nZestaw\n- Lampki",
+                OfferFiles.toPlainText(in));
+    }
+
+    @Test
+    void plainTextLeavesAlreadyPlainTextAlone() {
+        String plain = "Stan: uzywany\n- Technicznie sprawny w 100%\n- Cena: 2500 zl";
+        assertEquals(plain, OfferFiles.toPlainText(plain));
+    }
 }
