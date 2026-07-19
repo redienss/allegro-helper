@@ -60,17 +60,26 @@ import java.util.concurrent.TimeUnit;
  * finished {@code ocr.txt} (skip on re-run) from one an interrupted run left
  * behind (redo).
  *
- * <p>Photos are read from the most-processed directory available (same chain
- * as the gallery: {@code cropped/}, else {@code contrasted/}, else
- * {@code white_balanced/}, else the legacy {@code retouched/}). Originals in
- * {@code photos/} are deliberately never used: they still carry EXIF
- * orientation, which the decoding here ignores, so text could end up
- * sideways.
+ * <p>Photos are read from the most-processed directory available, the same
+ * chain the gallery and auto-crop walk: {@code cropped/}, else
+ * {@code contrasted/}, else {@code brightened/}, else {@code white_balanced/},
+ * else the legacy {@code retouched/}, else the originals in {@code photos/}.
+ * Ending at the originals is what lets OCR run with every retouching step
+ * unticked — the step reads text off a photo, and none of the retouching is a
+ * precondition for that. Originals still carry EXIF orientation, so the decode
+ * applies it (see {@link #ocrPhoto}); without that a sideways frame would be
+ * OCRed sideways, which is why this chain once stopped short of them.
  */
 public final class Ocr {
 
-    /** Most-processed first; matches MainWindow.outputPhotoDir and AutoCrop's chain. */
-    private static final String[] INPUT_DIRS = {"cropped", "contrasted", "white_balanced", "retouched"};
+    /**
+     * Most-processed first; matches MainWindow.outputPhotoDir and AutoCrop's
+     * chain, down to ending at the originals. Named through {@link Retouch.Mode}
+     * so a renamed output directory cannot silently drop out of the chain.
+     */
+    private static final String[] INPUT_DIRS = {
+        "cropped", Retouch.Mode.CONTRAST.dirName, Retouch.Mode.BRIGHTNESS.dirName,
+        Retouch.Mode.WHITE_BALANCE.dirName, "retouched", "photos"};
 
     /** Kill a tesseract run that hangs on a pathological image. */
     private static final int TESSERACT_TIMEOUT_SECONDS = 120;
@@ -174,8 +183,9 @@ public final class Ocr {
         }
         Path inputDir = inputDir(offerDir);
         if (inputDir == null) {
-            reporter.log(offerDir.getFileName()
-                    + ": no processed photos to OCR (run a retouch or auto-crop step first), skipping.");
+            // Now only reachable when the offer has no photos at all: the chain
+            // ends at photos/, so retouching is no longer a precondition.
+            reporter.log(offerDir.getFileName() + ": no photos to OCR, skipping.");
             progress.at(1.0);
             return;
         }
@@ -236,7 +246,7 @@ public final class Ocr {
     }
 
     /** The most-processed photo directory of the offer, or null if none exists yet. */
-    private static Path inputDir(Path offerDir) {
+    static Path inputDir(Path offerDir) {
         for (String name : INPUT_DIRS) {
             Path dir = offerDir.resolve(name);
             if (Files.isDirectory(dir)) {
@@ -246,12 +256,22 @@ public final class Ocr {
         return null;
     }
 
-    /** OCRs one photo at 0° and 180° (upscaled), returning the better result's text. */
+    /**
+     * OCRs one photo at 0° and 180° (upscaled), returning the better result's
+     * text.
+     *
+     * <p>EXIF orientation is applied on decode, unconditionally: with every
+     * retouching step unticked the input is the untouched original, which still
+     * carries the tag that ImageIO ignores, and tesseract would then read a
+     * sideways frame. Pipeline-written inputs carry no EXIF metadata, so the
+     * call is a no-op for them — the same reasoning as {@code Retouch.process}.
+     */
     private static String ocrPhoto(Config cfg, Path photo, Path tmpDir) throws IOException {
         BufferedImage source = ImageIO.read(photo.toFile());
         if (source == null) {
             throw new IOException("could not decode the image");
         }
+        source = Exif.applyOrientation(source, Exif.readOrientation(photo));
         Variant best = Variant.EMPTY;
         for (int quadrants : new int[]{0, 2}) {
             Path prepared = tmpDir.resolve("frame-rot" + (quadrants * 90) + ".jpg");

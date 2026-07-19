@@ -6,6 +6,7 @@ import java.awt.image.BufferedImage;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * EXIF orientation. ImageIO ignores the tag, so every decode in the pipeline
@@ -89,6 +90,49 @@ class ExifTest {
     void theTwoRotationsAreInverses() {
         BufferedImage roundTrip = Exif.applyOrientation(Exif.applyOrientation(fixture(), 6), 8);
         assertEquals(render(fixture()), render(roundTrip));
+    }
+
+    @Test
+    void readsTheOrientationTagOffARealJpeg() throws java.io.IOException {
+        // OCR now reads untouched originals, which still carry this tag, so the
+        // parsing path matters and not just the transform.
+        java.nio.file.Path jpeg = java.nio.file.Files.createTempFile("oriented", ".jpg");
+        javax.imageio.ImageIO.write(fixture(), "jpg", jpeg.toFile());
+        byte[] plain = java.nio.file.Files.readAllBytes(jpeg);
+
+        // A minimal EXIF APP1: big-endian TIFF, one entry, Orientation = 6.
+        byte[] tiff = new byte[] {
+            'M', 'M', 0, 42, 0, 0, 0, 8,          // header, IFD at offset 8
+            0, 1,                                  // one entry
+            1, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, // Orientation (SHORT) = 6
+            0, 0, 0, 0};                           // no next IFD
+        byte[] app1 = new byte[6 + tiff.length];
+        System.arraycopy(new byte[] {'E', 'x', 'i', 'f', 0, 0}, 0, app1, 0, 6);
+        System.arraycopy(tiff, 0, app1, 6, tiff.length);
+
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.write(plain, 0, 2);                                  // SOI
+        out.write(0xFF);
+        out.write(0xE1);
+        out.write((app1.length + 2) >> 8);
+        out.write((app1.length + 2) & 0xFF);
+        out.write(app1);
+        out.write(plain, 2, plain.length - 2);
+        java.nio.file.Files.write(jpeg, out.toByteArray());
+
+        assertEquals(6, Exif.readOrientation(jpeg));
+        java.nio.file.Files.deleteIfExists(jpeg);
+    }
+
+    @Test
+    void aJpegWithoutExifReportsNoRotation() throws java.io.IOException {
+        // Pipeline-written files have no EXIF, which is why applying the
+        // orientation unconditionally is safe.
+        java.nio.file.Path jpeg = java.nio.file.Files.createTempFile("plain", ".jpg");
+        javax.imageio.ImageIO.write(fixture(), "jpg", jpeg.toFile());
+        assertTrue(Exif.readOrientation(jpeg) <= 1,
+                "no EXIF should mean no transform, got " + Exif.readOrientation(jpeg));
+        java.nio.file.Files.deleteIfExists(jpeg);
     }
 
     @Test
