@@ -97,11 +97,11 @@ public final class MainWindow {
 
     /** Right-panel tab indices. */
     private static final int TAB_DESCRIPTION_INPUT = 0;   // more_data_<N>.txt editor
-    private static final int TAB_DESCRIPTION_OUTPUT = 1;  // description.txt editor
-    private static final int TAB_PHOTOS_INPUT = 2;    // original photos gallery
-    private static final int TAB_RETOUCH_PREVIEW = 3; // before/after of the retouching steps
-    private static final int TAB_PHOTOS_OUTPUT = 4;   // retouched photos gallery
-    private static final int TAB_OCR = 5;             // ocr.txt editor
+    private static final int TAB_PHOTOS_INPUT = 1;    // original photos gallery
+    private static final int TAB_RETOUCH_PREVIEW = 2; // before/after of the retouching steps
+    private static final int TAB_PHOTOS_OUTPUT = 3;   // retouched photos gallery
+    private static final int TAB_OCR = 4;             // ocr.txt editor
+    private static final int TAB_DESCRIPTION_OUTPUT = 5;  // description.txt editor
     private static final int TAB_ALLEGRO_FORM = 6;    // copy helper for the Allegro Lokalnie form
 
     /**
@@ -773,12 +773,17 @@ public final class MainWindow {
             pane.setCaretColor(UiStyle.caretColor());
             installEmojiRendering(pane);
         }
+        // In pipeline order, so the tabs read left to right the way a run
+        // executes: the notes that feed the description, the imported photos,
+        // the retouching, its output, the text read off it, the description
+        // generated from all of that, and finally the form it is pasted into.
+        // The TAB_* constants above must stay in step with this order.
         rightTabs.addTab("Description (Input)", new JScrollPane(moreDataArea));
-        rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
         rightTabs.addTab("Photos (Input)", photosInputGallery.component());
         rightTabs.addTab("Retouch Preview", buildRetouchPreviewTab());
         rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
         rightTabs.addTab("OCR", new JScrollPane(ocrArea));
+        rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
         rightTabs.addTab("Allegro Lokalnie Form", buildAllegroFormTab());
         // Render tab titles as custom labels we fully control, so the selected tab
         // stays clearly highlighted regardless of the (dark) look and feel.
