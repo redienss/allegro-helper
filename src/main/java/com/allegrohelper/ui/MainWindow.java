@@ -1656,7 +1656,24 @@ public final class MainWindow {
         } catch (IOException e) {
             appendLog("Could not read " + cfg.csvPath + ": " + e.getMessage());
         }
-        loadSelectedOffer();
+        selectFirstOfferRow();
+    }
+
+    /**
+     * Selects the first grid row, so the right panel shows that offer's files
+     * instead of "Select an offer in the grid." on launch. Without it every tab
+     * starts blank and nothing hints that a click is what fills them.
+     *
+     * <p>Falls through to {@link #loadSelectedOffer()} when the grid is empty or
+     * a row is already selected: the selection listener only fires on a *change*,
+     * so relying on it alone would leave the panel stale in both cases.
+     */
+    private void selectFirstOfferRow() {
+        if (offerTable.getRowCount() > 0 && offerTable.getSelectedRow() < 0) {
+            offerTable.setRowSelectionInterval(0, 0); // fires the listener -> loadSelectedOffer()
+        } else {
+            loadSelectedOffer();
+        }
     }
 
     /** Loads offers from a CSV picked by the user (any delimiter; columns match by header name). */
@@ -1666,7 +1683,7 @@ public final class MainWindow {
             try {
                 offerModel.loadFromCsv(chooser.getSelectedFile().toPath());
                 appendLog("Loaded offers from " + chooser.getSelectedFile());
-                loadSelectedOffer();
+                selectFirstOfferRow();
             } catch (IOException e) {
                 error(I18n.t("Failed to load CSV: {0}", e.getMessage()));
             }
@@ -1709,7 +1726,7 @@ public final class MainWindow {
         try {
             offerModel.loadFromCsv(csv);
             appendLog("Reloaded offers from " + csv);
-            loadSelectedOffer();
+            selectFirstOfferRow();
         } catch (IOException e) {
             error(I18n.t("Failed to reload CSV: {0}", e.getMessage()));
         }
