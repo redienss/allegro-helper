@@ -326,6 +326,18 @@ public final class MainWindow {
         return frame;
     }
 
+    /**
+     * Points the series dropdown at a new default, as saved in Settings.
+     * Called only when that default actually changed, so a mode picked for
+     * this session survives an unrelated trip through the dialog. Setting the
+     * selection fires the combo's listener, which re-scans the photo source —
+     * which is what should happen: the Photos list previews what the new mode
+     * would group.
+     */
+    private void applyDefaultSeriesMode(SeriesRecognition.Mode mode) {
+        seriesModeCombo.setSelectedIndex(mode.ordinal());
+    }
+
     /** Selects the given offer row (0-based), updating the details panel. */
     public void selectOfferRow(int index) {
         if (index >= 0 && index < offerModel.getRowCount()) {
@@ -430,7 +442,8 @@ public final class MainWindow {
         JMenu file = new JMenu("File");
         JMenuItem settings = new JMenuItem("Settings…");
         settings.addActionListener(e -> new SettingsDialog(frame,
-                Path.of(baseDirField.getText().strip()), this::onSettingsApplied).setVisible(true));
+                Path.of(baseDirField.getText().strip()), this::onSettingsApplied,
+                this::applyDefaultSeriesMode).setVisible(true));
         JMenuItem exit = new JMenuItem("Exit");
         // Close via the window event so it takes the same path as the title-bar X.
         exit.addActionListener(e -> frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING)));

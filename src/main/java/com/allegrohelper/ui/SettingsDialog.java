@@ -2,6 +2,7 @@ package com.allegrohelper.ui;
 
 import com.allegrohelper.core.Config;
 import com.allegrohelper.core.GenerateDescription;
+import com.allegrohelper.core.SeriesRecognition;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -40,12 +41,14 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * The File &gt; Settings dialog: a PhpStorm-style two-pane layout — the page
  * list on the left, the selected page's card on the right, OK/Cancel/Apply
- * below. Pages: Appearance ({@link Theme}), Language ({@link Language}) and
- * OpenAI API (API key, model and the description prompts).
+ * below. Pages: Appearance ({@link Theme}), Language ({@link Language}),
+ * Photos (the default series recognition mode) and OpenAI API (API key, model
+ * and the description prompts).
  *
  * <p>Apply (and OK) takes effect immediately: it installs the look and feel
  * and/or language, persists the choices, restyles and retranslates every open
@@ -69,6 +72,7 @@ final class SettingsDialog extends JDialog {
 
     private static final String PAGE_APPEARANCE = "Appearance";
     private static final String PAGE_LANGUAGE = "Language";
+    private static final String PAGE_PHOTOS = "Photos";
     private static final String PAGE_OPENAI = "OpenAI API";
 
     /** Suggestions only — the combo is editable, any model id can be typed. */
@@ -80,6 +84,15 @@ final class SettingsDialog extends JDialog {
 
     private final JComboBox<Theme> themeCombo = new JComboBox<>(Theme.values());
     private final JComboBox<Language> languageCombo = new JComboBox<>(Language.values());
+    /**
+     * The same items as {@link MainWindow}'s series dropdown, in
+     * {@link SeriesRecognition.Mode} order, so an index is a mode. Kept as
+     * English keys and translated by the renderer at paint time, like there.
+     */
+    private final JComboBox<String> seriesModeCombo = new JComboBox<>(new String[]{
+            "AUTO - Auto detect photo series",
+            "SINGLE - All photos in the directory as one item",
+            "SUBFOLDERS - Each subfolder as a separate item"});
     private final JPasswordField apiKeyField = new JPasswordField();
     private final JComboBox<String> modelCombo = new JComboBox<>(OPENAI_MODELS);
     private final JTextArea systemPromptArea = new JTextArea();
@@ -87,6 +100,7 @@ final class SettingsDialog extends JDialog {
     private final JLabel apiKeyLink = buildApiKeyLink();
     private final JButton applyButton = new JButton("Apply");
     private final Runnable onSettingsApplied;
+    private final Consumer<SeriesRecognition.Mode> onSeriesModeChanged;
     private final Path baseDir;
 
     /** The effective OpenAI values as of the last load/save, for dirty checks. */
@@ -95,21 +109,32 @@ final class SettingsDialog extends JDialog {
     private String savedSystemPrompt = "";
     private String savedUserPrompt = "";
 
+    /** The effective series mode as of the last load/save, for the dirty check. */
+    private SeriesRecognition.Mode savedSeriesMode = SeriesRecognition.Mode.AUTO;
+
     /**
      * @param baseDir the base directory whose {@code .env} the OpenAI settings
      *                are read from and written back to
      * @param onSettingsApplied run after a theme or language change, so
      *                          {@link MainWindow} can re-apply the styling its
      *                          build baked in
+     * @param onSeriesModeChanged run only when the saved default series mode
+     *                            actually changed, so the main window's dropdown
+     *                            follows it. Firing on every apply would reset a
+     *                            mode the user picked for this session while
+     *                            they were in here changing the theme.
      */
-    SettingsDialog(JFrame owner, Path baseDir, Runnable onSettingsApplied) {
+    SettingsDialog(JFrame owner, Path baseDir, Runnable onSettingsApplied,
+                   Consumer<SeriesRecognition.Mode> onSeriesModeChanged) {
         super(owner, "Settings", true);
         this.onSettingsApplied = onSettingsApplied;
+        this.onSeriesModeChanged = onSeriesModeChanged;
         this.baseDir = baseDir;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        JList<String> pages = new JList<>(new String[]{PAGE_APPEARANCE, PAGE_LANGUAGE, PAGE_OPENAI});
+        JList<String> pages = new JList<>(
+                new String[]{PAGE_APPEARANCE, PAGE_LANGUAGE, PAGE_PHOTOS, PAGE_OPENAI});
         pages.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         pages.setSelectedIndex(0);
         pages.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
@@ -129,6 +154,7 @@ final class SettingsDialog extends JDialog {
         JPanel content = new JPanel(cards);
         content.add(buildPage(PAGE_APPEARANCE, "Theme:", themeCombo), PAGE_APPEARANCE);
         content.add(buildPage(PAGE_LANGUAGE, "Language:", languageCombo), PAGE_LANGUAGE);
+        content.add(buildPage(PAGE_PHOTOS, "Series recognition:", seriesModeCombo), PAGE_PHOTOS);
         content.add(buildOpenAiPage(), PAGE_OPENAI);
         pages.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && pages.getSelectedValue() != null) {
@@ -143,9 +169,19 @@ final class SettingsDialog extends JDialog {
         themeCombo.setSelectedItem(Theme.current());
         languageCombo.setSelectedItem(Language.current());
         loadOpenAiSettings();
+        loadSeriesMode();
         applyButton.setEnabled(false);
         themeCombo.addActionListener(e -> updateApplyEnabled());
         languageCombo.addActionListener(e -> updateApplyEnabled());
+        seriesModeCombo.addActionListener(e -> updateApplyEnabled());
+        seriesModeCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Object shown = value == null ? null : I18n.t(value.toString());
+                return super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+            }
+        });
         modelCombo.addActionListener(e -> updateApplyEnabled());
         watchDocument(apiKeyField);
         watchDocument((JTextComponent) modelCombo.getEditor().getEditorComponent());
@@ -312,6 +348,44 @@ final class SettingsDialog extends JDialog {
         userPromptArea.setCaretPosition(0);
     }
 
+    /**
+     * Fills the combo from the effective {@code SERIES_RECOGNITION}, so a real
+     * environment variable (which outranks {@code .env}) shows up here and
+     * keeps winning after a save, exactly like the OpenAI page.
+     */
+    private void loadSeriesMode() {
+        savedSeriesMode = Config.forBaseDir(baseDir).seriesRecognition;
+        seriesModeCombo.setSelectedIndex(savedSeriesMode.ordinal());
+    }
+
+    /** The mode the combo is showing; index and ordinal are the same order. */
+    private SeriesRecognition.Mode selectedSeriesMode() {
+        int i = seriesModeCombo.getSelectedIndex();
+        return i < 0 ? SeriesRecognition.Mode.AUTO : SeriesRecognition.Mode.values()[i];
+    }
+
+    /**
+     * Writes the default series mode to {@code .env}, or removes the key when
+     * it is back to {@link SeriesRecognition.Mode#AUTO} — the built-in default,
+     * so {@code .env} carries only the overrides.
+     */
+    private boolean saveSeriesMode() {
+        SeriesRecognition.Mode mode = selectedSeriesMode();
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("SERIES_RECOGNITION", mode == SeriesRecognition.Mode.AUTO ? null : mode.key);
+        try {
+            Config.updateDotenv(baseDir, values);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this,
+                    I18n.t("Failed to save settings to {0}: {1}",
+                            baseDir.resolve(".env"), e.getMessage()),
+                    I18n.t("Settings"), JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        loadSeriesMode();
+        return true;
+    }
+
     /** The model id as typed, not just as last committed by the editable combo. */
     private String currentModel() {
         Object item = modelCombo.getEditor().getItem();
@@ -405,6 +479,7 @@ final class SettingsDialog extends JDialog {
     private void updateApplyEnabled() {
         applyButton.setEnabled(themeCombo.getSelectedItem() != Theme.current()
                 || languageCombo.getSelectedItem() != Language.current()
+                || selectedSeriesMode() != savedSeriesMode
                 || openaiDirty());
     }
 
@@ -419,6 +494,9 @@ final class SettingsDialog extends JDialog {
         boolean languageChanged = language != null && language != Language.current();
         if (openaiDirty()) {
             saveOpenAiSettings();
+        }
+        if (selectedSeriesMode() != savedSeriesMode && saveSeriesMode()) {
+            onSeriesModeChanged.accept(savedSeriesMode);
         }
         if (!themeChanged && !languageChanged) {
             updateApplyEnabled();

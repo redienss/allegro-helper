@@ -243,6 +243,8 @@ final class I18n {
         put("Language", "Język");
         put("Theme:", "Motyw:");
         put("Language:", "Język:");
+        // The Photos page reuses the "Photos" entry above as its name and header.
+        put("Series recognition:", "Rozpoznawanie serii:");
         put("Cancel", "Anuluj");
         put("Apply", "Zastosuj");
         put("System", "Systemowy");
