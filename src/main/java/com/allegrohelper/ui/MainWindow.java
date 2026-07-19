@@ -105,6 +105,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -347,6 +348,20 @@ public final class MainWindow {
     private Path moreDataTarget;
     private Path descriptionTarget;
     private Path ocrTarget;
+
+    /**
+     * Which editor tabs hold edits not yet written to their file, indexed by
+     * {@code TAB_*}. Only the three editor tabs are ever set. A run reloads the
+     * editors from disk, so without the marker an unsaved description vanished
+     * on Start with nothing having warned about it.
+     */
+    private final boolean[] editorDirty = new boolean[7];
+
+    /**
+     * Set while the editors are being filled from disk, so the document
+     * listeners can tell a programmatic reload from the user typing.
+     */
+    private boolean loadingEditors;
 
     private volatile boolean running = false;
 
@@ -885,6 +900,9 @@ public final class MainWindow {
         for (int i = 0; i < rightTabs.getTabCount(); i++) {
             rightTabs.setTabComponentAt(i, new JLabel(rightTabs.getTitleAt(i)));
         }
+        installDirtyTracking(moreDataArea, TAB_DESCRIPTION_INPUT);
+        installDirtyTracking(detailsArea, TAB_DESCRIPTION_OUTPUT);
+        installDirtyTracking(ocrArea, TAB_OCR);
         rightTabs.addChangeListener(e -> {
             updateTabStyles();
             updateBottomBar();
@@ -1703,7 +1721,60 @@ public final class MainWindow {
         }
     }
 
-    /** Highlights the selected tab (bold, bright, accent underline) and dims the rest. */
+    /**
+     * Marks an editor tab as holding unsaved edits (or not), refreshing the tab
+     * labels when that actually changed.
+     */
+    private void setEditorDirty(int tab, boolean dirty) {
+        if (editorDirty[tab] != dirty) {
+            editorDirty[tab] = dirty;
+            updateTabStyles();
+        }
+    }
+
+    /** Clears the unsaved-edits marker on all three editor tabs. */
+    private void clearAllEditorDirty() {
+        Arrays.fill(editorDirty, false);
+        updateTabStyles();
+    }
+
+    /**
+     * Flags {@code tab} as unsaved as soon as the user changes {@code pane}'s
+     * text. Attribute-only changes are ignored: those are the emoji restyling
+     * (see {@link #installEmojiRendering}), not an edit.
+     */
+    private void installDirtyTracking(JTextPane pane, int tab) {
+        pane.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                mark();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                mark();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                // Attribute-only change (the emoji restyling) - not an edit.
+            }
+
+            private void mark() {
+                if (!loadingEditors) {
+                    setEditorDirty(tab, true);
+                }
+            }
+        });
+    }
+
+    /**
+     * Highlights the selected tab (bold, bright, accent underline) and dims the
+     * rest. Also re-renders the tab labels, which is where the unsaved-edits
+     * marker is applied: the label text is built from the tabbed pane's own
+     * title, so it survives a language change (which rewrites those titles but
+     * cannot match a label carrying the marker).
+     */
     private void updateTabStyles() {
         int selected = rightTabs.getSelectedIndex();
         for (int i = 0; i < rightTabs.getTabCount(); i++) {
@@ -1711,6 +1782,7 @@ public final class MainWindow {
                 continue;
             }
             boolean active = i == selected;
+            label.setText((editorDirty[i] ? "* " : "") + rightTabs.getTitleAt(i));
             label.setFont(label.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN));
             label.setForeground(active ? tabSelectedFg() : tabUnselectedFg());
             // Accent underline on the active tab; matching padding keeps heights equal.
@@ -1737,6 +1809,18 @@ public final class MainWindow {
      * in the offer directory.
      */
     private void loadSelectedOffer() {
+        loadingEditors = true;
+        try {
+            loadSelectedOfferInto();
+        } finally {
+            loadingEditors = false;
+        }
+        // The editors now mirror what is on disk.
+        clearAllEditorDirty();
+    }
+
+    /** @see #loadSelectedOffer() — the body, run with the dirty tracking muted. */
+    private void loadSelectedOfferInto() {
         int viewRow = offerTable.getSelectedRow();
         if (viewRow < 0) {
             detailsHeader.setText(I18n.t("Select an offer in the grid."));
@@ -1829,6 +1913,7 @@ public final class MainWindow {
                 Files.createDirectories(parent);
             }
             Files.writeString(target, content, StandardCharsets.UTF_8);
+            setEditorDirty(rightTabs.getSelectedIndex(), false);
             appendLog("Saved " + target);
         } catch (IOException e) {
             error(I18n.t("Failed to save {0}: {1}", target, e.getMessage()));
@@ -1863,6 +1948,8 @@ public final class MainWindow {
         try {
             Files.delete(target);
             activeEditorPane().setText("");
+            // The file is gone and the editor is empty: nothing left unsaved.
+            setEditorDirty(rightTabs.getSelectedIndex(), false);
             appendLog("Deleted " + target);
         } catch (IOException e) {
             error(I18n.t("Failed to delete {0}: {1}", target, e.getMessage()));
