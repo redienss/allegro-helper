@@ -380,6 +380,9 @@ public final class MainWindow {
      */
     private boolean loadingEditors;
 
+    /** Why the last {@link #saveTab} returned false; only read right after one did. */
+    private String lastSaveError;
+
     private volatile boolean running = false;
 
     /**
@@ -1677,7 +1680,12 @@ public final class MainWindow {
 
     /** The file backing the active editor tab, or null when it has none yet. */
     private Path activeEditorTarget() {
-        return switch (rightTabs.getSelectedIndex()) {
+        return editorTarget(rightTabs.getSelectedIndex());
+    }
+
+    /** The file backing an editor tab, or null when it has none (yet). */
+    private Path editorTarget(int tab) {
+        return switch (tab) {
             case TAB_DESCRIPTION_INPUT -> moreDataTarget;
             case TAB_DESCRIPTION_OUTPUT -> descriptionTarget;
             case TAB_OCR -> ocrTarget;
@@ -1687,7 +1695,12 @@ public final class MainWindow {
 
     /** The text pane of the active editor tab, or null on non-editor tabs. */
     private JTextPane activeEditorPane() {
-        return switch (rightTabs.getSelectedIndex()) {
+        return editorPane(rightTabs.getSelectedIndex());
+    }
+
+    /** The text pane of an editor tab, or null on non-editor tabs. */
+    private JTextPane editorPane(int tab) {
+        return switch (tab) {
             case TAB_DESCRIPTION_INPUT -> moreDataArea;
             case TAB_DESCRIPTION_OUTPUT -> detailsArea;
             case TAB_OCR -> ocrArea;
@@ -1948,17 +1961,36 @@ public final class MainWindow {
             error(I18n.t("No offer directory yet — run Match first."));
             return;
         }
-        String content = activeEditorPane().getText();
+        if (!saveTab(rightTabs.getSelectedIndex())) {
+            error(I18n.t("Failed to save {0}: {1}", target, lastSaveError));
+        }
+    }
+
+    /**
+     * Writes one editor tab to its file and clears its unsaved-edits marker,
+     * reporting success rather than showing a dialog — callers saving several
+     * tabs at once want to collect the failures, not stack up message boxes.
+     * The message behind a false is in {@link #lastSaveError}.
+     */
+    private boolean saveTab(int tab) {
+        Path target = editorTarget(tab);
+        JTextPane pane = editorPane(tab);
+        if (target == null || pane == null) {
+            lastSaveError = I18n.t("No offer directory yet — run Match first.");
+            return false;
+        }
         try {
             Path parent = target.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Files.writeString(target, content, StandardCharsets.UTF_8);
-            setEditorDirty(rightTabs.getSelectedIndex(), false);
+            Files.writeString(target, pane.getText(), StandardCharsets.UTF_8);
+            setEditorDirty(tab, false);
             appendLog("Saved " + target);
+            return true;
         } catch (IOException e) {
-            error(I18n.t("Failed to save {0}: {1}", target, e.getMessage()));
+            lastSaveError = e.getMessage();
+            return false;
         }
     }
 
@@ -3196,6 +3228,56 @@ public final class MainWindow {
      * progress back to the EDT. Saves the grid to offers.csv first when the
      * match step is among them — that step reads the file, not the grid.
      */
+    /**
+     * Offers to save, discard, or cancel when a run is about to reload editor
+     * tabs holding unsaved edits. Returns whether the run may proceed: false on
+     * Cancel, and also when saving was asked for but failed — silently running
+     * on would destroy exactly the text the user just chose to keep.
+     *
+     * <p>Nothing dirty means no dialog, so the common case is unchanged.
+     */
+    private boolean confirmUnsavedEditors() {
+        List<Integer> dirty = new ArrayList<>();
+        for (int tab : new int[]{TAB_DESCRIPTION_INPUT, TAB_DESCRIPTION_OUTPUT, TAB_OCR}) {
+            if (editorDirty[tab]) {
+                dirty.add(tab);
+            }
+        }
+        if (dirty.isEmpty()) {
+            return true;
+        }
+        StringBuilder names = new StringBuilder();
+        for (int tab : dirty) {
+            names.append("\n    • ").append(rightTabs.getTitleAt(tab));
+        }
+        Object[] options = {
+            I18n.t("Save changes"), I18n.t("Discard changes"), I18n.t("Cancel")};
+        int choice = JOptionPane.showOptionDialog(frame,
+                I18n.t("These tabs have unsaved changes:\n{0}\n\n"
+                        + "A run reloads them from their files, so unsaved text will be lost.",
+                        names.toString()),
+                I18n.t("Unsaved changes"), JOptionPane.YES_NO_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE, null, options, options[0]);
+        if (choice == 0) {
+            List<String> failures = new ArrayList<>();
+            for (int tab : dirty) {
+                if (!saveTab(tab)) {
+                    failures.add(rightTabs.getTitleAt(tab) + ": " + lastSaveError);
+                }
+            }
+            if (!failures.isEmpty()) {
+                error(I18n.t("Could not save before starting:\n{0}", String.join("\n", failures)));
+                return false;
+            }
+            return true;
+        }
+        if (choice == 1) {
+            appendLog("Discarded unsaved editor changes.");
+            return true;
+        }
+        return false; // Cancel, Esc, or the dialog's close button
+    }
+
     private void startWorkflow() {
         if (running) {
             return;
@@ -3205,6 +3287,12 @@ public final class MainWindow {
         List<Workflow.Step> steps = selectedSteps();
         if (steps.isEmpty()) {
             error(I18n.t("Select at least one workflow step."));
+            return;
+        }
+
+        // A run reloads the editors from disk when it finishes, so unsaved text
+        // would be lost without a word. Ask before that happens, not after.
+        if (!confirmUnsavedEditors()) {
             return;
         }
 

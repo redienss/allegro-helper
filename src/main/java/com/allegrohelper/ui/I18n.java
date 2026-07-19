@@ -158,6 +158,15 @@ final class I18n {
         put("Save", "Zapisz");
         put("Save the active tab to its file (Ctrl+S)",
                 "Zapisz aktywną kartę do jej pliku (Ctrl+S)");
+        put("Unsaved changes", "Niezapisane zmiany");
+        put("Save changes", "Zapisz zmiany");
+        put("Discard changes", "Odrzuć zmiany");
+        put("These tabs have unsaved changes:\n{0}\n\n"
+                + "A run reloads them from their files, so unsaved text will be lost.",
+                "Te karty mają niezapisane zmiany:\n{0}\n\n"
+                + "Uruchomienie wczytuje je ponownie z plików, więc niezapisany tekst zostanie utracony.");
+        put("Could not save before starting:\n{0}",
+                "Nie udało się zapisać przed uruchomieniem:\n{0}");
         put("Open photo dir", "Otwórz katalog zdjęć");
         put("row {0} — <i>not matched yet (photos and Description output appear after Match)</i>",
                 "wiersz {0} — <i>jeszcze niedopasowany (zdjęcia i Opis (wynik) pojawią się po kroku Dopasuj)</i>");
