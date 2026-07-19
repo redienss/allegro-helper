@@ -18,8 +18,10 @@ marketplace.
 ## The workflow
 
 1. Item photos are taken on a rotating turntable, controlled by a remote, with a
-   phone on a tripod running **OpenCamera** — a series of 20 photos, one every
-   5 seconds.
+   phone on a tripod running **OpenCamera** — e.g. a series of 20 photos, one
+   every 5 seconds. Any count works; nothing in the pipeline assumes a
+   particular one, and a turntable is only required for auto-crop, which reads
+   the item's outline from what moves between frames.
 2. **Import** — photos are copied from the phone (mounted via MTP) into
    `raw_photos/`. The originals stay on the phone.
 3. **Match** — photos are grouped into series and matched to the rows of
@@ -387,7 +389,7 @@ The base directory (chosen at the top of the window, default: the launch
 directory) determines `offers.csv`, `raw_photos/` and `offers/`. These
 environment variables are honored, from the environment or `.env`:
 `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
-`PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION`
+`SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION`
 (`auto` | `single` | `subfolders`, the CLI equivalent of the series
 recognition dropdown), `BRIGHTNESS_STRENGTH` and `CONTRAST_STRENGTH` (the CLI
 equivalents of the two sliders: `0.5`–`2.0`, default `1.0` and `1.2`),

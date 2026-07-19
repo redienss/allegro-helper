@@ -88,14 +88,6 @@ public final class GroupAndMatch {
             Map<String, String> offer = offers.get(index);
             PhotoSeries cluster = clusters.get(index);
 
-            // Only the turntable workflow implies a fixed shot count per item;
-            // the other modes accept whatever the user gathered.
-            if (cfg.seriesRecognition == SeriesRecognition.Mode.AUTO
-                    && cluster.count() != cfg.photosPerOffer) {
-                reporter.log("Warning: the series for offer '" + offer.getOrDefault("name", "")
-                        + "' has " + cluster.count() + " photos (expected " + cfg.photosPerOffer + ").");
-            }
-
             String offerDirName = cluster.label();
             Path offerDir = cfg.offersDir.resolve(offerDirName);
 

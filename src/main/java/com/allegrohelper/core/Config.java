@@ -26,7 +26,6 @@ public final class Config {
     public final Path offersDir;
     public final String mtpUid;
     public final String mtpGlobPattern;
-    public final int photosPerOffer;
     public final int seriesGapThresholdSeconds;
     public final SeriesRecognition.Mode seriesRecognition;
     /** The brightness step's strength dial; see {@link Retouch#DEFAULT_BRIGHTNESS}. */
@@ -55,7 +54,6 @@ public final class Config {
         this.mtpGlobPattern = env.getOrDefault(
                 "MTP_GLOB_PATTERN",
                 "/run/user/" + mtpUid + "/gvfs/mtp:host=*/*/DCIM/OpenCamera");
-        this.photosPerOffer = intOrDefault(env, "PHOTOS_PER_OFFER", 20);
         this.seriesGapThresholdSeconds = intOrDefault(env, "SERIES_GAP_THRESHOLD_SECONDS", 60);
         this.seriesRecognition = SeriesRecognition.Mode.parse(env.get("SERIES_RECOGNITION"));
         this.brightnessStrength = Retouch.clampStrength(
