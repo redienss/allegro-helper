@@ -1,9 +1,13 @@
 package com.allegrohelper.core;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -11,13 +15,25 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Groups photos into series based on the timestamp encoded in the filename
- * (OpenCamera convention: {@code IMG_YYYYMMDD_HHMMSS.jpg}). A gap larger than
- * the threshold marks the start of a new series.
+ * Groups photos into series based on capture time. A gap larger than the
+ * threshold marks the start of a new series.
+ *
+ * <p>The time comes from the timestamp encoded in the filename when there is
+ * one — OpenCamera writes {@code IMG_YYYYMMDD_HHMMSS.jpg}, and other cameras
+ * use the same date_time run of digits with a different (or no) prefix, so the
+ * prefix is not required. A name that carries no such timestamp falls back to
+ * the file's mtime rather than aborting the run: a photo dir may mix cameras,
+ * and the mtime is the same signal the non-auto recognition modes rely on.
  */
 public final class Clustering {
 
-    private static final Pattern FILENAME_RE = Pattern.compile("IMG_(\\d{8})_(\\d{6})");
+    /**
+     * {@code YYYYMMDD_HHMMSS} anywhere in the name, with any prefix or none.
+     * The lookbehind keeps the date from matching the tail of a longer digit
+     * run; no lookahead follows the time, because some cameras append
+     * milliseconds to it (Pixel: {@code PXL_20260715_165037123.jpg}).
+     */
+    private static final Pattern FILENAME_RE = Pattern.compile("(?<!\\d)(\\d{8})_(\\d{6})");
     private static final DateTimeFormatter TS_PARSE = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final DateTimeFormatter DIR_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm");
 
@@ -26,20 +42,35 @@ public final class Clustering {
     }
 
     /**
-     * Reads the capture time out of an OpenCamera file name.
-     *
-     * @throws IllegalArgumentException if the name does not carry a timestamp —
-     *         photos from another camera have none, which is why the non-auto
-     *         recognition modes use file mtimes instead of this
+     * The capture time encoded in a file name, or null when the name carries
+     * none — or carries digits in the right shape that are not a real date
+     * ({@code 20261332_000000}), which is indistinguishable from having none.
+     * Callers fall back to the file's mtime.
      */
     public static LocalDateTime parseTimestamp(Path path) {
         Matcher m = FILENAME_RE.matcher(path.getFileName().toString());
         if (!m.find()) {
-            throw new IllegalArgumentException(
-                    "File name " + path.getFileName()
-                            + " does not match the IMG_YYYYMMDD_HHMMSS.jpg pattern");
+            return null;
         }
-        return LocalDateTime.parse(m.group(1) + m.group(2), TS_PARSE);
+        try {
+            return LocalDateTime.parse(m.group(1) + m.group(2), TS_PARSE);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The capture time of a photo: the file name's timestamp when it has one,
+     * else the file's mtime. Copying preserves mtimes (see {@code ImportPhotos}),
+     * so for an imported photo this is still the moment it was taken.
+     */
+    private static LocalDateTime captureTime(Path path) throws IOException {
+        LocalDateTime fromName = parseTimestamp(path);
+        if (fromName != null) {
+            return fromName;
+        }
+        return LocalDateTime.ofInstant(
+                Files.getLastModifiedTime(path).toInstant(), ZoneId.systemDefault()).withNano(0);
     }
 
     /** The offer directory name for a series starting at {@code start}: {@code yyyyMMdd_HHmm}. */
@@ -53,12 +84,13 @@ public final class Clustering {
      * {@code gapThreshold} — the pause while the next item is put on the
      * turntable.
      */
-    public static List<PhotoSeries> cluster(List<Path> photos, Duration gapThreshold) {
+    public static List<PhotoSeries> cluster(List<Path> photos, Duration gapThreshold)
+            throws IOException {
         record Stamped(LocalDateTime ts, Path path) {
         }
         List<Stamped> stamped = new ArrayList<>();
         for (Path p : photos) {
-            stamped.add(new Stamped(parseTimestamp(p), p));
+            stamped.add(new Stamped(captureTime(p), p));
         }
         stamped.sort(Comparator.comparing(Stamped::ts));
 
