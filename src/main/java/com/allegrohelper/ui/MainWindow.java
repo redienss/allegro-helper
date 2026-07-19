@@ -148,6 +148,18 @@ public final class MainWindow {
     }
 
     /**
+     * Tab title color for unsaved edits — amber, to read as a warning next to
+     * the plain titles without shouting like red. Two shades, because one hue
+     * cannot span both backgrounds: measured against the themes' actual panel
+     * colors, the bright amber scores 7.8:1 on System and 5.9:1 on Dark, and
+     * the deep one 4.8:1 on Light, so both clear WCAG AA for normal text.
+     * Inverting them would land at 1.3:1 and 2.3:1 — invisible.
+     */
+    private static Color tabDirtyFg() {
+        return Theme.isDark() ? new Color(0xFF, 0xB3, 0x00) : new Color(0x8A, 0x4B, 0x00);
+    }
+
+    /**
      * Hyperlink color, picked per theme for contrast: a light blue on the dark
      * background, a deep blue on the light one. The look and feel offers no key
      * for this, HTML's default {@code <a>} blue is unreadable on the dark theme,
@@ -1809,9 +1821,12 @@ public final class MainWindow {
                 continue;
             }
             boolean active = i == selected;
-            label.setText((editorDirty[i] ? "* " : "") + rightTabs.getTitleAt(i));
+            boolean dirty = editorDirty[i];
+            label.setText((dirty ? "* " : "") + rightTabs.getTitleAt(i));
             label.setFont(label.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN));
-            label.setForeground(active ? tabSelectedFg() : tabUnselectedFg());
+            // Amber wins over both the selected and the dimmed color: an unsaved
+            // tab must stand out even while the user is looking at another one.
+            label.setForeground(dirty ? tabDirtyFg() : active ? tabSelectedFg() : tabUnselectedFg());
             // Accent underline on the active tab; matching padding keeps heights equal.
             label.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createMatteBorder(0, 0, active ? 2 : 0, 0, TAB_ACCENT),
