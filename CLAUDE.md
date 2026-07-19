@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Working with the real data (read this before running anything)
 
-The repo root doubles as the default base directory, and it holds the user's real, unversioned data. `.gitignore` covers `.env`, `build/`, `raw_photos/`, `offers/`, `more_data_*.txt`, `.chrome-profile/` (the Allegro **login session** of the app-driven Chrome), and `allegro-form/` (a form page saved while logged in — embeds account data).
+The repo root doubles as the default base directory, and it holds the user's real, unversioned data. `.gitignore` covers `.env`, `build/`, `raw_photos/`, `offers/`, `more_data_*.txt`, `offers.csv` (the working offer list — the app rewrites it on every run; see below), `.chrome-profile/` (the Allegro **login session** of the app-driven Chrome), and `allegro-form/` (a form page saved while logged in — embeds account data).
 
 - `.env` holds a **real** `OPENAI_API_KEY`. Never commit it; redact it whenever printing the file.
 - `offers/`, `raw_photos/`, and `more_data_*.txt` are user data, not fixtures. Run destructive or write-heavy steps against a copy in a scratch dir.
@@ -111,6 +111,8 @@ Four places, all of which must agree:
 `Config.forBaseDir(baseDir)` derives every path from the base directory, overridable by env var or a `.env` file in it. **A real environment variable wins over `.env`**, and the UI's own controls win over both: `currentConfig()` passes the photo directory field as `MTP_GLOB_PATTERN`, the series dropdown as `SERIES_RECOGNITION`, and the two Retouch Preview sliders as `BRIGHTNESS_STRENGTH` / `CONTRAST_STRENGTH`. Keys: `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_UID`, `MTP_GLOB_PATTERN`, `PHOTOS_PER_OFFER`, `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION` (`auto` | `single` | `subfolders`), `BRIGHTNESS_STRENGTH`, `CONTRAST_STRENGTH`, `OCR_LANGUAGES`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_SYSTEM_PROMPT`, `OPENAI_USER_PROMPT`, `CHROME_BIN`, `CHROME_PROFILE_DIR`.
 
 The OpenAI keys are editable in File > Settings > OpenAI API, which writes them back to `.env` via `Config.updateDotenv` (only values differing from the built-in defaults; multi-line prompts are stored double-quoted with `\n` escapes). The prompt defaults are `GenerateDescription.SYSTEM_PROMPT` / `USER_PROMPT`; the user prompt is a template whose `{{OFFER_JSON}}` placeholder is replaced with the offer JSON.
+
+`offers.csv` is **untracked** — the app rewrites it on every run, so it is working data, not a fixture. The versioned file is `offers.csv.dist`; copy it to `offers.csv` to get a starting point, and edit the template there when the columns change. A missing `offers.csv` is handled: the pipeline aborts with `CSV file <path> does not exist.`, and the UI's grid starts empty (`loadFromCsvIfPresent`).
 
 `offers.csv` is **tab-delimited** on write; on read the delimiter is auto-detected (tab if the header has one, else comma).
 

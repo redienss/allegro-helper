@@ -6,6 +6,9 @@ build/
 raw_photos/
 offers/
 more_data_*.txt
+# The working offer list, edited by the app on every run. Copy offers.csv.dist
+# to offers.csv to get started; the template is the versioned one.
+offers.csv
 .~lock.*#
 # Chrome profile driven by "Copy all to Allegro" - holds the Allegro login session.
 .chrome-profile/
