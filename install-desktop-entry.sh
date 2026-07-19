@@ -25,7 +25,14 @@ ICON_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
 mkdir -p "$ICON_DIR"
 cp "$ICON_SRC" "$ICON_DIR/$ICON_NAME.png"
 
-# Write the .desktop entry. Opens with the repo as the base directory.
+# Write the .desktop entry.
+#
+# Deliberately no base-directory argument: an explicit argument outranks the
+# base directory saved in File > Settings > Photos, so pinning the repo path
+# here (as this script used to) made that setting impossible to apply from the
+# launcher — it saved, and nothing happened. Without one, run.sh's own cd makes
+# the repo the fallback anyway, so a user who never touches the setting sees no
+# difference.
 APPS_DIR="$HOME/.local/share/applications"
 mkdir -p "$APPS_DIR"
 DESKTOP_FILE="$APPS_DIR/allegro-helper.desktop"
@@ -35,7 +42,7 @@ Type=Application
 Version=1.0
 Name=Allegro Helper
 Comment=Prepare Allegro Lokalnie offers (import, match, retouch, describe)
-Exec="$RUN" "$ROOT_DIR"
+Exec="$RUN"
 Icon=$ICON_DIR/$ICON_NAME.png
 Terminal=false
 Categories=Utility;

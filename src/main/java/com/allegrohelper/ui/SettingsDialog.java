@@ -478,7 +478,7 @@ final class SettingsDialog extends JDialog {
         Config cfg = Config.forBaseDir(baseDir);
         // The saved startup default, which is the base directory in use when
         // none has been saved yet.
-        savedBaseDir = BaseDir.load(baseDir).toString();
+        savedBaseDir = Config.savedBaseDir(baseDir).toString();
         savedPhotoDir = cfg.mtpGlobPattern;
         savedSeriesMode = cfg.seriesRecognition;
         baseDirField.setText(savedBaseDir);
@@ -509,6 +509,13 @@ final class SettingsDialog extends JDialog {
         boolean modeChanged = mode != savedSeriesMode;
 
         Map<String, String> values = new LinkedHashMap<>();
+        if (baseDirChanged) {
+            // A path that does not name a directory clears the key rather than
+            // being saved: the app would open on it next launch and every
+            // derived path would be broken.
+            Path resolved = baseDirOrNull(typedBaseDir);
+            values.put("BASE_DIR", resolved == null ? null : resolved.toString());
+        }
         if (photoDirChanged) {
             // Blank means "back to the built-in glob", which is the absence of
             // the key — not an empty value that would match no device at all.
@@ -532,11 +539,7 @@ final class SettingsDialog extends JDialog {
                     I18n.t("Settings"), JOptionPane.ERROR_MESSAGE);
             return null;
         }
-        Path newBaseDir = null;
-        if (baseDirChanged) {
-            newBaseDir = baseDirOrNull(typedBaseDir);
-            BaseDir.save(newBaseDir); // null clears it: back to the working directory
-        }
+        Path newBaseDir = baseDirChanged ? baseDirOrNull(typedBaseDir) : null;
         loadPhotoSettings();
         // Report the *effective* values, not the typed ones: an environment
         // variable outranks the settings file, so what was asked for is not

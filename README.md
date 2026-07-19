@@ -120,8 +120,9 @@ selected offer on the right.
     stays English).
   - **Photos** — the defaults the main window starts from: the **base
     directory** (so launching from a desktop shortcut lands in the right place
-    rather than in your home directory), the **photo directory**, and the
-    **series recognition** mode — useful if you mostly work in one mode and
+    rather than in your home directory — saved as `BASE_DIR`, and note that a
+    directory passed on the command line still wins over it), the **photo
+    directory**, and the **series recognition** mode — useful if you mostly work in one mode and
     would rather not re-pick it on every launch.
   - **OpenAI API** — what the Describe step talks to: the **API key** (masked;
     with a link to OpenAI's key page if you don't have one yet), the **model**,
@@ -376,7 +377,10 @@ build time. To add a launcher to the application menu and Desktop:
 This installs `~/.local/share/applications/allegro-helper.desktop` (plus a copy
 on the Desktop) and the icon under the hicolor theme. The launcher sets
 `StartupWMClass=AllegroHelper`, which the app advertises as its X11 WM class, so
-GNOME shows this icon for the running window too.
+GNOME shows this icon for the running window too. It passes **no** base
+directory, so the one saved in File > Settings > Photos applies; re-run this
+script if you installed a launcher from an earlier version, which pinned the
+repo path and quietly overrode that setting.
 
 ### Headless / scripting
 
@@ -399,7 +403,7 @@ The base directory (chosen at the top of the window, or in File > Settings >
 Photos, which remembers it for next launch) determines `offers.csv`,
 `raw_photos/` and `offers/`. These environment variables are honored, from the
 environment or either `.env`:
-`CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
+`BASE_DIR`, `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
 `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION`
 (`auto` | `single` | `subfolders`, the CLI equivalent of the series
 recognition dropdown), `BRIGHTNESS_STRENGTH` and `CONTRAST_STRENGTH` (the CLI

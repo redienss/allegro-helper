@@ -131,6 +131,46 @@ class GlobalSettingsTest {
     }
 
     @Test
+    void theSavedBaseDirectoryComesFromTheSettingsFile(@TempDir Path tmp) throws IOException {
+        Path config = redirect(tmp);
+        Path saved = Files.createDirectories(tmp.resolve("olx"));
+        writeEnv(config.resolve(".env"), "BASE_DIR=" + saved + "\n");
+
+        assertEquals(saved, Config.savedBaseDir(tmp.resolve("fallback")));
+    }
+
+    @Test
+    void savingTheBaseDirectoryWritesItWhereTheUserCanSeeIt(@TempDir Path tmp) throws IOException {
+        // It used to go to java.util.prefs, so a user who looked in the
+        // settings file — reasonably — found no trace of what they had saved.
+        Path config = redirect(tmp);
+        Path saved = Files.createDirectories(tmp.resolve("olx"));
+
+        Config.updateDotenv(Map.of("BASE_DIR", saved.toString()));
+
+        assertTrue(Files.readString(config.resolve(".env")).contains("BASE_DIR=" + saved));
+        assertEquals(saved, Config.savedBaseDir(tmp.resolve("fallback")));
+    }
+
+    @Test
+    void aSavedBaseDirectoryThatNoLongerExistsFallsBack(@TempDir Path tmp) throws IOException {
+        // Renamed, or on a drive that is not mounted: opening there would leave
+        // every derived path broken.
+        Path config = redirect(tmp);
+        writeEnv(config.resolve(".env"), "BASE_DIR=" + tmp.resolve("gone") + "\n");
+
+        assertEquals(tmp.resolve("fallback"), Config.savedBaseDir(tmp.resolve("fallback")));
+    }
+
+    @Test
+    void noSavedBaseDirectoryMeansTheFallback(@TempDir Path tmp) throws IOException {
+        Path config = redirect(tmp);
+        writeEnv(config.resolve(".env"), "OPENAI_MODEL=gpt-4o\n");
+
+        assertEquals(tmp.resolve("fallback"), Config.savedBaseDir(tmp.resolve("fallback")));
+    }
+
+    @Test
     void migrationSeedsTheGlobalFileFromTheBaseDirectory(@TempDir Path tmp) throws IOException {
         Path config = redirect(tmp);
         Path base = tmp.resolve("work");

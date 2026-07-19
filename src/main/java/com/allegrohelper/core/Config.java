@@ -150,6 +150,37 @@ public final class Config {
     }
 
     /**
+     * The base directory saved in File &gt; Settings, or {@code fallback} when
+     * none is saved or the saved one no longer exists — a directory since
+     * renamed, or on a drive that is not mounted, must not strand the user
+     * somewhere every derived path is broken.
+     *
+     * <p>It lives in the settings file like everything else. It could not,
+     * while settings lived in the base directory: a file found by way of the
+     * base directory cannot say what the base directory is. Once they moved to
+     * {@link #globalEnvPath()} that knot came undone, and keeping it in
+     * {@link java.util.prefs.Preferences} instead would only have meant one
+     * setting the user cannot see next to the others.
+     *
+     * <p>An explicit command-line argument still outranks this: {@code
+     * allegro-helper /some/dir} has to mean that directory.
+     */
+    public static Path savedBaseDir(Path fallback) {
+        Map<String, String> env = new HashMap<>(loadDotenv(globalEnvPath()));
+        env.putAll(System.getenv());
+        String saved = env.get("BASE_DIR");
+        if (saved == null || saved.isBlank()) {
+            return fallback;
+        }
+        try {
+            Path path = Path.of(saved);
+            return Files.isDirectory(path) ? path : fallback;
+        } catch (java.nio.file.InvalidPathException e) {
+            return fallback;
+        }
+    }
+
+    /**
      * Seeds the global settings from a base directory's {@code .env} the first
      * time, so an existing install keeps its API key and prompts without the
      * user re-entering them.

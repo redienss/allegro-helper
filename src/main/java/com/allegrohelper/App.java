@@ -3,7 +3,6 @@ package com.allegrohelper;
 import com.allegrohelper.cli.Cli;
 import com.allegrohelper.ui.Language;
 import com.allegrohelper.core.Config;
-import com.allegrohelper.ui.BaseDir;
 import com.allegrohelper.ui.MainWindow;
 import com.allegrohelper.ui.Theme;
 
@@ -55,7 +54,7 @@ public final class App {
         // File > Settings > Photos, falling back to the working directory.
         Path baseDir = args.length > 0
                 ? Path.of(args[0])
-                : BaseDir.load(Path.of(System.getProperty("user.dir")));
+                : Config.savedBaseDir(Path.of(System.getProperty("user.dir")));
         // First run after settings moved out of the working directory: seed them
         // from the base directory's .env so an existing install keeps its API
         // key and prompts. Copies, never moves — see Config.migrateLegacyDotenv.
