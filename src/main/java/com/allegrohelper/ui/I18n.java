@@ -119,6 +119,11 @@ final class I18n {
         put("Auto-crop", "Kadrowanie");
         put("Describe", "Opisz"); // not "Opis" — that's the form tab's Description label
         put("Running…", "Działa…");
+        put("Import & Match", "Importuj i dopasuj");
+        put("Run only Import and Match, to get the photos into the offer dirs "
+                        + "so Photos (Input) and Retouch Preview have something to show.",
+                "Uruchamia tylko Import i Dopasowanie, aby zdjęcia trafiły do katalogów ofert "
+                        + "i zakładki Zdjęcia (wejście) oraz Podgląd retuszu miały co pokazać.");
         put("Delete Output Files", "Usuń pliki wynikowe");
         put("Clean & Restart", "Wyczyść i uruchom ponownie");
         put("Select at least one workflow step.", "Wybierz co najmniej jeden krok przebiegu pracy.");

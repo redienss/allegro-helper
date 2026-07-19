@@ -165,6 +165,7 @@ public final class MainWindow {
     private final JCheckBox ocrBox = new JCheckBox("OCR", true);
     private final JCheckBox describeBox = new JCheckBox("Describe", true);
 
+    private final JButton importMatchButton = new JButton("Import & Match");
     private final JButton startButton = new JButton("Start");
     private final JButton deleteOutputsButton = new JButton("Delete Output Files");
     private final JButton cleanRestartButton = new JButton("Clean & Restart");
@@ -698,6 +699,17 @@ public final class MainWindow {
         // reach for Start cannot land on them.
         JPanel startRow = new JPanel(new BorderLayout());
         JPanel startSide = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        // Import & Match sits before Start because it is the first thing a fresh
+        // install needs: until the photos have been imported and matched into
+        // offers/, Photos (Input) and Retouch Preview have nothing to show, and
+        // the only way to get there used to be to untick six boxes, press Start,
+        // and tick them again. It ignores the checkboxes by design.
+        importMatchButton.setToolTipText(I18n.t(
+                "Run only Import and Match, to get the photos into the offer dirs "
+                        + "so Photos (Input) and Retouch Preview have something to show."));
+        importMatchButton.addActionListener(e ->
+                runWorkflow(List.of(Workflow.Step.IMPORT, Workflow.Step.MATCH)));
+        startSide.add(importMatchButton);
         startButton.addActionListener(e -> startWorkflow());
         startSide.add(startButton);
         JPanel cleanSide = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
@@ -1855,22 +1867,32 @@ public final class MainWindow {
         return false; // Cancel, Esc, or the dialog's close button
     }
 
-    /**
-     * Runs the ticked steps on a background thread, streaming the log and
-     * progress back to the EDT. Saves the grid to offers.csv first when the
-     * match step is among them — that step reads the file, not the grid.
-     */
+    /** Runs the ticked steps. @see #runWorkflow(List) */
     private void startWorkflow() {
         if (running) {
             return;
         }
-        stopCellEditing();
-
         List<Workflow.Step> steps = selectedSteps();
         if (steps.isEmpty()) {
             error(I18n.t("Select at least one workflow step."));
             return;
         }
+        runWorkflow(steps);
+    }
+
+    /**
+     * Runs the given steps on a background thread, streaming the log and
+     * progress back to the EDT. Saves the grid to offers.csv first when the
+     * match step is among them — that step reads the file, not the grid.
+     *
+     * <p>The steps are a parameter rather than always {@link #selectedSteps()}
+     * because Import &amp; Match runs a fixed pair regardless of the checkboxes.
+     */
+    private void runWorkflow(List<Workflow.Step> steps) {
+        if (running) {
+            return;
+        }
+        stopCellEditing();
 
         // A run reloads the editors from disk when it finishes, so unsaved text
         // would be lost without a word. Ask before that happens, not after.
@@ -1975,6 +1997,7 @@ public final class MainWindow {
     /** Marks a run as (not) in progress, disabling Start and the destructive buttons meanwhile. */
     private void setRunning(boolean value) {
         running = value;
+        importMatchButton.setEnabled(!value);
         startButton.setEnabled(!value);
         startButton.setText(value ? I18n.t("Running…") : "Start"); // "Start" reads the same in Polish
         deleteOutputsButton.setEnabled(!value);
