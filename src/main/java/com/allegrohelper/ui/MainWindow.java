@@ -1468,26 +1468,9 @@ public final class MainWindow {
         }
         int tab = rightTabs.getSelectedIndex();
         Path dir = tab == TAB_PHOTOS_OUTPUT || tab == TAB_ALLEGRO_FORM
-                ? outputPhotoDir(currentOfferDir)
+                ? OfferFiles.outputPhotoDir(currentOfferDir)
                 : currentOfferDir.resolve("photos");
         return Files.isDirectory(dir) ? dir : null;
-    }
-
-    /**
-     * The final photos of an offer: the output of the latest pipeline step that
-     * has run — cropped, else contrasted, else brightened, else white-balanced,
-     * else the pre-split {@code retouched/} kept for offers processed before the
-     * retouch step was split up.
-     */
-    private static Path outputPhotoDir(Path offerDir) {
-        for (String dirName : new String[] {
-                "cropped", "contrasted", "brightened", "white_balanced", "retouched"}) {
-            Path dir = offerDir.resolve(dirName);
-            if (Files.isDirectory(dir)) {
-                return dir;
-            }
-        }
-        return offerDir.resolve("contrasted"); // nonexistent: the gallery shows "Not available yet."
     }
 
     /** Whether the active tab is a text editor (rather than a gallery or the form). */
@@ -1712,11 +1695,11 @@ public final class MainWindow {
         Path csvParent = cfg.csvPath.getParent();
         moreDataTarget = (csvParent == null ? Path.of(".") : csvParent)
                 .resolve("more_data_" + rowNumber + ".txt");
-        moreDataArea.setText(readIfExists(moreDataTarget));
+        moreDataArea.setText(OfferFiles.readIfExists(moreDataTarget));
         moreDataArea.setCaretPosition(0);
 
         // Description (Output) + galleries live in the resolved offer directory.
-        Path offerDir = resolveOfferDir(cfg, name, modelRow);
+        Path offerDir = OfferFiles.resolveOfferDir(cfg, name, modelRow);
         if (!Objects.equals(offerDir, currentOfferDir)) {
             previewPhotoIndex = 0; // another offer, another series: back to its first photo
         }
@@ -1726,7 +1709,7 @@ public final class MainWindow {
             ocrTarget = null;
             detailsArea.setText("");
             ocrArea.setText("");
-            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>" + I18n.t(
+            detailsHeader.setText("<html><b>" + OfferFiles.escapeHtml(name) + "</b><br>" + I18n.t(
                     "row {0} — <i>not matched yet (photos and Description output appear after Match)</i>",
                     rowNumber) + "</html>");
             photosInputGallery.message(I18n.t("Not matched yet — run Match."));
@@ -1735,15 +1718,15 @@ public final class MainWindow {
             formDescriptionArea.setText("");
         } else {
             descriptionTarget = offerDir.resolve("description.txt");
-            detailsArea.setText(readIfExists(descriptionTarget));
+            detailsArea.setText(OfferFiles.readIfExists(descriptionTarget));
             ocrTarget = offerDir.resolve("ocr.txt");
-            ocrArea.setText(readIfExists(ocrTarget));
-            detailsHeader.setText("<html><b>" + escapeHtml(name) + "</b><br>" + I18n.t("row {0} — {1}",
-                    rowNumber, escapeHtml(offerDir.getFileName().toString())) + "</html>");
+            ocrArea.setText(OfferFiles.readIfExists(ocrTarget));
+            detailsHeader.setText("<html><b>" + OfferFiles.escapeHtml(name) + "</b><br>" + I18n.t("row {0} — {1}",
+                    rowNumber, OfferFiles.escapeHtml(offerDir.getFileName().toString())) + "</html>");
             photosInputGallery.show(offerDir.resolve("photos"));
-            photosOutputGallery.show(outputPhotoDir(offerDir));
-            formGallery.show(outputPhotoDir(offerDir));
-            formDescriptionArea.setText(readIfExists(descriptionTarget));
+            photosOutputGallery.show(OfferFiles.outputPhotoDir(offerDir));
+            formGallery.show(OfferFiles.outputPhotoDir(offerDir));
+            formDescriptionArea.setText(OfferFiles.readIfExists(descriptionTarget));
         }
         formTitleField.setText(name);
         formTitleField.setCaretPosition(0);
@@ -1863,73 +1846,6 @@ public final class MainWindow {
             return;
         }
         activeEditorPane().setText("");
-    }
-
-    /**
-     * A file's contents, or an empty string when it does not exist yet — an
-     * offer that has not reached a step simply shows an empty editor. A read
-     * error is returned as the text, so it is visible rather than silent.
-     */
-    private static String readIfExists(Path file) {
-        if (file != null && Files.isRegularFile(file)) {
-            try {
-                return Files.readString(file, StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                return "Could not read " + file + ": " + e.getMessage();
-            }
-        }
-        return "";
-    }
-
-    /**
-     * Finds the offer directory for a grid row: first by matching the
-     * {@code name} stored in each offer's data.json, then falling back to the
-     * row's position among the sorted offer directories (which is the order the
-     * match step assigns them).
-     */
-    private Path resolveOfferDir(Config cfg, String name, int index) {
-        if (!Files.isDirectory(cfg.offersDir)) {
-            return null;
-        }
-        List<Path> dirs = new ArrayList<>();
-        try (var stream = Files.list(cfg.offersDir)) {
-            stream.filter(Files::isDirectory).forEach(dirs::add);
-        } catch (IOException e) {
-            return null;
-        }
-        dirs.sort(Comparator.comparing(p -> p.getFileName().toString()));
-
-        String target = name == null ? "" : name.strip();
-        if (!target.isEmpty()) {
-            for (Path dir : dirs) {
-                Path dataJson = dir.resolve("data.json");
-                if (!Files.isRegularFile(dataJson)) {
-                    continue;
-                }
-                try {
-                    Map<String, Object> data = Json.parseObject(
-                            Files.readString(dataJson, StandardCharsets.UTF_8));
-                    Object nm = data.get("name");
-                    if (nm != null && nm.toString().strip().equals(target)) {
-                        return dir;
-                    }
-                } catch (Exception ignored) {
-                    // Skip unreadable/invalid data.json.
-                }
-            }
-        }
-        return index >= 0 && index < dirs.size() ? dirs.get(index) : null;
-    }
-
-    /** Escapes text for the HTML-rendered details header, so an offer name cannot break its markup. */
-    private static String escapeHtml(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-    }
-
-    /** Whether the file name ends in {@code .jpg}/{@code .jpeg} (case-insensitive). */
-    private static boolean isJpeg(Path p) {
-        String n = p.getFileName().toString().toLowerCase();
-        return n.endsWith(".jpg") || n.endsWith(".jpeg");
     }
 
     /**
@@ -2579,7 +2495,7 @@ public final class MainWindow {
             }
             List<Path> files;
             try (var stream = Files.list(dir)) {
-                files = stream.filter(MainWindow::isJpeg)
+                files = stream.filter(OfferFiles::isJpeg)
                         .sorted(Comparator.comparing(p -> p.getFileName().toString()))
                         .toList();
             } catch (IOException e) {
@@ -2793,7 +2709,7 @@ public final class MainWindow {
     private void choosePhotoDir() {
         // The field usually holds the MTP glob, which no chooser can open;
         // start from the deepest existing prefix of it instead.
-        Path start = deepestExistingDir(photoDirField.getText().strip());
+        Path start = OfferFiles.deepestExistingDir(photoDirField.getText().strip());
         JFileChooser chooser = new JFileChooser(start == null ? null : start.toString());
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
@@ -2809,29 +2725,6 @@ public final class MainWindow {
         Config cfg = Config.forBaseDir(Path.of(baseDirField.getText().strip()));
         photoDirField.setText(cfg.mtpGlobPattern);
         refreshPhotos();
-    }
-
-    /** The deepest existing directory along the given path, stopping at any glob segment. */
-    private static Path deepestExistingDir(String pattern) {
-        if (!pattern.startsWith("/")) {
-            return null;
-        }
-        Path result = null;
-        Path current = Path.of("/");
-        for (String segment : pattern.split("/")) {
-            if (segment.isEmpty()) {
-                continue;
-            }
-            if (segment.indexOf('*') >= 0 || segment.indexOf('?') >= 0) {
-                break;
-            }
-            current = current.resolve(segment);
-            if (!Files.isDirectory(current)) {
-                break;
-            }
-            result = current;
-        }
-        return result;
     }
 
     /** Loads the base directory's offers.csv into the grid; a missing file just leaves it empty. */
@@ -2989,7 +2882,7 @@ public final class MainWindow {
             try {
                 try (var stream = Files.list(offersDir)) {
                     for (Path entry : stream.toList()) {
-                        deleteRecursively(entry);
+                        OfferFiles.deleteRecursively(entry);
                         deleted++;
                     }
                 }
@@ -3005,15 +2898,6 @@ public final class MainWindow {
 
         if (restart) {
             startWorkflow();
-        }
-    }
-
-    /** Deletes a tree depth-first. Unlike the OCR step's, failures here are surfaced, not ignored. */
-    private static void deleteRecursively(Path root) throws IOException {
-        try (var stream = Files.walk(root)) {
-            for (Path p : stream.sorted(Comparator.reverseOrder()).toList()) {
-                Files.delete(p);
-            }
         }
     }
 
