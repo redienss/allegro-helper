@@ -3018,11 +3018,6 @@ public final class MainWindow {
     }
 
     /**
-     * Runs the ticked steps on a background thread, streaming the log and
-     * progress back to the EDT. Saves the grid to offers.csv first when the
-     * match step is among them — that step reads the file, not the grid.
-     */
-    /**
      * Offers to save, discard, or cancel when a run is about to reload editor
      * tabs holding unsaved edits. Returns whether the run may proceed: false on
      * Cancel, and also when saving was asked for but failed — silently running
@@ -3072,6 +3067,11 @@ public final class MainWindow {
         return false; // Cancel, Esc, or the dialog's close button
     }
 
+    /**
+     * Runs the ticked steps on a background thread, streaming the log and
+     * progress back to the EDT. Saves the grid to offers.csv first when the
+     * match step is among them — that step reads the file, not the grid.
+     */
     private void startWorkflow() {
         if (running) {
             return;
