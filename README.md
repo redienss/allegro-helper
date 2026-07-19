@@ -297,9 +297,12 @@ characters. Without a color emoji font the text falls back to the normal glyphs
 
 ## Requirements
 
-- A JDK (Java 17+; developed and tested on Java 25). No Maven/Gradle and **no
-  external dependencies** — only the JDK standard library (Swing,
-  `java.net.http`, `javax.imageio`).
+- A JDK (Java 21+; developed and tested on Java 25). The app has **no runtime
+  dependencies** — only the JDK standard library (Swing, `java.net.http`,
+  `javax.imageio`). Gradle builds it and runs the tests; its one declared
+  dependency, JUnit, is test-scope and never ships with the application.
+  Gradle itself does not need to be installed — the wrapper (`./gradlew`)
+  fetches it on first use, so the first build needs network access.
 - `gio` (GVFS) to read photos from a phone connected via MTP (mounted at
   `/run/user/<uid>/gvfs/mtp:host=...`).
 - The `tesseract` CLI for the *OCR* step
@@ -312,12 +315,38 @@ characters. Without a color emoji font the text falls back to the normal glyphs
 ## Build & run
 
 ```bash
-./build.sh        # compiles to build/classes (and build/allegro-helper.jar if the `jar` tool is present)
+./gradlew build   # compile + run the tests -> build/libs/allegro-helper.jar
+./gradlew jar     # compile only, skipping the tests
 ./run.sh          # launches the desktop UI
 ```
 
-`build.sh` finds `javac` on `PATH`, then `$JAVA_HOME`, then common JVM install
-locations; override with `JAVAC=/path/to/javac ./build.sh` if needed.
+`./build.sh` still works and is simply a wrapper for `./gradlew build`, kept so
+the old command does not break. `./run.sh` builds first if the jar is missing,
+then launches the app directly (no Gradle in the launch path, so startup stays
+instant), passing any arguments through.
+
+Gradle needs to download its distribution and JUnit the first time; after that
+`--offline` works.
+
+## Tests
+
+The project uses **JUnit 5**, run by Gradle:
+
+```bash
+./gradlew test                       # the whole suite
+./gradlew test --tests '*Clustering*' # one class, or any pattern
+./gradlew test --rerun-tasks         # ignore Gradle's up-to-date check
+```
+
+`./gradlew build` runs them too, so a broken test fails the build. An HTML
+report is written to `build/reports/tests/test/index.html`.
+
+The suite covers the pipeline's pure logic — series grouping (`ClusteringTest`,
+`SeriesRecognitionTest`), the retouching maths (`RetouchTest`) and EXIF
+orientation (`ExifTest`) — which is the code most likely to break unnoticed
+under a refactor. It is deliberately headless and touches only temporary
+directories: **no test reads your real data, opens a window, calls OpenAI, or
+drives Allegro.** Those paths are still verified by hand (see `CLAUDE.md`).
 
 ### Desktop shortcut
 

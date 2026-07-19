@@ -1,0 +1,78 @@
+// Build for Allegro Helper.
+//
+// The app itself still has *zero runtime dependencies* - JDK standard library
+// only. Gradle is here for the test suite and for a reproducible build; the
+// only declared dependency is JUnit, and it is test-scope, so nothing ships
+// with the application. Keep it that way: `util/Json` and `util/Csv` are
+// hand-rolled precisely to avoid a runtime library.
+
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.allegrohelper'
+version = '1.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    // 21, not 17: util/Json switches over type patterns, which is Java 21.
+    // Building on a newer JDK is fine - `release` pins the bytecode either way.
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+// The logo and app icon live in logo/ and icons/ so they keep a single source
+// of truth on disk; copy them next to the UI classes so getResource(...) finds
+// them regardless of the working directory. Deliberately NOT duplicated under
+// src/main/resources.
+processResources {
+    from('logo/logo.png') {
+        into 'com/allegrohelper/ui'
+        rename { 'logo.png' }
+    }
+    from('icons/AllegroHelper-icon-full-logo-1024.png') {
+        into 'com/allegrohelper/ui'
+        rename { 'app-icon.png' }
+    }
+}
+
+application {
+    mainClass = 'com.allegrohelper.App'
+    // Lets the app set its X11 WM_CLASS, so a desktop launcher's
+    // StartupWMClass matches the running window. Harmless elsewhere.
+    applicationDefaultJvmArgs = ['--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED']
+}
+
+jar {
+    // A fixed name, so run.sh and any desktop launcher can point at one path.
+    archiveFileName = 'allegro-helper.jar'
+    manifest {
+        attributes 'Main-Class': 'com.allegrohelper.App'
+    }
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat = 'full'
+    }
+    // The suite is headless: no test may open a window. Anything needing a
+    // display belongs in a throwaway probe, not here.
+    systemProperty 'java.awt.headless', 'true'
+}

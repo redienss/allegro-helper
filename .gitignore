@@ -1,5 +1,8 @@
 .env
 build/
+# Gradle's own caches. The wrapper (gradlew, gradle/wrapper/) IS committed, so
+# a fresh clone can build without Gradle installed.
+.gradle/
 # Eclipse IDE project files
 .classpath
 .project

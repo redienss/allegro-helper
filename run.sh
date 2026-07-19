@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Launch Allegro Helper. Builds first if needed. Any arguments are passed
 # through (e.g. a base directory, or: --cli <import|match|retouch|describe|all>).
+#
+# Deliberately execs java directly rather than `gradlew run`: it keeps startup
+# instant once built (no Gradle daemon in the launch path) and passes arguments
+# through verbatim, which `--args="..."` does not do for paths with spaces.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -12,19 +16,15 @@ if [[ -z "$JAVA" ]]; then
   exit 1
 fi
 
-JAR_PATH="build/allegro-helper.jar"
-CLASSES_DIR="build/classes"
+JAR_PATH="build/libs/allegro-helper.jar"
 
-if [[ ! -f "$JAR_PATH" && ! -d "$CLASSES_DIR" ]]; then
-  ./build.sh
+# Skip the tests on this path: launching the app should not wait on them.
+if [[ ! -f "$JAR_PATH" ]]; then
+  ./gradlew jar --console=plain
 fi
 
 # Allow the app to set its X11 WM_CLASS (so a desktop launcher's StartupWMClass
 # matches the running window). Harmless on non-X11 platforms.
 ADD_OPENS="--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"
 
-if [[ -f "$JAR_PATH" ]]; then
-  exec "$JAVA" $ADD_OPENS -jar "$JAR_PATH" "$@"
-else
-  exec "$JAVA" $ADD_OPENS -cp "$CLASSES_DIR" com.allegrohelper.App "$@"
-fi
+exec "$JAVA" $ADD_OPENS -jar "$JAR_PATH" "$@"

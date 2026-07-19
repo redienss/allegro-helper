@@ -5,25 +5,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & run
 
 ```bash
-./build.sh                 # javac -> build/classes (+ build/allegro-helper.jar if the `jar` tool exists)
+./gradlew build            # compile + test -> build/libs/allegro-helper.jar
+./gradlew jar              # compile only, no tests
+./gradlew test             # tests only
 ./run.sh                   # desktop UI
 ./run.sh --cli all         # headless: import | match | whitebalance | brightness | contrast | autocrop | ocr | describe | all
 ./run.sh --cli retouch /path/to/base-dir   # retouch = alias for whitebalance + brightness + contrast
 ```
 
-`build.sh` resolves `javac` via `$JAVAC` → `PATH` → `$JAVA_HOME/bin` → `/usr/lib/jvm/*`, `/opt/*/bin`, `/snap/*/*/jbr/bin`. Override with `JAVAC=/path/to/javac ./build.sh`. If `jar` is missing (as on this machine), the jar step is skipped and `run.sh` runs from `build/classes` — that is a supported path, not a failure.
+Gradle is the build. `build.sh` survives only as a wrapper for `./gradlew build`; `run.sh` builds the jar if it is missing and then execs `java -jar` directly — deliberately not `gradlew run`, so launching stays instant and arguments pass through verbatim. The wrapper (`gradlew`, `gradle/wrapper/`) is committed, so a clone builds without Gradle installed; the first build needs network for the distribution and JUnit.
 
-`build.sh` also copies `logo/logo.png` and `icons/AllegroHelper-icon-full-logo-1024.png` onto the classpath as `com/allegrohelper/ui/{logo,app-icon}.png`. The images have one source of truth on disk; don't add duplicates under `src/main/resources`.
+`processResources` copies `logo/logo.png` and `icons/AllegroHelper-icon-full-logo-1024.png` onto the classpath as `com/allegrohelper/ui/{logo,app-icon}.png`. The images have one source of truth on disk; don't add duplicates under `src/main/resources`.
+
+**The real minimum is Java 21**, not 17 — `util/Json` switches over type patterns. `options.release = 21` pins that regardless of the JDK building it.
 
 ## Testing
 
-**There is no test framework, no test sources, and no test runner.** Don't look for one or assume `./build.sh` runs tests. Verification is manual, and these are the techniques that work here:
+The project uses **JUnit 5**, run by Gradle (`./gradlew test`, or `--tests '*Clustering*'` for one class). `./gradlew build` runs the suite, so a broken test fails the build; the HTML report lands in `build/reports/tests/test/index.html`.
 
-- **Compile check**: `./build.sh` (fast, no deps to resolve).
+What the suite covers is the pipeline's **pure logic**: `ClusteringTest` (filename timestamps, the mtime fallback, gap splitting), `SeriesRecognitionTest` (the three grouping modes), `RetouchTest` (PIL's brightness/contrast semantics, clamping, gray-world) and `ExifTest` (the eight orientations). New tests belong there when the behavior is deterministic and file-based.
+
+**The suite is deliberately headless and hermetic — it uses `@TempDir` only.** A test must never read the user's real data, open a window, call OpenAI, or drive Allegro. Those paths stay manually verified:
+
+- **Compile check**: `./gradlew jar` (skips the tests).
 - **Pipeline behavior**: run `--cli <step>` against a **copy** of a base directory, never the live one.
 - **Never make a live paid OpenAI call.** To exercise the `describe` step's plumbing, point it at a dead endpoint: `OPENAI_BASE_URL=http://127.0.0.1:9 OPENAI_API_KEY=dummy ./run.sh --cli describe <dir>`.
 - **Never drive the live Allegro site.** To exercise `AllegroForm`/`Cdp`, pre-launch a headless Chrome on a scratch profile (`google-chrome --headless=new --user-data-dir=<scratch> --remote-debugging-port=0 --no-first-run about:blank`) — `Cdp.ensureChrome` reuses it via `DevToolsActivePort` — and fill a `file://` URL of a saved copy of the form (the user keeps one in `allegro-form/`, gitignored). Verify with `eval` readbacks of the field values.
-- **Swing UI**: `java.awt.Robot` hangs under Wayland. Render offscreen instead — `frame.getRootPane().printAll(g2d)` after `addNotify()` + `validate()` — and assert on the component tree. `MainWindow` exposes `getFrame()` and `selectOfferRow(int)` for exactly this. Write throwaway probes under `$CLAUDE_JOB_DIR/tmp`, not in the repo.
+- **Swing UI**: `java.awt.Robot` hangs under Wayland. Render offscreen instead — `frame.getRootPane().printAll(g2d)` after `addNotify()` + `validate()` — and assert on the component tree. `MainWindow` exposes `getFrame()` and `selectOfferRow(int)` for exactly this. Write throwaway probes in a scratch dir, not in the repo — UI checks stay out of the JUnit suite, which must not open windows.
 
 ## Working with the real data (read this before running anything)
 
@@ -36,7 +44,7 @@ The repo root doubles as the default base directory, and it holds the user's rea
 
 ## Architecture
 
-Java 25, Swing, **zero external dependencies** — JDK standard library only (Swing, `java.net.http`, `javax.imageio`). No Maven/Gradle. Keep it that way: `util/Json` and `util/Csv` are hand-rolled precisely to avoid a dependency, so reach for them rather than adding a library.
+Java 21+ (developed on 25), Swing, **zero runtime dependencies** — JDK standard library only (Swing, `java.net.http`, `javax.imageio`). Keep it that way: `util/Json` and `util/Csv` are hand-rolled precisely to avoid a dependency, so reach for them rather than adding a library. The rule is about what ships: Gradle's one declared dependency is JUnit, and it is `testImplementation`, so it never reaches the app. **Do not add a runtime dependency** — a new `implementation` line is a design change, not a convenience.
 
 ### The pipeline
 
