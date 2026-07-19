@@ -28,7 +28,12 @@ marketplace.
    recognized is selectable in the Photos section (see below): by the
    timestamps in the filenames (the default, made for the turntable workflow),
    the whole directory as one item, or one item per subfolder.
-4. **White balance** — automatic gray-world white balance.
+4. **White balance** — automatic gray-world white balance, estimated **once per
+   series** from the near-neutral pixels of all its photos (the backdrop and the
+   table, not the item's own colours). Doing it per photo let a single strongly
+   coloured frame — a close-up of green packaging, say — over-correct itself and
+   come out magenta; reading only the neutral pixels keeps a coloured item's real
+   colour while still removing a cast from the light.
 5. **Brightness** — brightness by a strength you set on the Retouch Preview
    tab's slider (`1.00x` leaves the photo as it is, less darkens it, more
    brightens it; the default is `1.00x`, i.e. off until you dial it).

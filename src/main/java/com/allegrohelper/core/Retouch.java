@@ -2,8 +2,11 @@ package com.allegrohelper.core;
 
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.ImageOutputStream;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -11,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -34,6 +38,12 @@ import java.util.List;
  * <p>Brightness runs <em>before</em> contrast, the order a darkroom works in:
  * contrast pivots on the photo's mean luminance, so brightening afterwards would
  * shift the pivot the user just judged the contrast against.
+ *
+ * <p>White balance is estimated <em>once per series</em>, from its near-neutral
+ * pixels — see {@link #estimateWhiteBalance}. Both restrictions were learned from
+ * a real series: per-photo estimation turned a green close-up's white backdrop
+ * magenta, and estimating from every pixel instead of the neutral ones fixed that
+ * frame by tinting three good ones pink.
  */
 public final class Retouch {
 
@@ -80,6 +90,72 @@ public final class Retouch {
     public static final double DEFAULT_BRIGHTNESS = NEUTRAL_STRENGTH;
 
     private static final float JPEG_QUALITY = 0.90f;
+
+    /**
+     * How far white balance may push one channel. Gray-world assumes the average
+     * scene is neutral; for a series that genuinely is one strong color — a green
+     * box photographed from twenty angles — the assumption is simply false, and
+     * an unbounded correction would "fix" the object's real color away to gray.
+     * A normal series lands far inside this (a real one measured 0.995/1.000/1.005),
+     * so the limit only bites once the estimate has stopped being meaningful.
+     */
+    private static final double MAX_WB_GAIN = 1.25;
+
+    /** Width the white-balance estimate decodes to; channel means need no more. */
+    private static final int WB_SAMPLE_WIDTH = 400;
+
+    /**
+     * How colorful a pixel may be and still count as evidence about the light,
+     * as {@code (max - min) / max}. At 0.15 a real turntable series kept about
+     * three quarters of its pixels — the backdrop, the table and the item's
+     * neutral parts — while excluding a green packaging front.
+     */
+    private static final double WB_MAX_SATURATION = 0.15;
+
+    /** Below this the channel ratios are mostly noise. */
+    private static final int WB_MIN_LEVEL = 30;
+
+    /** Above this a channel may already have clipped, losing the ratio. */
+    private static final int WB_MAX_LEVEL = 245;
+
+    /**
+     * How much of the series must be near-neutral before the estimate is
+     * trusted. Under this there is no backdrop to read the light off — a frame
+     * filled edge to edge with one saturated color — and guessing would be
+     * worse than leaving the photos alone.
+     */
+    private static final double WB_MIN_NEUTRAL_FRACTION = 0.02;
+
+    /**
+     * The per-channel multipliers a white balance applies, estimated once for a
+     * whole series.
+     *
+     * <p>Estimating them per photo — as this step used to — is a mistake of
+     * principle, not just of robustness: a series is one item under one lamp, so
+     * the illuminant is a <em>constant</em>, and re-estimating it per frame both
+     * gives each frame of the same item a slightly different cast and lets a
+     * single unusual frame wreck itself. A close-up of green packaging measured
+     * gains of 1.403/0.777/1.000 on its own, turning the white backdrop magenta
+     * and clipping 12% of the frame; estimated across its series it gets
+     * 0.995/1.000/1.005 and clips 0.2%, keeping its green.
+     */
+    public record WhiteBalance(double red, double green, double blue) {
+
+        /** Leaves the photo alone — what an empty or unreadable series falls back to. */
+        public static final WhiteBalance NEUTRAL = new WhiteBalance(1.0, 1.0, 1.0);
+
+        /** Whether these gains would visibly change a photo at 8-bit precision. */
+        public boolean isNeutral() {
+            return Math.abs(red - 1.0) < 0.002
+                    && Math.abs(green - 1.0) < 0.002
+                    && Math.abs(blue - 1.0) < 0.002;
+        }
+
+        @Override
+        public String toString() {
+            return String.format(java.util.Locale.ROOT, "%.3f/%.3f/%.3f", red, green, blue);
+        }
+    }
 
     /** Not instantiable: the class is a namespace for its static steps. */
     private Retouch() {
@@ -140,9 +216,20 @@ public final class Retouch {
             return;
         }
 
+        // One estimate for the whole series, before a single photo is written:
+        // the illuminant is the same in every frame, so estimating it per photo
+        // would give each frame a different cast and let one odd frame wreck itself.
+        WhiteBalance wb = WhiteBalance.NEUTRAL;
+        if (mode == Mode.WHITE_BALANCE) {
+            wb = estimateWhiteBalance(photos);
+            reporter.log(offerDir.getFileName() + ": white balance gains " + wb
+                    + (wb.isNeutral() ? " (already neutral)" : "")
+                    + ", from " + photos.size() + " photos.");
+        }
+
         Files.createDirectories(outputDir);
         for (Path photo : photos) {
-            writeJpeg(process(photo, mode, strength),
+            writeJpeg(process(photo, mode, strength, wb),
                     outputDir.resolve(photo.getFileName().toString()));
         }
 
@@ -175,11 +262,17 @@ public final class Retouch {
      */
     public static BufferedImage process(Path src, Mode mode, double strength)
             throws IOException {
+        return process(src, mode, strength, WhiteBalance.NEUTRAL);
+    }
+
+    /** @param wb the series' gains; see {@link #apply(BufferedImage, Mode, double, WhiteBalance)} */
+    public static BufferedImage process(Path src, Mode mode, double strength, WhiteBalance wb)
+            throws IOException {
         BufferedImage img = ImageIO.read(src.toFile());
         if (img == null) {
             throw new IOException("Could not read image " + src);
         }
-        return apply(Exif.applyOrientation(img, Exif.readOrientation(src)), mode, strength);
+        return apply(Exif.applyOrientation(img, Exif.readOrientation(src)), mode, strength, wb);
     }
 
     /**
@@ -192,13 +285,23 @@ public final class Retouch {
      *                 none and ignores it
      */
     public static BufferedImage apply(BufferedImage img, Mode mode, double strength) {
+        return apply(img, mode, strength, WhiteBalance.NEUTRAL);
+    }
+
+    /**
+     * @param wb the series' gains, used only by {@link Mode#WHITE_BALANCE}; the
+     *           other modes ignore it. Estimated by
+     *           {@link #estimateWhiteBalance} once per series, never per photo
+     */
+    public static BufferedImage apply(BufferedImage img, Mode mode, double strength,
+                                      WhiteBalance wb) {
         int w = img.getWidth();
         int h = img.getHeight();
         int n = w * h;
         int[] px = img.getRGB(0, 0, w, h, null, 0, w);
 
         switch (mode) {
-            case WHITE_BALANCE -> grayWorldWhiteBalance(px, n);
+            case WHITE_BALANCE -> applyWhiteBalance(px, wb);
             case BRIGHTNESS -> brightness(px, clampStrength(strength));
             case CONTRAST -> contrast(px, n, clampStrength(strength));
         }
@@ -242,31 +345,145 @@ public final class Retouch {
         }
     }
 
-    /** Scales each channel so its mean matches the overall gray mean. */
-    private static void grayWorldWhiteBalance(int[] px, int n) {
+    /**
+     * Estimates one white balance for a whole series: gray-world over the
+     * <em>near-neutral</em> pixels of every photo, clamped to
+     * {@link #MAX_WB_GAIN}.
+     *
+     * <p>Two restrictions, and both are load-bearing.
+     *
+     * <p><b>Across the series, not per photo.</b> The illuminant is a constant —
+     * one item, one lamp — so estimating it per frame re-estimates a constant,
+     * gives each frame of the same item a slightly different cast, and lets one
+     * unusual frame wreck itself.
+     *
+     * <p><b>Only near-neutral pixels.</b> Gray-world is usually stated as "the
+     * average scene is gray", but what it actually needs is that the
+     * <em>neutral</em> parts of the scene average to gray; a strongly colored
+     * subject is evidence about the subject, not about the light. Averaging every
+     * pixel lets one green close-up drag the whole series warm — measured on a
+     * real series, plain averaging left the three white-backdrop frames 13 levels
+     * red-over-green, a visible pink tint on what had been neutral. Restricting to
+     * low-saturation pixels dropped that to under 1 level while still fixing the
+     * green frame. It also handles the case the series average cannot: a green box
+     * shot from twenty angles is estimated from the white backdrop around it, so
+     * the box keeps its color.
+     *
+     * <p>Pixels are also required to be mid-range: near-black ones carry mostly
+     * noise in their ratios, and near-clipped ones have already lost the channel
+     * that clipped.
+     *
+     * <p>The photos are decoded heavily subsampled ({@link #WB_SAMPLE_WIDTH}); a
+     * channel mean over millions of pixels is the same number to three decimals
+     * whether every pixel or every sixteenth is counted, and it keeps this pass
+     * cheap enough to run before each offer and inside the preview.
+     *
+     * <p>Falls back to {@link WhiteBalance#NEUTRAL} rather than guessing when
+     * there is too little neutral evidence to estimate from — the same
+     * bail-conservatively rule {@link AutoCrop} follows. A photo that will not
+     * decode is skipped, so one unreadable frame cannot cost the offer its white
+     * balance.
+     */
+    public static WhiteBalance estimateWhiteBalance(List<Path> photos) {
         long sumR = 0;
         long sumG = 0;
         long sumB = 0;
-        for (int p : px) {
-            sumR += (p >> 16) & 0xFF;
-            sumG += (p >> 8) & 0xFF;
-            sumB += p & 0xFF;
+        long neutral = 0;
+        long total = 0;
+        for (Path photo : photos) {
+            try {
+                BufferedImage img = readSubsampled(photo, WB_SAMPLE_WIDTH);
+                int w = img.getWidth();
+                int h = img.getHeight();
+                int[] px = img.getRGB(0, 0, w, h, null, 0, w);
+                total += px.length;
+                for (int p : px) {
+                    int r = (p >> 16) & 0xFF;
+                    int g = (p >> 8) & 0xFF;
+                    int b = p & 0xFF;
+                    int max = Math.max(r, Math.max(g, b));
+                    int min = Math.min(r, Math.min(g, b));
+                    if (max < WB_MIN_LEVEL || max > WB_MAX_LEVEL) {
+                        continue; // too dark to be reliable, or already clipping
+                    }
+                    if ((max - min) > WB_MAX_SATURATION * max) {
+                        continue; // a colored subject, not the light
+                    }
+                    sumR += r;
+                    sumG += g;
+                    sumB += b;
+                    neutral++;
+                }
+            } catch (IOException e) {
+                // Skipped: see the javadoc.
+            }
         }
-        double mr = sumR / (double) n;
-        double mg = sumG / (double) n;
-        double mb = sumB / (double) n;
+        if (total == 0 || neutral < total * WB_MIN_NEUTRAL_FRACTION) {
+            return WhiteBalance.NEUTRAL;
+        }
+        double mr = sumR / (double) neutral;
+        double mg = sumG / (double) neutral;
+        double mb = sumB / (double) neutral;
         double gray = (mr + mg + mb) / 3.0;
-        double sr = mr > 0 ? gray / mr : 1.0;
-        double sg = mg > 0 ? gray / mg : 1.0;
-        double sb = mb > 0 ? gray / mb : 1.0;
+        return new WhiteBalance(
+                clampGain(mr > 0 ? gray / mr : 1.0),
+                clampGain(mg > 0 ? gray / mg : 1.0),
+                clampGain(mb > 0 ? gray / mb : 1.0));
+    }
 
+    /** Holds one channel's gain within {@link #MAX_WB_GAIN} either way. */
+    private static double clampGain(double gain) {
+        if (Double.isNaN(gain) || Double.isInfinite(gain)) {
+            return 1.0;
+        }
+        return Math.max(1.0 / MAX_WB_GAIN, Math.min(MAX_WB_GAIN, gain));
+    }
+
+    /** Decodes a JPEG subsampled to roughly {@code targetWidth}, upright. */
+    private static BufferedImage readSubsampled(Path file, int targetWidth) throws IOException {
+        try (ImageInputStream in = ImageIO.createImageInputStream(file.toFile())) {
+            if (in == null) {
+                throw new IOException("Could not open image " + file);
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(in);
+            if (!readers.hasNext()) {
+                throw new IOException("No image reader for " + file);
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(in);
+                ImageReadParam param = reader.getDefaultReadParam();
+                int sub = Math.max(1, reader.getWidth(0) / targetWidth);
+                param.setSourceSubsampling(sub, sub, 0, 0);
+                BufferedImage img = reader.read(0, param);
+                return Exif.applyOrientation(img, Exif.readOrientation(file));
+            } finally {
+                reader.dispose();
+            }
+        }
+    }
+
+    /** Scales each channel by the series' gains. */
+    private static void applyWhiteBalance(int[] px, WhiteBalance wb) {
+        int[] lutR = gainLut(wb.red());
+        int[] lutG = gainLut(wb.green());
+        int[] lutB = gainLut(wb.blue());
         for (int i = 0; i < px.length; i++) {
             int p = px[i];
-            int r = clamp((int) Math.round(((p >> 16) & 0xFF) * sr));
-            int g = clamp((int) Math.round(((p >> 8) & 0xFF) * sg));
-            int b = clamp((int) Math.round((p & 0xFF) * sb));
-            px[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+            px[i] = 0xFF000000
+                    | (lutR[(p >> 16) & 0xFF] << 16)
+                    | (lutG[(p >> 8) & 0xFF] << 8)
+                    | lutB[p & 0xFF];
         }
+    }
+
+    /** One LUT per channel: 256 multiplications instead of one per pixel. */
+    private static int[] gainLut(double gain) {
+        int[] lut = new int[256];
+        for (int v = 0; v < 256; v++) {
+            lut[v] = clamp((int) Math.round(v * gain));
+        }
+        return lut;
     }
 
     /**

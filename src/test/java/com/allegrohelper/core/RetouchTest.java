@@ -111,20 +111,26 @@ class RetouchTest {
     }
 
     @Test
-    void grayWorldWhiteBalanceNeutralizesAColorCast() {
-        // A uniformly blue-tinted frame: gray-world assumes the average scene is
-        // gray, so the three channel averages should end up close together.
-        BufferedImage img = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
-        for (int y = 0; y < 8; y++) {
-            for (int x = 0; x < 8; x++) {
-                img.setRGB(x, y, (100 << 16) | (120 << 8) | 180);
-            }
-        }
-        BufferedImage out = Retouch.apply(img, Retouch.Mode.WHITE_BALANCE, 1.0);
-        int[] px = rgb(out, 4, 4);
-        int spread = Math.max(px[0], Math.max(px[1], px[2]))
-                - Math.min(px[0], Math.min(px[1], px[2]));
-        assertTrue(spread <= 2, "channels should be near-equal after gray-world, got spread " + spread);
+    void whiteBalanceAppliesTheSeriesGainsToEveryChannel() {
+        // The gains come from the series, not the photo, so apply() takes them.
+        BufferedImage img = solid(100, 120, 180);
+        BufferedImage out = Retouch.apply(img, Retouch.Mode.WHITE_BALANCE, 1.0,
+                new Retouch.WhiteBalance(1.2, 1.0, 0.8));
+        assertArrayEqualsRgb(new int[] {120, 120, 144}, rgb(out, 0, 0));
+    }
+
+    @Test
+    void neutralGainsLeaveThePhotoAlone() {
+        BufferedImage out = Retouch.apply(solid(100, 120, 180), Retouch.Mode.WHITE_BALANCE, 1.0,
+                Retouch.WhiteBalance.NEUTRAL);
+        assertArrayEqualsRgb(new int[] {100, 120, 180}, rgb(out, 0, 0));
+    }
+
+    @Test
+    void whiteBalanceGainsClipAtWhiteRatherThanWrapping() {
+        BufferedImage out = Retouch.apply(solid(240, 250, 200), Retouch.Mode.WHITE_BALANCE, 1.0,
+                new Retouch.WhiteBalance(1.25, 1.25, 1.0));
+        assertArrayEqualsRgb(new int[] {255, 255, 200}, rgb(out, 0, 0));
     }
 
     @Test

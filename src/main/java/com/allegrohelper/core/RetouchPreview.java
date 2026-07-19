@@ -94,7 +94,11 @@ public final class RetouchPreview {
 
         BufferedImage after = original.image();
         if (steps.whiteBalance()) {
-            after = Retouch.apply(after, Retouch.Mode.WHITE_BALANCE, Retouch.NEUTRAL_STRENGTH);
+            // Estimated across the whole series, exactly as a run does — the gains
+            // are a property of the series, not of the photo being previewed, so
+            // reading only this one photo would show a correction no run applies.
+            Retouch.WhiteBalance wb = Retouch.estimateWhiteBalance(photos);
+            after = Retouch.apply(after, Retouch.Mode.WHITE_BALANCE, Retouch.NEUTRAL_STRENGTH, wb);
         }
         if (steps.brightness()) {
             after = Retouch.apply(after, Retouch.Mode.BRIGHTNESS, steps.brightnessStrength());
