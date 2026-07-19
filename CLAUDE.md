@@ -104,7 +104,19 @@ Four places, all of which must agree:
 
 ### UI
 
-`MainWindow` (~3200 lines) is the only class that knows about Swing layout.
+`MainWindow` (~2400 lines) owns the frame, the left control column, the tab router, the offer-loading hub and the workflow launcher. The rest of the package splits out around it:
+
+| Class | Holds |
+|---|---|
+| `UiStyle` | the hand-picked colors (tab titles, carets, links) and the font-normalizing tree walks; `SettingsDialog` uses these too, which is why they are not in `MainWindow` |
+| `Desktops` | `browse` / `open` — off-EDT launch, `xdg-open` fallback, callbacks back on the EDT |
+| `OfferFiles` | the filesystem questions: `outputPhotoDir`, `resolveOfferDir`, `readIfExists`, `escapeHtml`. Pure functions, so the only directly unit-testable part of the UI — see `OfferFilesTest` |
+| `Gallery` | the thumbnail grid (three instances: photos in, photos out, form) |
+| `ImagePanel`, `HistogramPanel`, `Exposure` | the Retouch Preview's painting |
+| `PreviewRowLayout`, `PreviewTabLayout`, `StepperLayout` | its geometry |
+| `DragGhost`, `FileListTransferable` | dragging thumbnails out to other applications |
+
+**The split stopped deliberately.** What remains in `MainWindow` is coupled *because it is one screen* — `currentOfferDir`, the tab router, `loadSelectedOffer`'s fan-out to four subsystems, the preview↔workflow checkbox mirror. Extracting an "editor tabs controller" from it would need ~15 fields handed over plus a reference back to `MainWindow` (`startWorkflow` calls `confirmUnsavedEditors`; the run's `finished` callback calls `loadSelectedOffer`), and two classes each holding the other hides the coupling instead of removing it. Likewise a `UiContext` holding the frame, the offer dir and the log sink is `MainWindow` renamed. Don't.
 
 - The right panel's seven tabs are addressed exclusively through the `TAB_*` constants (`DESCRIPTION_INPUT=0`, `DESCRIPTION_OUTPUT=1`, `PHOTOS_INPUT=2`, `RETOUCH_PREVIEW=3`, `PHOTOS_OUTPUT=4`, `OCR=5`, `ALLEGRO_FORM=6`). Every tab-dependent branch routes through them, which is why reordering tabs is a small change — keep it that way, never compare raw indices.
 - *Retouch Preview* shows one of the offer's photos before/after the ticked retouching steps (a `[|<] [< Prev] 1/20 [Next >] [>|]` stepper picks which), rendered by `core/RetouchPreview` — the pipeline's own `Retouch`/`AutoCrop` code chained in memory, so the preview cannot drift from a run. Its four checkboxes are the Workflow section's, mirrored (`linkRetouchBoxes`); `setSelected` doesn't fire an `ActionListener`, which is why the mirror can't loop. The two `StrengthDial` sliders (brightness, contrast) have no twins: they live only here, and `currentConfig()` overrides `BRIGHTNESS_STRENGTH` / `CONTRAST_STRENGTH` with them so a run reproduces what the preview showed. The preview decodes *subsampled* to display size (`ImageReadParam.setSourceSubsampling`) — ~0.15s instead of ~1.2s of retouching, and legitimate because every retouch op is global (means over the frame); a run still works at full size. It renders on its own thread, only while the tab is visible (`previewStale` defers it otherwise), and only once a slider settles (`getValueIsAdjusting`, plus a one-shot timer for the mouse wheel, which has no adjusting flag).
