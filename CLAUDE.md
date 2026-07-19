@@ -25,7 +25,7 @@ The project uses **JUnit 5**, run by Gradle (`./gradlew test`, or `--tests '*Clu
 
 What the suite covers is the pipeline's **pure logic**: `ClusteringTest` (filename timestamps, the mtime fallback, gap splitting), `SeriesRecognitionTest` (the three grouping modes), `RetouchTest` (PIL's brightness/contrast semantics, clamping), `WhiteBalanceEstimateTest` (the series-wide, neutral-pixel gray-world) and `ExifTest` (the eight orientations). New tests belong there when the behavior is deterministic and file-based.
 
-**The suite is deliberately headless and hermetic — it uses `@TempDir` only.** A test must never read the user's real data, open a window, call OpenAI, or drive Allegro. Those paths stay manually verified:
+**The suite is deliberately headless and hermetic — it uses `@TempDir` only.** A test must never read the user's real data, open a window, call OpenAI, or drive Allegro. Hermeticity now has to be *enforced*, not just observed: `Config` reads `~/.allegro-helper/.env`, so `build.gradle` points every test JVM at `build/test-config` via `allegrohelper.config.dir` (which is why that property outranks the `ALLEGRO_HELPER_CONFIG_DIR` env var). This is not hypothetical — moving settings out of the base directory broke `ImportPhotosTest` instantly, because a developer's own `SERIES_RECOGNITION=subfolders` made the import take the subfolder branch. A test that touches the property must **restore** it, never clear it: clearing sends every later test in the same JVM back to the real file. Those paths stay manually verified:
 
 - **Compile check**: `./gradlew jar` (skips the tests).
 - **Pipeline behavior**: run `--cli <step>` against a **copy** of a base directory, never the live one.

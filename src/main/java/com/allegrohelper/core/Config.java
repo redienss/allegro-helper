@@ -134,13 +134,17 @@ public final class Config {
     }
 
     private static Path configDir() {
-        String fromEnv = System.getenv("ALLEGRO_HELPER_CONFIG_DIR");
-        if (fromEnv != null && !fromEnv.isBlank()) {
-            return Path.of(fromEnv);
-        }
+        // The property is checked first on purpose: only the build sets it, and
+        // it is what keeps the test suite off the developer's own settings. An
+        // environment variable able to override it would put that isolation at
+        // the mercy of whatever happens to be exported.
         String fromProperty = System.getProperty("allegrohelper.config.dir");
         if (fromProperty != null && !fromProperty.isBlank()) {
             return Path.of(fromProperty);
+        }
+        String fromEnv = System.getenv("ALLEGRO_HELPER_CONFIG_DIR");
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return Path.of(fromEnv);
         }
         return Path.of(System.getProperty("user.home"), ".allegro-helper");
     }
@@ -171,6 +175,19 @@ public final class Config {
         restrictPermissions(global);
         return legacy;
     }
+
+    /**
+     * Written at the top of a settings file this app creates. English like
+     * every other comment in the project, and it describes <em>this</em> file:
+     * a copy of {@code .env.example} would open with "copy this file to .env",
+     * which is advice for a project checkout and nonsense in the user's
+     * settings directory.
+     */
+    private static final List<String> SETTINGS_HEADER = List.of(
+            "# Allegro Helper settings, shared by every base directory.",
+            "# Written by File > Settings; editing by hand works too.",
+            "# A real environment variable of the same name overrides what is here.",
+            "");
 
     private static void createConfigDir() throws IOException {
         Path dir = configDir();
@@ -281,7 +298,7 @@ public final class Config {
         Path envFile = globalEnvPath();
         List<String> lines = Files.isRegularFile(envFile)
                 ? new ArrayList<>(Files.readAllLines(envFile, StandardCharsets.UTF_8))
-                : new ArrayList<>();
+                : new ArrayList<>(SETTINGS_HEADER);
         for (Map.Entry<String, String> entry : values.entrySet()) {
             // Drop every assignment of the key (loadDotenv lets the last one
             // win, so duplicates must not survive) and put the new one where

@@ -75,4 +75,12 @@ test {
     // The suite is headless: no test may open a window. Anything needing a
     // display belongs in a throwaway probe, not here.
     systemProperty 'java.awt.headless', 'true'
+
+    // ...and hermetic, which now has to be enforced: Config reads the user's
+    // real ~/.allegro-helper/.env, so without this a developer's own
+    // SERIES_RECOGNITION or OFFERS_DIR silently changes what the suite tests.
+    // That is not hypothetical — it broke ImportPhotosTest the moment settings
+    // moved out of the base directory. Point every test JVM at an empty
+    // directory under build/ instead.
+    systemProperty 'allegrohelper.config.dir', layout.buildDirectory.dir('test-config').get().asFile.absolutePath
 }

@@ -1,6 +1,7 @@
 package com.allegrohelper.core;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,14 +27,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class GlobalSettingsTest {
 
+    private static final String CONFIG_DIR_PROPERTY = "allegrohelper.config.dir";
+
+    /**
+     * The build points the whole suite at an empty directory under {@code
+     * build/}. Restoring that — rather than clearing the property — matters:
+     * clearing it sends every later test in the same JVM back to the
+     * developer's real {@code ~/.allegro-helper/.env}, which is exactly the
+     * leak this property exists to prevent.
+     */
+    private String previousConfigDir;
+
+    @BeforeEach
+    void rememberRedirect() {
+        previousConfigDir = System.getProperty(CONFIG_DIR_PROPERTY);
+    }
+
     @AfterEach
-    void clearRedirect() {
-        System.clearProperty("allegrohelper.config.dir");
+    void restoreRedirect() {
+        if (previousConfigDir == null) {
+            System.clearProperty(CONFIG_DIR_PROPERTY);
+        } else {
+            System.setProperty(CONFIG_DIR_PROPERTY, previousConfigDir);
+        }
     }
 
     private static Path redirect(Path tmp) {
         Path dir = tmp.resolve("config");
-        System.setProperty("allegrohelper.config.dir", dir.toString());
+        System.setProperty(CONFIG_DIR_PROPERTY, dir.toString());
         return dir;
     }
 
