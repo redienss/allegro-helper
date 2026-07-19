@@ -6,9 +6,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Imports photos from the phone (mounted via gvfs-mtp) into the local working
@@ -46,6 +48,17 @@ public final class ImportPhotos {
      * on one photo is logged and does not abort the import. In per-subfolder
      * mode the subfolder structure is preserved, because there it <em>is</em>
      * the series grouping.
+     *
+     * <p><b>A photo already matched into an offer is not staged again.</b>
+     * {@code raw_photos/} is a staging area, not an archive: Match <em>moves</em>
+     * out of it, so after a run it is empty. But the originals stay on the phone
+     * by design, so the next import re-copied them — and Match, finding the offer
+     * directory already there, skipped it and left them stranded in
+     * {@code raw_photos/}. They then joined the *next* item's series, which is how
+     * two photos of a new item became one six-photo offer mixing it with the
+     * previous listing. Skipping anything already sitting in an offer's
+     * {@code photos/} closes that loop at the source; deleting the offer directory
+     * still re-imports, because the check is only ever about what exists now.
      */
     public static void run(Config cfg, Reporter reporter) throws IOException {
         Path sourceDir = findSourceDir(cfg, reporter);
@@ -77,8 +90,11 @@ public final class ImportPhotos {
             return;
         }
 
+        Set<String> alreadyMatched = matchedPhotoNames(cfg.offersDir);
+
         int copied = 0;
         int skipped = 0;
+        int matched = 0;
         int failed = 0;
         int total = photos.size();
         int index = 0;
@@ -86,6 +102,11 @@ public final class ImportPhotos {
             Path src = entry.getKey();
             Path dest = entry.getValue();
             try {
+                if (alreadyMatched.contains(src.getFileName().toString())) {
+                    matched++;
+                    reporter.stepProgress((double) (++index) / total);
+                    continue;
+                }
                 Files.createDirectories(dest.getParent());
                 if (!Files.exists(dest)) {
                     Files.copy(src, dest, StandardCopyOption.COPY_ATTRIBUTES);
@@ -105,9 +126,36 @@ public final class ImportPhotos {
         }
 
         reporter.log(String.format(
-                "Import finished: copied %d, skipped (already present) %d, failed %d. "
+                "Import finished: copied %d, skipped (already present) %d, "
+                        + "skipped (already in an offer) %d, failed %d. "
                         + "Originals remain on the phone.",
-                copied, skipped, failed));
+                copied, skipped, matched, failed));
+    }
+
+    /**
+     * The file names of every photo already matched into an offer, i.e. sitting
+     * in some {@code offers/<label>/photos/}. Names only: the phone's are unique
+     * timestamps, and the offer label a photo landed under says nothing about
+     * where it would land now. A missing offers directory yields an empty set,
+     * which is exactly right for a first run.
+     */
+    static Set<String> matchedPhotoNames(Path offersDir) throws IOException {
+        Set<String> names = new HashSet<>();
+        if (!Files.isDirectory(offersDir)) {
+            return names;
+        }
+        try (var offers = Files.list(offersDir)) {
+            for (Path offer : (Iterable<Path>) offers.sorted()::iterator) {
+                Path photos = offer.resolve("photos");
+                if (!Files.isDirectory(photos)) {
+                    continue;
+                }
+                for (Path photo : listJpegs(photos)) {
+                    names.add(photo.getFileName().toString());
+                }
+            }
+        }
+        return names;
     }
 
     /** The JPEGs directly in {@code dir}, sorted by name; empty if it is not a directory. */

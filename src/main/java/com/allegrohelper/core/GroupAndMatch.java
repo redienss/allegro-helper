@@ -100,8 +100,14 @@ public final class GroupAndMatch {
             Path offerDir = cfg.offersDir.resolve(offerDirName);
 
             if (Files.exists(offerDir)) {
+                // The photos stay in raw_photos/, where the next run will group
+                // them with whatever else is there — that is how photos of a
+                // previous listing end up inside a new offer. Say so, rather
+                // than let it be discovered in the finished offer.
                 reporter.log("Directory " + offerDir
-                        + " already exists, skipping (assuming already processed).");
+                        + " already exists, skipping (assuming already processed). Its "
+                        + cluster.count() + " photos stay in " + cfg.rawPhotosDir
+                        + " and will be grouped with the next import unless removed.");
                 reporter.stepProgress((double) (index + 1) / total);
                 continue;
             }
