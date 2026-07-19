@@ -230,7 +230,7 @@ public final class GenerateDescription {
         LinkedHashMap<String, Object> body = new LinkedHashMap<>();
         body.put("model", cfg.openaiModel);
         body.put("messages", messages);
-        if (!omitTemperature[0]) {
+        if (!omitTemperature[0] && supportsTemperature(cfg.openaiModel)) {
             body.put("temperature", 0.4);
         }
 
@@ -251,10 +251,10 @@ public final class GenerateDescription {
         }
 
         if (response.statusCode() != 200) {
-            // Reasoning models (gpt-5, the o-series) accept only the default
-            // temperature and reject the request otherwise. Detect that exact
-            // rejection instead of hardcoding a model list, and drop the
-            // parameter for the rest of the run.
+            // A model the supportsTemperature list has never heard of. Keeping
+            // this path means that list only has to be right about the models it
+            // names — a new family that rejects the parameter still completes,
+            // and the log line says which one to add.
             if (!omitTemperature[0] && response.statusCode() == 400
                     && rejectsTemperature(response.body())) {
                 reporter.log("Model " + cfg.openaiModel
@@ -267,6 +267,31 @@ public final class GenerateDescription {
         }
 
         return extractContent(response.body());
+    }
+
+    /**
+     * Whether the model accepts a custom {@code temperature}.
+     *
+     * <p>Reasoning models — gpt-5 and the o-series — accept only the default and
+     * reject the request outright otherwise. The run recovers by retrying
+     * without the parameter, but that costs a wasted round trip and printed a
+     * line that reads like something went wrong, on every single run. Knowing
+     * the families up front means the request is simply built correctly.
+     *
+     * <p>The one exception inside the gpt-5 family is {@code gpt-5-chat*}, which
+     * is not a reasoning model and does take a temperature — hence the prefix
+     * test before the family test, rather than a blanket match on {@code gpt-5}.
+     * Anything unrecognized is assumed to support it: the {@link #rejectsTemperature}
+     * retry still covers a model this list has never heard of, which is what
+     * keeps the list from being load-bearing.
+     */
+    static boolean supportsTemperature(String model) {
+        String name = model == null ? "" : model.strip().toLowerCase(java.util.Locale.ROOT);
+        if (name.startsWith("gpt-5-chat")) {
+            return true;
+        }
+        // o1, o3-mini, o4-mini … but not "openai/…" or some future "on-prem-x".
+        return !name.startsWith("gpt-5") && !name.matches("^o[1-9].*");
     }
 
     /** Whether an error response rejects the {@code temperature} parameter specifically. */
