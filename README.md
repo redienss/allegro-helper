@@ -339,7 +339,10 @@ The project uses **JUnit 5**, run by Gradle:
 ```
 
 `./gradlew build` runs them too, so a broken test fails the build. An HTML
-report is written to `build/reports/tests/test/index.html`.
+report is written to `build/reports/tests/test/index.html`, with a row per test
+class and a drill-down into the individual cases:
+
+![The Gradle test report, all 39 tests passing](screenshots/009.png)
 
 The suite covers the pipeline's pure logic — series grouping (`ClusteringTest`,
 `SeriesRecognitionTest`), the retouching maths (`RetouchTest`) and EXIF
