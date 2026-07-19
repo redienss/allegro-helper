@@ -322,8 +322,9 @@ characters. Without a color emoji font the text falls back to the normal glyphs
   (`sudo apt install tesseract-ocr tesseract-ocr-pol tesseract-ocr-eng`).
   Without it the OCR step aborts with that install hint; the rest of the
   pipeline does not need it.
-- An OpenAI API key for the *Describe* step (`OPENAI_API_KEY`), read from the
-  environment or a `.env` file in the base directory (see `.env.example`).
+- An OpenAI API key for the *Describe* step (`OPENAI_API_KEY`), set in
+  File > Settings > OpenAI API (stored in `~/.allegro-helper/.env`) or taken
+  from the environment. `.env.example` lists every key.
 
 ## Build & run
 
