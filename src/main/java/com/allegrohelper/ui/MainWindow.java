@@ -166,7 +166,7 @@ public final class MainWindow {
     private final JCheckBox describeBox = new JCheckBox("Describe", true);
 
     private final JButton importMatchButton = new JButton("Import & Match");
-    private final JButton startButton = new JButton("Start");
+    private final JButton startButton = new JButton("Start Workflow");
     private final JButton deleteOutputsButton = new JButton("Delete Output Files");
     private final JButton cleanRestartButton = new JButton("Clean & Restart");
     private final JButton refreshPhotosButton = new JButton("Refresh");
@@ -710,6 +710,11 @@ public final class MainWindow {
         importMatchButton.addActionListener(e ->
                 runWorkflow(List.of(Workflow.Step.IMPORT, Workflow.Step.MATCH)));
         startSide.add(importMatchButton);
+        // "Start Workflow", not "Start Entire Workflow": it runs the *ticked*
+        // steps, so promising the entire pipeline would be a lie the moment the
+        // user unticks one. The tooltip spells that out.
+        startButton.setToolTipText(I18n.t(
+                "Run every ticked step above, in pipeline order, on all offers in the grid."));
         startButton.addActionListener(e -> startWorkflow());
         startSide.add(startButton);
         JPanel cleanSide = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 2));
@@ -1999,7 +2004,7 @@ public final class MainWindow {
         running = value;
         importMatchButton.setEnabled(!value);
         startButton.setEnabled(!value);
-        startButton.setText(value ? I18n.t("Running…") : "Start"); // "Start" reads the same in Polish
+        startButton.setText(I18n.t(value ? "Running…" : "Start Workflow"));
         deleteOutputsButton.setEnabled(!value);
         cleanRestartButton.setEnabled(!value);
     }

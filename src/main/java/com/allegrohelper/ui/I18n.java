@@ -110,7 +110,7 @@ final class I18n {
         put("Failed to save CSV: {0}", "Nie udało się zapisać CSV: {0}");
         put("Failed to reload CSV: {0}", "Nie udało się odświeżyć CSV: {0}");
 
-        // Workflow section ("Import", "OCR" and "Start" read the same in Polish)
+        // Workflow section ("Import" and "OCR" read the same in Polish)
         put("Workflow", "Przebieg pracy");
         put("Match", "Dopasuj");
         put("White balance", "Balans bieli");
@@ -119,6 +119,10 @@ final class I18n {
         put("Auto-crop", "Kadrowanie");
         put("Describe", "Opisz"); // not "Opis" — that's the form tab's Description label
         put("Running…", "Działa…");
+        put("Start Workflow", "Uruchom przebieg pracy");
+        put("Run every ticked step above, in pipeline order, on all offers in the grid.",
+                "Uruchamia wszystkie zaznaczone powyżej kroki, w kolejności przetwarzania, "
+                        + "dla wszystkich ofert w tabeli.");
         put("Import & Match", "Importuj i dopasuj");
         put("Run only Import and Match, to get the photos into the offer dirs "
                         + "so Photos (Input) and Retouch Preview have something to show.",
