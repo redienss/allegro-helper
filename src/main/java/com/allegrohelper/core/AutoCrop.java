@@ -52,6 +52,13 @@ public final class AutoCrop {
     /** Detecting movement needs at least this many frames. */
     private static final int MIN_FRAMES = 2;
 
+    /**
+     * The frame must hold at least this much unchanged background, or the
+     * camera moved between shots and the whole method does not apply. See
+     * {@link #staticFraction}.
+     */
+    private static final double MIN_STATIC_FRACTION = 0.25;
+
     /** Not instantiable: the class is a namespace for {@link #runAll}. */
     private AutoCrop() {
     }
@@ -106,11 +113,12 @@ public final class AutoCrop {
             return;
         }
 
-        Box box = detect(photos);
-        if (box == null) {
-            reporter.log(name + ": could not detect the item, leaving uncropped.");
+        Detection detection = detect(photos);
+        if (detection.box() == null) {
+            reporter.log(name + ": " + detection.reason() + "; leaving uncropped.");
             return;
         }
+        Box box = detection.box();
 
         Files.createDirectories(croppedDir);
         for (Path photo : photos) {
@@ -148,8 +156,52 @@ public final class AutoCrop {
         return null;
     }
 
+    /**
+     * The fraction of the frame that does not change across the series.
+     *
+     * <p>The method's premise, measured directly: with a fixed camera the
+     * background is identical frame to frame, so most of the picture sits at
+     * (near) zero range and only the item moves. A handheld series moves
+     * everything at once — the failing case measured 9% static against a mean
+     * range of 73, where a turntable series leaves the large majority of the
+     * frame untouched. {@link #MIN_STATIC_FRACTION} is set well below any
+     * plausible turntable shot rather than near the observed 9%: the cost of
+     * declining a series that would have cropped fine is a photo the user crops
+     * by hand, and the guard should only fire when the premise is clearly gone.
+     *
+     * <p>Uses {@link #NOISE_FLOOR}, not zero — JPEG quantization jitters a
+     * genuinely static pixel by a level or two.
+     */
+    static double staticFraction(int[] range) {
+        int quiet = 0;
+        for (int r : range) {
+            if (r <= NOISE_FLOOR) {
+                quiet++;
+            }
+        }
+        return range.length == 0 ? 0 : quiet / (double) range.length;
+    }
+
     /** The crop rectangle in full-resolution source pixels. */
     private record Box(int x, int y, int w, int h) {
+    }
+
+    /**
+     * A detection result: a box, or null with the reason no box was produced.
+     * The reason is carried rather than logged in place because {@link #detect}
+     * also serves the preview, which shows the outcome instead of logging it —
+     * and "could not detect the item" for every guard alike left the user with
+     * no idea whether the series was too short, the subject too small, or the
+     * camera moving.
+     */
+    private record Detection(Box box, String reason) {
+        static Detection of(Box box) {
+            return new Detection(box, null);
+        }
+
+        static Detection declined(String reason) {
+            return new Detection(null, reason);
+        }
     }
 
     /**
@@ -162,7 +214,7 @@ public final class AutoCrop {
         if (photos.size() < MIN_FRAMES) {
             return null;
         }
-        Box box = detect(photos);
+        Box box = detect(photos).box();
         return box == null ? null : new int[]{box.x(), box.y(), box.w(), box.h()};
     }
 
@@ -178,7 +230,7 @@ public final class AutoCrop {
      * its largest connected blob, grown by {@link #MARGIN} and expanded to the
      * source aspect ratio.
      */
-    private static Box detect(List<Path> photos) throws IOException {
+    private static Detection detect(List<Path> photos) throws IOException {
         Frame first = readLuma(photos.get(0));
         int w = first.w;
         int h = first.h;
@@ -189,7 +241,8 @@ public final class AutoCrop {
         for (int i = 1; i < photos.size(); i++) {
             Frame f = readLuma(photos.get(i));
             if (f.w != w || f.h != h || f.srcW != first.srcW || f.srcH != first.srcH) {
-                return null; // mixed resolutions: not one series
+                return Detection.declined("the photos are not all the same size,"
+                        + " so they are not one series");
             }
             for (int p = 0; p < n; p++) {
                 int v = f.luma[p];
@@ -210,6 +263,20 @@ public final class AutoCrop {
             hist[r]++;
         }
 
+        // Everything below rests on the background being the same pixels in
+        // every frame. Handheld shots — or a "series" that is really several
+        // different subjects — change the whole frame, leaving Otsu no
+        // background to separate and the largest blob an arbitrary patch of
+        // whatever moved most. That is not a crop worth guessing at.
+        double staticFraction = staticFraction(range);
+        if (staticFraction < MIN_STATIC_FRACTION) {
+            return Detection.declined(String.format(
+                    "the camera moved between shots (only %.0f%% of the frame is unchanged, "
+                            + "auto-crop needs at least %.0f%%), so the item cannot be told from "
+                            + "the background",
+                    staticFraction * 100, MIN_STATIC_FRACTION * 100));
+        }
+
         int threshold = Math.max(otsu(hist, n), NOISE_FLOOR);
         boolean[] mask = new boolean[n];
         for (int p = 0; p < n; p++) {
@@ -218,7 +285,7 @@ public final class AutoCrop {
 
         int[] blob = largestComponent(mask, w, h);
         if (blob == null || blob[4] < MIN_SUBJECT_FRACTION * n) {
-            return null;
+            return Detection.declined("no part of the frame changed enough to be the item");
         }
 
         // Work pixels -> source pixels, then margin, aspect and clamping.
@@ -238,7 +305,9 @@ public final class AutoCrop {
 
         Box box = expandToAspect(x0, y0, x1, y1, first.srcW, first.srcH);
         double coverage = (double) box.w * box.h / ((double) first.srcW * first.srcH);
-        return coverage > MAX_COVERAGE ? null : box;
+        return coverage > MAX_COVERAGE
+                ? Detection.declined("the item fills the frame, so cropping would achieve nothing")
+                : Detection.of(box);
     }
 
     /**
