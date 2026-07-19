@@ -356,12 +356,14 @@ The project uses **JUnit 5**, run by Gradle:
 report is written to `build/reports/tests/test/index.html`, with a row per test
 class and a drill-down into the individual cases:
 
-![The Gradle test report, all 39 tests passing](screenshots/009.png)
+![The Gradle test report, all 110 tests passing](screenshots/009.png)
 
 The suite covers the pipeline's pure logic — series grouping (`ClusteringTest`,
-`SeriesRecognitionTest`), the retouching maths (`RetouchTest`) and EXIF
-orientation (`ExifTest`) — which is the code most likely to break unnoticed
-under a refactor. It is deliberately headless and touches only temporary
+`SeriesRecognitionTest`), the retouching maths (`RetouchTest`), EXIF
+orientation (`ExifTest`), what the import step stages (`ImportPhotosTest`),
+auto-crop's fixed-camera premise (`AutoCropStaticBackgroundTest`) and where
+settings are stored (`GlobalSettingsTest`) — which is the code most likely to
+break unnoticed under a refactor. It is deliberately headless and touches only temporary
 directories: **no test reads your real data, opens a window, calls OpenAI, or
 drives Allegro.** Those paths are still verified by hand (see `CLAUDE.md`).
 
