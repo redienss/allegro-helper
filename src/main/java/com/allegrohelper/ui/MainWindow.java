@@ -47,7 +47,6 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.AbstractDocument;
 import javax.swing.text.BadLocationException;
-import javax.swing.text.JTextComponent;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
@@ -57,9 +56,6 @@ import javax.swing.SwingUtilities;
 import javax.swing.TransferHandler;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
-import javax.swing.border.Border;
-import javax.swing.border.CompoundBorder;
-import javax.swing.border.TitledBorder;
 import javax.swing.table.TableColumn;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -67,7 +63,6 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Cursor;
-import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Toolkit;
 import java.awt.FlowLayout;
@@ -102,7 +97,6 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
-import java.net.URI;
 import java.net.URL;
 import java.io.File;
 import java.io.IOException;
@@ -120,7 +114,6 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import java.util.function.ToIntFunction;
 
 /**
@@ -128,50 +121,6 @@ import java.util.function.ToIntFunction;
  * editable offer grid, the workflow selector, a progress bar and a log.
  */
 public final class MainWindow {
-
-    /** Accent color (orange, from the logo) for the active tab underline and count badges. */
-    private static final Color TAB_ACCENT = new Color(0xF2, 0x6B, 0x1F);
-
-    /** Text caret color — methods, not constants, because they follow the active {@link Theme}. */
-    private static Color caretColor() {
-        return Theme.isDark() ? Color.WHITE : Color.BLACK;
-    }
-
-    /** Tab title colors: the selected tab is bright with an accent underline, others are dimmed. */
-    private static Color tabSelectedFg() {
-        return Theme.isDark() ? Color.WHITE : new Color(0x1A, 0x1A, 0x1A);
-    }
-
-    /** @see #tabSelectedFg() */
-    private static Color tabUnselectedFg() {
-        return Theme.isDark() ? new Color(0x9E, 0x9E, 0x9E) : new Color(0x6E, 0x6E, 0x6E);
-    }
-
-    /**
-     * Tab title color for unsaved edits — amber, to read as a warning next to
-     * the plain titles without shouting like red. Two shades, because one hue
-     * cannot span both backgrounds: measured against the themes' actual panel
-     * colors, the bright amber scores 7.8:1 on System and 5.9:1 on Dark, and
-     * the deep one 4.8:1 on Light, so both clear WCAG AA for normal text.
-     * Inverting them would land at 1.3:1 and 2.3:1 — invisible.
-     */
-    private static Color tabDirtyFg() {
-        return Theme.isDark() ? new Color(0xFF, 0xB3, 0x00) : new Color(0x8A, 0x4B, 0x00);
-    }
-
-    /**
-     * Hyperlink color, picked per theme for contrast: a light blue on the dark
-     * background, a deep blue on the light one. The look and feel offers no key
-     * for this, HTML's default {@code <a>} blue is unreadable on the dark theme,
-     * and a single fixed color would wash out against one of the two backgrounds.
-     * Both clear WCAG AA against their background (≈6:1 and ≈7:1).
-     */
-    static Color linkColor() {
-        return Theme.isDark() ? new Color(0x8C, 0xC8, 0xFF) : new Color(0x0A, 0x3D, 0x91);
-    }
-
-    /** One font size for the whole window, so all text reads at a similar (larger) size. */
-    private static final int UI_FONT_SIZE = 16;
 
     /** Height the logo is scaled to (aspect ratio preserved). */
     private static final int LOGO_HEIGHT = 150;
@@ -478,12 +427,12 @@ public final class MainWindow {
         I18n.retranslate(frame);
         // Enlarge and unify fonts across the whole window before measuring, so the
         // fixed-height sections are sized for the final (larger) text.
-        standardizeFonts(frame.getRootPane());
+        UiStyle.standardizeFonts(frame.getRootPane());
         updateTabStyles(); // re-assert tab bold/dim after fonts are standardized
         offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
         cappedSections.addAll(List.of(dirsPanel, photosPanel, topArea, offerPanel, workflowPanel, progressPanel));
         for (JPanel section : cappedSections) {
-            capHeight(section);
+            UiStyle.capHeight(section);
         }
 
         frame.pack();
@@ -538,106 +487,21 @@ public final class MainWindow {
      * details header) catch up on their next refresh.
      */
     private void onSettingsApplied() {
-        recolorCarets(frame.getRootPane());
+        UiStyle.recolorCarets(frame.getRootPane());
         styleGridEditors();
-        standardizeFonts(frame.getRootPane());
+        UiStyle.standardizeFonts(frame.getRootPane());
         updateTabStyles();
         if (formUrlLink != null) {
-            formUrlLink.setForeground(linkColor()); // the link blue is picked per theme
+            formUrlLink.setForeground(UiStyle.linkColor()); // the link blue is picked per theme
         }
         // Re-measure the height-capped sections: component heights differ
         // between look and feels, and stale caps clip rows.
         offerTable.setRowHeight(offerTable.getFontMetrics(offerTable.getFont()).getHeight() + 6);
         for (JPanel section : cappedSections) {
-            capHeight(section);
+            UiStyle.capHeight(section);
         }
         frame.revalidate();
         frame.repaint();
-    }
-
-    /** Re-applies the theme-dependent caret color to every text component under {@code c}. */
-    static void recolorCarets(Component c) {
-        if (c instanceof JTextComponent text) {
-            text.setCaretColor(caretColor());
-        }
-        if (c instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                recolorCarets(child);
-            }
-        }
-    }
-
-    /** Caps a section's height at its preferred size so it fills width but not extra vertical space. */
-    private static void capHeight(JPanel panel) {
-        Dimension pref = panel.getPreferredSize();
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
-        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-    }
-
-    /** Sets every component (and titled-border header) in the tree to {@link #UI_FONT_SIZE}, keeping family/style. */
-    static void standardizeFonts(Component c) {
-        Font font = c.getFont();
-        if (font != null) {
-            c.setFont(font.deriveFont((float) UI_FONT_SIZE));
-        }
-        if (c instanceof JComponent jc) {
-            resizeTitledBorderFont(jc.getBorder());
-        }
-        // The table header and in-cell editors aren't in the tree yet at this point
-        // (the header is attached to the scroll pane on addNotify), so size them explicitly.
-        if (c instanceof JTable table) {
-            if (table.getTableHeader() != null) {
-                Font hf = table.getTableHeader().getFont();
-                if (hf != null) {
-                    table.getTableHeader().setFont(hf.deriveFont((float) UI_FONT_SIZE));
-                }
-            }
-            resizeCellEditorFont(table.getDefaultEditor(Object.class));
-            for (int col = 0; col < table.getColumnCount(); col++) {
-                resizeCellEditorFont(table.getColumnModel().getColumn(col).getCellEditor());
-            }
-        }
-        if (c instanceof Container container) {
-            for (Component child : container.getComponents()) {
-                standardizeFonts(child);
-            }
-        }
-    }
-
-    /** Resizes a titled border's title font, descending into compound borders. */
-    private static void resizeTitledBorderFont(Border border) {
-        if (border instanceof TitledBorder tb) {
-            Font f = tb.getTitleFont();
-            if (f == null) {
-                f = UIManager.getFont("TitledBorder.font");
-            }
-            if (f == null) {
-                f = new Font(Font.DIALOG, Font.BOLD, UI_FONT_SIZE);
-            }
-            tb.setTitleFont(f.deriveFont((float) UI_FONT_SIZE));
-        } else if (border instanceof CompoundBorder cb) {
-            resizeTitledBorderFont(cb.getOutsideBorder());
-            resizeTitledBorderFont(cb.getInsideBorder());
-        }
-    }
-
-    /**
-     * Resizes the font of a grid cell editor's component — including the text
-     * field inside a combo editor. Editors are not part of the component tree,
-     * so the font walk cannot reach them on its own.
-     */
-    private static void resizeCellEditorFont(javax.swing.table.TableCellEditor editor) {
-        if (editor instanceof javax.swing.DefaultCellEditor dce) {
-            Component comp = dce.getComponent();
-            if (comp != null && comp.getFont() != null) {
-                comp.setFont(comp.getFont().deriveFont((float) UI_FONT_SIZE));
-            }
-            if (comp instanceof JComboBox<?> combo
-                    && combo.getEditor().getEditorComponent() instanceof JTextField field
-                    && field.getFont() != null) {
-                field.setFont(field.getFont().deriveFont((float) UI_FONT_SIZE));
-            }
-        }
     }
 
     /** The application logo (top-left), scaled to {@link #LOGO_HEIGHT}; also sets the window icon. */
@@ -709,7 +573,7 @@ public final class MainWindow {
         // A row without a reset button lets the field span its column too,
         // keeping the Browse buttons of all rows aligned.
         c.gridwidth = reset == null ? 2 : 1;
-        field.setCaretColor(caretColor());
+        field.setCaretColor(UiStyle.caretColor());
         panel.add(field, c);
         c.weightx = 0;
         c.gridwidth = 1;
@@ -743,7 +607,7 @@ public final class MainWindow {
      * previews what the match step would actually do.
      */
     private JPanel buildPhotosPanel() {
-        JPanel panel = titled("Photos");
+        JPanel panel = UiStyle.titled("Photos");
         panel.setLayout(new BorderLayout(6, 6));
 
         JList<String> list = new JList<>(photosModel);
@@ -772,7 +636,7 @@ public final class MainWindow {
 
     /** The Offer Data section: the editable CSV grid and its load/save/row buttons. */
     private JPanel buildOfferPanel() {
-        JPanel panel = titled("Offer Data");
+        JPanel panel = UiStyle.titled("Offer Data");
         panel.setLayout(new BorderLayout(6, 6));
 
         offerTable.setFillsViewportHeight(true);
@@ -823,7 +687,7 @@ public final class MainWindow {
         configureInpostColumn();
         if (offerTable.getDefaultEditor(Object.class) instanceof javax.swing.DefaultCellEditor editor
                 && editor.getComponent() instanceof JTextField field) {
-            field.setCaretColor(caretColor());
+            field.setCaretColor(UiStyle.caretColor());
         }
     }
 
@@ -840,14 +704,14 @@ public final class MainWindow {
         JComboBox<String> combo = new JComboBox<>(new DefaultComboBoxModel<>(new String[]{"A", "B", "C"}));
         combo.setEditable(true);
         if (combo.getEditor().getEditorComponent() instanceof JTextField field) {
-            field.setCaretColor(caretColor());
+            field.setCaretColor(UiStyle.caretColor());
         }
         column.setCellEditor(new javax.swing.DefaultCellEditor(combo));
     }
 
     /** The Workflow section: one checkbox per pipeline step, Start, and the destructive buttons. */
     private JPanel buildWorkflowPanel() {
-        JPanel panel = titled("Workflow");
+        JPanel panel = UiStyle.titled("Workflow");
         panel.setLayout(new BorderLayout(6, 6));
 
         // A fixed grid, in pipeline order, reading left to right and top to bottom.
@@ -886,7 +750,7 @@ public final class MainWindow {
 
     /** The Progress section: the run's overall progress bar. */
     private JPanel buildProgressPanel() {
-        JPanel panel = titled("Progress");
+        JPanel panel = UiStyle.titled("Progress");
         panel.setLayout(new BorderLayout(6, 6));
         progressBar.setStringPainted(true);
         panel.add(progressBar, BorderLayout.CENTER);
@@ -895,13 +759,13 @@ public final class MainWindow {
 
     /** The Log section: the read-only, monospaced pipeline log (deliberately untranslated). */
     private JPanel buildLogPanel() {
-        JPanel panel = titled("Log");
+        JPanel panel = UiStyle.titled("Log");
         panel.setLayout(new BorderLayout(6, 6));
         logArea.setEditable(false);
         logArea.setLineWrap(true);
         logArea.setWrapStyleWord(true);
         logArea.setFont(new java.awt.Font("monospaced", java.awt.Font.PLAIN, 12));
-        logArea.setCaretColor(caretColor());
+        logArea.setCaretColor(UiStyle.caretColor());
         panel.add(new JScrollPane(logArea), BorderLayout.CENTER);
         return panel;
     }
@@ -926,7 +790,7 @@ public final class MainWindow {
         for (JTextPane pane : new JTextPane[]{moreDataArea, detailsArea, ocrArea, formDescriptionArea}) {
             pane.setEditable(true); // JTextPane wraps by default
             pane.setFont(mono);
-            pane.setCaretColor(caretColor());
+            pane.setCaretColor(UiStyle.caretColor());
             installEmojiRendering(pane);
         }
         rightTabs.addTab("Description (Input)", new JScrollPane(moreDataArea));
@@ -1452,11 +1316,11 @@ public final class MainWindow {
         JPanel top = new JPanel();
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 
-        top.add(sectionLabel("Link to Allegro Lokalnie form"));
+        top.add(UiStyle.sectionLabel("Link to Allegro Lokalnie form"));
         // Underline only: the color comes from setForeground, so it can follow
         // the theme (a color baked into the HTML could not).
         formUrlLink = new JLabel("<html><u>" + ALLEGRO_FORM_URL + "</u></html>");
-        formUrlLink.setForeground(linkColor());
+        formUrlLink.setForeground(UiStyle.linkColor());
         formUrlLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         formUrlLink.addMouseListener(new MouseAdapter() {
             @Override
@@ -1471,13 +1335,13 @@ public final class MainWindow {
         copyAllButton.setToolTipText("Open the form in Chrome and fill in the selected photos,"
                 + " the title and the description. You review and submit it yourself.");
         copyAllButton.addActionListener(e -> copyAllToAllegro(copyAllButton));
-        JPanel linkRow = flowRow();
+        JPanel linkRow = UiStyle.flowRow();
         linkRow.add(link);
         linkRow.add(openUrlButton);
         linkRow.add(copyAllButton);
         top.add(linkRow);
 
-        top.add(sectionLabel("Photos"));
+        top.add(UiStyle.sectionLabel("Photos"));
         JLabel photosHint = new JLabel("Select the photos to use (Allegro allows "
                 + ALLEGRO_MAX_PHOTOS + "; the first " + ALLEGRO_MAX_PHOTOS
                 + " are preselected), then drag the selection onto the form.");
@@ -1492,10 +1356,10 @@ public final class MainWindow {
         galleryScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
         top.add(galleryScroll);
 
-        top.add(sectionLabel("Title"));
+        top.add(UiStyle.sectionLabel("Title"));
         JPanel titleRow = new JPanel(new BorderLayout(6, 0));
         titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        formTitleField.setCaretColor(caretColor());
+        formTitleField.setCaretColor(UiStyle.caretColor());
         titleRow.add(formTitleField, BorderLayout.CENTER);
         JButton copyTitleButton = new JButton("Copy Title");
         copyTitleButton.addActionListener(e ->
@@ -1509,7 +1373,7 @@ public final class MainWindow {
 
         JPanel descSection = new JPanel(new BorderLayout(6, 2));
         JPanel descHeader = new JPanel(new BorderLayout());
-        descHeader.add(sectionLabel("Description"), BorderLayout.WEST);
+        descHeader.add(UiStyle.sectionLabel("Description"), BorderLayout.WEST);
         JButton copyDescriptionButton = new JButton("Copy Description");
         copyDescriptionButton.addActionListener(e ->
                 copyToClipboard(formDescriptionArea.getText(), "description"));
@@ -1521,60 +1385,14 @@ public final class MainWindow {
         return panel;
     }
 
-    /** A bold heading inside the Allegro form tab. */
-    private static JLabel sectionLabel(String text) {
-        JLabel label = new JLabel(text);
-        label.setFont(label.getFont().deriveFont(Font.BOLD));
-        label.setBorder(BorderFactory.createEmptyBorder(8, 0, 4, 0));
-        label.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return label;
-    }
-
-    /**
-     * A left-aligned row of controls whose height is capped, so it cannot stretch
-     * inside the form tab's vertical box layout.
-     */
-    private static JPanel flowRow() {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height + 40));
-        return row;
-    }
-
     /**
      * Opens the Allegro form in the user's <em>default</em> browser (not the
      * app-driven Chrome — that is {@link #copyAllToAllegro}).
      */
     private void openFormUrl() {
-        browse(ALLEGRO_FORM_URL,
+        Desktops.browse(ALLEGRO_FORM_URL,
                 () -> appendLog("Opened " + ALLEGRO_FORM_URL),
                 message -> error(I18n.t("Could not open {0}: {1}", ALLEGRO_FORM_URL, message)));
-    }
-
-    /**
-     * Opens a URL in the user's default browser, falling back to {@code xdg-open}
-     * where the Desktop API is unavailable (a bare X session, some Linux
-     * desktops). Runs off the EDT, since launching a browser can block; both
-     * callbacks are invoked back on the EDT.
-     *
-     * @param onOpened  run once the browser was launched
-     * @param onFailure given the failure message
-     */
-    static void browse(String url, Runnable onOpened, Consumer<String> onFailure) {
-        new Thread(() -> {
-            try {
-                if (Desktop.isDesktopSupported()
-                        && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                    Desktop.getDesktop().browse(URI.create(url));
-                } else {
-                    new ProcessBuilder("xdg-open", url).start();
-                }
-                SwingUtilities.invokeLater(onOpened);
-            } catch (Exception e) {
-                String message = e.getMessage();
-                SwingUtilities.invokeLater(() -> onFailure.accept(message));
-            }
-        }, "open-url").start();
     }
 
     /**
@@ -1839,22 +1657,12 @@ public final class MainWindow {
             label.setFont(label.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN));
             // Amber wins over both the selected and the dimmed color: an unsaved
             // tab must stand out even while the user is looking at another one.
-            label.setForeground(dirty ? tabDirtyFg() : active ? tabSelectedFg() : tabUnselectedFg());
+            label.setForeground(dirty ? UiStyle.tabDirtyFg() : active ? UiStyle.tabSelectedFg() : UiStyle.tabUnselectedFg());
             // Accent underline on the active tab; matching padding keeps heights equal.
             label.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createMatteBorder(0, 0, active ? 2 : 0, 0, TAB_ACCENT),
+                    BorderFactory.createMatteBorder(0, 0, active ? 2 : 0, 0, UiStyle.TAB_ACCENT),
                     BorderFactory.createEmptyBorder(3, 8, active ? 3 : 5, 8)));
         }
-    }
-
-    /** An empty panel with a titled border — the shell every left-hand section is built in. */
-    private JPanel titled(String title) {
-        JPanel panel = new JPanel();
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createEmptyBorder(6, 8, 0, 8),
-                BorderFactory.createTitledBorder(title)));
-        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        return panel;
     }
 
     /**
@@ -2042,25 +1850,11 @@ public final class MainWindow {
         openInSystem(dir);
     }
 
-    /**
-     * Opens a file or directory with the system default handler (the image viewer
-     * or file manager). Launching it can block briefly, so it runs off the EDT.
-     */
+    /** Opens a file or directory with the system handler, logging the outcome. */
     private void openInSystem(Path target) {
-        new Thread(() -> {
-            try {
-                if (Desktop.isDesktopSupported()
-                        && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-                    Desktop.getDesktop().open(target.toFile());
-                } else {
-                    new ProcessBuilder("xdg-open", target.toString()).start();
-                }
-                SwingUtilities.invokeLater(() -> appendLog("Opened " + target));
-            } catch (Exception e) {
-                SwingUtilities.invokeLater(() ->
-                        error(I18n.t("Could not open {0}: {1}", target, e.getMessage())));
-            }
-        }, "open-in-system").start();
+        Desktops.open(target,
+                opened -> appendLog("Opened " + opened),
+                message -> error(I18n.t("Could not open {0}: {1}", target, message)));
     }
 
     /** Clears the active editor only; the file is unchanged until Save is clicked. */
@@ -2945,7 +2739,7 @@ public final class MainWindow {
                 g.setFont(g.getFont().deriveFont(Font.BOLD, 14f));
                 int d = 22; // badge diameter
                 int bx = size - d - 2;
-                g.setColor(TAB_ACCENT);
+                g.setColor(UiStyle.TAB_ACCENT);
                 g.fillOval(bx, 2, d, d);
                 g.setColor(Color.WHITE);
                 var fm = g.getFontMetrics();

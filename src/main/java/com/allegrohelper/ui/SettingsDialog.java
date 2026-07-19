@@ -153,8 +153,8 @@ final class SettingsDialog extends JDialog {
         watchDocument(userPromptArea);
 
         I18n.retranslate(this);
-        MainWindow.standardizeFonts(getRootPane());
-        MainWindow.recolorCarets(getRootPane());
+        UiStyle.standardizeFonts(getRootPane());
+        UiStyle.recolorCarets(getRootPane());
         // Wide enough for the API-key hint row in Polish too, whose label runs
         // some 60px longer than the English one and would otherwise push the
         // link off the edge of the page.
@@ -247,18 +247,18 @@ final class SettingsDialog extends JDialog {
 
     /**
      * The API keys page as a clickable link: underlined, hand cursor, and
-     * painted in {@link MainWindow#linkColor()} so it reads as a link against
+     * painted in {@link UiStyle#linkColor()} so it reads as a link against
      * either theme's background.
      */
     private JLabel buildApiKeyLink() {
         JLabel link = new JLabel("<html><u>" + API_KEYS_URL + "</u></html>");
-        link.setForeground(MainWindow.linkColor());
+        link.setForeground(UiStyle.linkColor());
         link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         link.setToolTipText(API_KEYS_URL);
         link.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                MainWindow.browse(API_KEYS_URL,
+                Desktops.browse(API_KEYS_URL,
                         () -> { }, // the browser opening is its own feedback
                         message -> JOptionPane.showMessageDialog(SettingsDialog.this,
                                 I18n.t("Could not open {0}: {1}", API_KEYS_URL, message),
@@ -443,9 +443,9 @@ final class SettingsDialog extends JDialog {
         onSettingsApplied.run();
         // updateComponentTreeUI reset this dialog's fonts and caret colors, and
         // the link blue is picked per theme, so it has to be re-picked here.
-        MainWindow.standardizeFonts(getRootPane());
-        MainWindow.recolorCarets(getRootPane());
-        apiKeyLink.setForeground(MainWindow.linkColor());
+        UiStyle.standardizeFonts(getRootPane());
+        UiStyle.recolorCarets(getRootPane());
+        apiKeyLink.setForeground(UiStyle.linkColor());
         updateApplyEnabled();
     }
 }
