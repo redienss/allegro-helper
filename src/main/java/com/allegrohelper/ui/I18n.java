@@ -156,6 +156,8 @@ final class I18n {
         put("Delete", "Usuń");
         put("Clear", "Wyczyść");
         put("Save", "Zapisz");
+        put("Save the active tab to its file (Ctrl+S)",
+                "Zapisz aktywną kartę do jej pliku (Ctrl+S)");
         put("Open photo dir", "Otwórz katalog zdjęć");
         put("row {0} — <i>not matched yet (photos and Description output appear after Match)</i>",
                 "wiersz {0} — <i>jeszcze niedopasowany (zdjęcia i Opis (wynik) pojawią się po kroku Dopasuj)</i>");

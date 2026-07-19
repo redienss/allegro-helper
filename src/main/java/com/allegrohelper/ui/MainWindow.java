@@ -11,6 +11,7 @@ import com.allegrohelper.core.SeriesRecognition;
 import com.allegrohelper.core.Workflow;
 import com.allegrohelper.util.Json;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultComboBoxModel;
@@ -29,6 +30,8 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.JRootPane;
+import javax.swing.KeyStroke;
 import javax.swing.ImageIcon;
 import javax.swing.JScrollPane;
 import javax.swing.JSlider;
@@ -92,6 +95,8 @@ import java.awt.dnd.DragSourceDragEvent;
 import java.awt.dnd.DragSourceDropEvent;
 import java.awt.dnd.DragSourceEvent;
 import java.awt.dnd.DragSourceMotionListener;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
@@ -452,6 +457,7 @@ public final class MainWindow {
         frame.add(split, BorderLayout.CENTER);
 
         setWindowIcon();
+        installSaveShortcut();
 
         // Translate the built (English) texts before measuring; a no-op under English.
         I18n.retranslate(frame);
@@ -468,6 +474,26 @@ public final class MainWindow {
         frame.pack();
         frame.setLocationRelativeTo(null);
         SwingUtilities.invokeLater(() -> split.setDividerLocation(0.5));
+    }
+
+    /**
+     * Binds Ctrl+S (Cmd+S on macOS) to saving the active editor tab. The binding
+     * lives on the root pane with {@code WHEN_IN_FOCUSED_WINDOW}, so it fires
+     * while the caret is in a text pane — where the user actually is when they
+     * want to save — rather than only when some particular component has focus.
+     * On a non-editor tab {@link #saveActiveTab()} is a no-op.
+     */
+    private void installSaveShortcut() {
+        KeyStroke saveKey = KeyStroke.getKeyStroke(KeyEvent.VK_S,
+                Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx());
+        JRootPane root = frame.getRootPane();
+        root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(saveKey, "save-active-tab");
+        root.getActionMap().put("save-active-tab", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                saveActiveTab();
+            }
+        });
     }
 
     /** The top menu bar: File > Settings… / Exit. */
@@ -924,6 +950,7 @@ public final class MainWindow {
         leftButtons.add(clearButton);
 
         saveButton = new JButton("Save");
+        saveButton.setToolTipText("Save the active tab to its file (Ctrl+S)");
         saveButton.addActionListener(e -> saveActiveTab());
         JPanel rightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
         rightButtons.add(saveButton);
