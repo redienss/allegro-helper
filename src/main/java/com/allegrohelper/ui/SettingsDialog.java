@@ -17,6 +17,8 @@ import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JTextField;
+import javax.swing.JFileChooser;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.ListSelectionModel;
@@ -35,9 +37,12 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Window;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -89,6 +94,8 @@ final class SettingsDialog extends JDialog {
      * {@link SeriesRecognition.Mode} order, so an index is a mode. Kept as
      * English keys and translated by the renderer at paint time, like there.
      */
+    private final JTextField baseDirField = new JTextField();
+    private final JTextField photoDirField = new JTextField();
     private final JComboBox<String> seriesModeCombo = new JComboBox<>(new String[]{
             "AUTO - Auto detect photo series",
             "SINGLE - All photos in the directory as one item",
@@ -100,7 +107,15 @@ final class SettingsDialog extends JDialog {
     private final JLabel apiKeyLink = buildApiKeyLink();
     private final JButton applyButton = new JButton("Apply");
     private final Runnable onSettingsApplied;
-    private final Consumer<SeriesRecognition.Mode> onSeriesModeChanged;
+    private final Consumer<Applied> onDefaultsApplied;
+
+    /**
+     * The base directory whose effective configuration the pages display.
+     * Settings are <em>written</em> to {@link Config#globalEnvPath()}, never
+     * here — the base directory is itself one of them, and a per-directory file
+     * could not hold it. Only reads need a base directory at all, to resolve
+     * the paths derived from one.
+     */
     private final Path baseDir;
 
     /** The effective OpenAI values as of the last load/save, for dirty checks. */
@@ -112,23 +127,36 @@ final class SettingsDialog extends JDialog {
     /** The effective series mode as of the last load/save, for the dirty check. */
     private SeriesRecognition.Mode savedSeriesMode = SeriesRecognition.Mode.AUTO;
 
+    /** The effective photo directory as of the last load/save, for the dirty check. */
+    private String savedPhotoDir = "";
+
+    /** The base directory as of the last load/save; compared against the field. */
+    private String savedBaseDir = "";
+
+    /**
+     * What an Apply changed, for {@link MainWindow} to adopt into its own
+     * controls. A null field means that value did not change — the main window
+     * must not have a setting it did not touch reset underneath it just because
+     * someone opened this dialog to change the theme.
+     */
+    record Applied(Path baseDir, String photoDir, SeriesRecognition.Mode seriesMode) {
+    }
+
     /**
      * @param baseDir the base directory whose {@code .env} the OpenAI settings
      *                are read from and written back to
      * @param onSettingsApplied run after a theme or language change, so
      *                          {@link MainWindow} can re-apply the styling its
      *                          build baked in
-     * @param onSeriesModeChanged run only when the saved default series mode
-     *                            actually changed, so the main window's dropdown
-     *                            follows it. Firing on every apply would reset a
-     *                            mode the user picked for this session while
-     *                            they were in here changing the theme.
+     * @param onDefaultsApplied handed only the pipeline defaults that actually
+     *                          changed, so the main window's own controls follow
+     *                          them without the untouched ones being reset
      */
     SettingsDialog(JFrame owner, Path baseDir, Runnable onSettingsApplied,
-                   Consumer<SeriesRecognition.Mode> onSeriesModeChanged) {
+                   Consumer<Applied> onDefaultsApplied) {
         super(owner, "Settings", true);
         this.onSettingsApplied = onSettingsApplied;
-        this.onSeriesModeChanged = onSeriesModeChanged;
+        this.onDefaultsApplied = onDefaultsApplied;
         this.baseDir = baseDir;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -154,7 +182,7 @@ final class SettingsDialog extends JDialog {
         JPanel content = new JPanel(cards);
         content.add(buildPage(PAGE_APPEARANCE, "Theme:", themeCombo), PAGE_APPEARANCE);
         content.add(buildPage(PAGE_LANGUAGE, "Language:", languageCombo), PAGE_LANGUAGE);
-        content.add(buildPage(PAGE_PHOTOS, "Series recognition:", seriesModeCombo), PAGE_PHOTOS);
+        content.add(buildPhotosPage(), PAGE_PHOTOS);
         content.add(buildOpenAiPage(), PAGE_OPENAI);
         pages.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && pages.getSelectedValue() != null) {
@@ -169,11 +197,13 @@ final class SettingsDialog extends JDialog {
         themeCombo.setSelectedItem(Theme.current());
         languageCombo.setSelectedItem(Language.current());
         loadOpenAiSettings();
-        loadSeriesMode();
+        loadPhotoSettings();
         applyButton.setEnabled(false);
         themeCombo.addActionListener(e -> updateApplyEnabled());
         languageCombo.addActionListener(e -> updateApplyEnabled());
         seriesModeCombo.addActionListener(e -> updateApplyEnabled());
+        watchDocument(baseDirField);
+        watchDocument(photoDirField);
         seriesModeCombo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
@@ -228,6 +258,97 @@ final class SettingsDialog extends JDialog {
         c.weighty = 1;
         page.add(Box.createGlue(), c);
         return page;
+    }
+
+    /**
+     * The Photos page: where the app starts (base directory), where photos come
+     * from (the MTP glob) and how they are grouped into offers.
+     *
+     * <p>These are the same three controls the main window carries at the top —
+     * here they are the <em>defaults</em> those controls start from, so the
+     * values a user works with every day stop being a per-launch chore.
+     */
+    private JPanel buildPhotosPage() {
+        JPanel page = new JPanel(new GridBagLayout());
+        page.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+        GridBagConstraints c = new GridBagConstraints();
+        c.gridx = 0;
+        c.gridy = 0;
+        c.gridwidth = 3;
+        c.anchor = GridBagConstraints.NORTHWEST;
+        c.insets = new Insets(0, 0, 16, 0);
+        JLabel headerLabel = new JLabel(PAGE_PHOTOS);
+        headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD));
+        page.add(headerLabel, c);
+
+        addDirRow(page, 1, "Base directory:", baseDirField, e -> chooseBaseDir());
+        addDirRow(page, 2, "Photo directory:", photoDirField, e -> choosePhotoDir());
+
+        c.gridy = 3;
+        c.gridwidth = 1;
+        c.fill = GridBagConstraints.NONE;
+        c.weightx = 0;
+        c.insets = new Insets(10, 0, 0, 8);
+        page.add(new JLabel("Series recognition:"), c);
+        c.gridx = 1;
+        c.gridwidth = 2;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 1;
+        c.insets = new Insets(10, 0, 0, 0);
+        page.add(seriesModeCombo, c);
+
+        // Glue below keeps the rows pinned to the top.
+        c.gridx = 0;
+        c.gridy = 4;
+        c.weighty = 1;
+        page.add(Box.createGlue(), c);
+        return page;
+    }
+
+    /** One directory row on the Photos page: label, field, Browse. */
+    private static void addDirRow(JPanel page, int row, String label, JTextField field,
+                                  java.awt.event.ActionListener browse) {
+        GridBagConstraints c = new GridBagConstraints();
+        c.gridy = row;
+        c.gridx = 0;
+        c.anchor = GridBagConstraints.WEST;
+        c.insets = new Insets(row == 1 ? 0 : 6, 0, 0, 8);
+        page.add(new JLabel(label), c);
+
+        c.gridx = 1;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 1;
+        c.insets = new Insets(row == 1 ? 0 : 6, 0, 0, 8);
+        page.add(field, c);
+
+        c.gridx = 2;
+        c.fill = GridBagConstraints.NONE;
+        c.weightx = 0;
+        c.insets = new Insets(row == 1 ? 0 : 6, 0, 0, 0);
+        JButton browseButton = new JButton("Browse…");
+        browseButton.addActionListener(browse);
+        page.add(browseButton, c);
+    }
+
+    /** Picks the default base directory; the .env-backed pages follow it. */
+    private void chooseBaseDir() {
+        JFileChooser chooser = new JFileChooser(baseDirField.getText().strip());
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            baseDirField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    /** Picks the default photo source directory, replacing the MTP glob. */
+    private void choosePhotoDir() {
+        // The field usually holds the MTP glob, which no chooser can open;
+        // start from the deepest existing prefix of it, as the main window does.
+        Path start = OfferFiles.deepestExistingDir(photoDirField.getText().strip());
+        JFileChooser chooser = new JFileChooser(start == null ? null : start.toString());
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            photoDirField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
     }
 
     /** The OpenAI API page: key, model and the two description prompts. */
@@ -349,12 +470,19 @@ final class SettingsDialog extends JDialog {
     }
 
     /**
-     * Fills the combo from the effective {@code SERIES_RECOGNITION}, so a real
+     * Fills the Photos page from the effective configuration, so a real
      * environment variable (which outranks {@code .env}) shows up here and
      * keeps winning after a save, exactly like the OpenAI page.
      */
-    private void loadSeriesMode() {
-        savedSeriesMode = Config.forBaseDir(baseDir).seriesRecognition;
+    private void loadPhotoSettings() {
+        Config cfg = Config.forBaseDir(baseDir);
+        // The saved startup default, which is the base directory in use when
+        // none has been saved yet.
+        savedBaseDir = BaseDir.load(baseDir).toString();
+        savedPhotoDir = cfg.mtpGlobPattern;
+        savedSeriesMode = cfg.seriesRecognition;
+        baseDirField.setText(savedBaseDir);
+        photoDirField.setText(savedPhotoDir);
         seriesModeCombo.setSelectedIndex(savedSeriesMode.ordinal());
     }
 
@@ -365,25 +493,78 @@ final class SettingsDialog extends JDialog {
     }
 
     /**
-     * Writes the default series mode to {@code .env}, or removes the key when
-     * it is back to {@link SeriesRecognition.Mode#AUTO} — the built-in default,
-     * so {@code .env} carries only the overrides.
+     * Persists the Photos page: the base directory as a user preference, the
+     * other two into that directory's {@code .env}. A value equal to its
+     * built-in default is removed rather than written, so {@code .env} carries
+     * only the overrides.
+     *
+     * @return what changed, for the main window to adopt; null if saving failed
      */
-    private boolean saveSeriesMode() {
+    private Applied savePhotoSettings() {
         SeriesRecognition.Mode mode = selectedSeriesMode();
+        String photoDir = photoDirField.getText().strip();
+        String typedBaseDir = baseDirField.getText().strip();
+        boolean baseDirChanged = !typedBaseDir.equals(savedBaseDir);
+        boolean photoDirChanged = !photoDir.equals(savedPhotoDir);
+        boolean modeChanged = mode != savedSeriesMode;
+
         Map<String, String> values = new LinkedHashMap<>();
-        values.put("SERIES_RECOGNITION", mode == SeriesRecognition.Mode.AUTO ? null : mode.key);
+        if (photoDirChanged) {
+            // Blank means "back to the built-in glob", which is the absence of
+            // the key — not an empty value that would match no device at all.
+            values.put("MTP_GLOB_PATTERN",
+                    photoDir.isEmpty()
+                            || photoDir.equals(Config.defaultMtpGlobPattern(
+                                    Config.forBaseDir(baseDir).mtpUid))
+                            ? null : photoDir);
+        }
+        if (modeChanged) {
+            values.put("SERIES_RECOGNITION", mode == SeriesRecognition.Mode.AUTO ? null : mode.key);
+        }
         try {
-            Config.updateDotenv(baseDir, values);
+            if (!values.isEmpty()) {
+                Config.updateDotenv(values);
+            }
         } catch (IOException e) {
             JOptionPane.showMessageDialog(this,
                     I18n.t("Failed to save settings to {0}: {1}",
-                            baseDir.resolve(".env"), e.getMessage()),
+                            Config.globalEnvPath(), e.getMessage()),
                     I18n.t("Settings"), JOptionPane.ERROR_MESSAGE);
-            return false;
+            return null;
         }
-        loadSeriesMode();
-        return true;
+        Path newBaseDir = null;
+        if (baseDirChanged) {
+            newBaseDir = baseDirOrNull(typedBaseDir);
+            BaseDir.save(newBaseDir); // null clears it: back to the working directory
+        }
+        loadPhotoSettings();
+        // Report the *effective* values, not the typed ones: an environment
+        // variable outranks the settings file, so what was asked for is not
+        // always what a run will use — and the main window must show what a run
+        // will use.
+        return new Applied(newBaseDir,
+                photoDirChanged ? savedPhotoDir : null,
+                modeChanged ? savedSeriesMode : null);
+    }
+
+    /** The typed path when it names a real directory, else null. */
+    private static Path baseDirOrNull(String typed) {
+        if (typed.isEmpty()) {
+            return null;
+        }
+        try {
+            Path candidate = Path.of(typed).toAbsolutePath().normalize();
+            return Files.isDirectory(candidate) ? candidate : null;
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+    }
+
+    /** Whether anything on the Photos page differs from what is in effect. */
+    private boolean photoSettingsDirty() {
+        return selectedSeriesMode() != savedSeriesMode
+                || !photoDirField.getText().strip().equals(savedPhotoDir)
+                || !baseDirField.getText().strip().equals(savedBaseDir);
     }
 
     /** The model id as typed, not just as last committed by the editable combo. */
@@ -445,11 +626,11 @@ final class SettingsDialog extends JDialog {
                 userPrompt.isBlank() || userPrompt.equals(GenerateDescription.USER_PROMPT)
                         ? null : userPrompt);
         try {
-            Config.updateDotenv(baseDir, values);
+            Config.updateDotenv(values);
         } catch (IOException e) {
             JOptionPane.showMessageDialog(this,
                     I18n.t("Failed to save settings to {0}: {1}",
-                            baseDir.resolve(".env"), e.getMessage()),
+                            Config.globalEnvPath(), e.getMessage()),
                     I18n.t("Settings"), JOptionPane.ERROR_MESSAGE);
             return false;
         }
@@ -479,7 +660,7 @@ final class SettingsDialog extends JDialog {
     private void updateApplyEnabled() {
         applyButton.setEnabled(themeCombo.getSelectedItem() != Theme.current()
                 || languageCombo.getSelectedItem() != Language.current()
-                || selectedSeriesMode() != savedSeriesMode
+                || photoSettingsDirty()
                 || openaiDirty());
     }
 
@@ -495,8 +676,11 @@ final class SettingsDialog extends JDialog {
         if (openaiDirty()) {
             saveOpenAiSettings();
         }
-        if (selectedSeriesMode() != savedSeriesMode && saveSeriesMode()) {
-            onSeriesModeChanged.accept(savedSeriesMode);
+        if (photoSettingsDirty()) {
+            Applied applied = savePhotoSettings();
+            if (applied != null) {
+                onDefaultsApplied.accept(applied);
+            }
         }
         if (!themeChanged && !languageChanged) {
             updateApplyEnabled();

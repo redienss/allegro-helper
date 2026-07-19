@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +43,15 @@ public final class Config {
     public final Path chromeProfileDir;
 
     /**
+     * The phone's photo directory as mounted by gvfs-mtp, for a given user id.
+     * Public so File &gt; Settings can tell a real override from the built-in
+     * default and leave {@code .env} carrying only the former.
+     */
+    public static String defaultMtpGlobPattern(String mtpUid) {
+        return "/run/user/" + mtpUid + "/gvfs/mtp:host=*/*/DCIM/OpenCamera";
+    }
+
+    /**
      * @param env the merged lookup — {@code .env}, overridden by the real
      *            environment, overridden by caller-supplied values
      */
@@ -51,9 +61,7 @@ public final class Config {
         this.rawPhotosDir = pathOrDefault(env, "RAW_PHOTOS_DIR", baseDir.resolve("raw_photos"));
         this.offersDir = pathOrDefault(env, "OFFERS_DIR", baseDir.resolve("offers"));
         this.mtpUid = env.getOrDefault("MTP_UID", detectUid());
-        this.mtpGlobPattern = env.getOrDefault(
-                "MTP_GLOB_PATTERN",
-                "/run/user/" + mtpUid + "/gvfs/mtp:host=*/*/DCIM/OpenCamera");
+        this.mtpGlobPattern = env.getOrDefault("MTP_GLOB_PATTERN", defaultMtpGlobPattern(mtpUid));
         this.seriesGapThresholdSeconds = intOrDefault(env, "SERIES_GAP_THRESHOLD_SECONDS", 60);
         this.seriesRecognition = SeriesRecognition.Mode.parse(env.get("SERIES_RECOGNITION"));
         this.brightnessStrength = Retouch.clampStrength(
@@ -89,16 +97,103 @@ public final class Config {
 
     /**
      * Like {@link #forBaseDir(Path)}, with caller-supplied overrides (e.g. values
-     * the user typed into the UI) that win over both {@code .env} and the real
-     * environment.
+     * the user typed into the UI) that win over everything else.
+     *
+     * <p>Lowest to highest: the base directory's {@code .env}, the user's
+     * {@link #globalEnvPath() global settings}, real environment variables,
+     * then the overrides. The global file wins over the base directory's
+     * because it is what File &gt; Settings writes — a save that a stale
+     * project-local file could shadow would look like it had done nothing.
      */
     public static Config forBaseDir(Path baseDir, Map<String, String> overrides) {
         Path base = baseDir.toAbsolutePath().normalize();
         Map<String, String> env = new HashMap<>(loadDotenv(base.resolve(".env")));
-        // Real environment variables win over .env.
+        env.putAll(loadDotenv(globalEnvPath()));
+        // Real environment variables win over any file.
         env.putAll(System.getenv());
         env.putAll(overrides);
         return new Config(base, env);
+    }
+
+    /**
+     * The user's own settings file, {@code ~/.allegro-helper/.env}.
+     *
+     * <p>Settings live here rather than in the base directory because they
+     * belong to the user, not to a folder of photos: they have to survive
+     * reinstalling the app, deleting the working directory, or pointing the app
+     * at a different one. It also breaks a circularity — the base directory is
+     * itself a setting, and a file found by way of the base directory cannot
+     * tell you what the base directory is.
+     *
+     * <p>{@code ALLEGRO_HELPER_CONFIG_DIR} overrides the location (the tests
+     * use the {@code allegrohelper.config.dir} property for the same reason:
+     * the suite must never read or write the real one).
+     */
+    public static Path globalEnvPath() {
+        return configDir().resolve(".env");
+    }
+
+    private static Path configDir() {
+        String fromEnv = System.getenv("ALLEGRO_HELPER_CONFIG_DIR");
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return Path.of(fromEnv);
+        }
+        String fromProperty = System.getProperty("allegrohelper.config.dir");
+        if (fromProperty != null && !fromProperty.isBlank()) {
+            return Path.of(fromProperty);
+        }
+        return Path.of(System.getProperty("user.home"), ".allegro-helper");
+    }
+
+    /**
+     * Seeds the global settings from a base directory's {@code .env} the first
+     * time, so an existing install keeps its API key and prompts without the
+     * user re-entering them.
+     *
+     * <p>Copies rather than moves: the original is the user's file, it may hold
+     * keys this app never wrote, and a base directory that is also a git
+     * checkout should not appear to have lost a file. Does nothing once the
+     * global file exists, so it cannot overwrite newer settings.
+     *
+     * @return the path copied from, or null when there was nothing to do
+     */
+    public static Path migrateLegacyDotenv(Path baseDir) throws IOException {
+        Path global = globalEnvPath();
+        if (Files.exists(global)) {
+            return null;
+        }
+        Path legacy = baseDir.toAbsolutePath().normalize().resolve(".env");
+        if (!Files.isRegularFile(legacy)) {
+            return null;
+        }
+        createConfigDir();
+        Files.copy(legacy, global);
+        restrictPermissions(global);
+        return legacy;
+    }
+
+    private static void createConfigDir() throws IOException {
+        Path dir = configDir();
+        if (!Files.isDirectory(dir)) {
+            Files.createDirectories(dir);
+            restrictPermissions(dir);
+        }
+    }
+
+    /**
+     * Locks a settings file (or its directory) to the owner. It holds an
+     * OpenAI API key, and the default umask on a shared machine leaves it
+     * world-readable. Best-effort: silently skipped on a filesystem without
+     * POSIX permissions.
+     */
+    private static void restrictPermissions(Path path) {
+        try {
+            boolean directory = Files.isDirectory(path);
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(
+                    directory ? "rwx------" : "rw-------"));
+        } catch (IOException | UnsupportedOperationException e) {
+            // Not POSIX, or the filesystem refuses: the settings still work.
+        }
     }
 
     /**
@@ -174,15 +269,16 @@ public final class Config {
     }
 
     /**
-     * Updates keys in the base directory's {@code .env}, creating the file if
-     * needed and preserving every unrelated line (comments included). A null
-     * value removes the key. Values are encoded as the counterpart of
-     * {@link #stripQuotes}: double-quoted with escapes when they contain
-     * newlines, quotes or other characters the line-based format cannot carry
-     * verbatim.
+     * Updates keys in the user's {@link #globalEnvPath() global settings},
+     * creating the file if needed and preserving every unrelated line (comments
+     * included). A null value removes the key. Values are encoded as the
+     * counterpart of {@link #stripQuotes}: double-quoted with escapes when they
+     * contain newlines, quotes or other characters the line-based format cannot
+     * carry verbatim.
      */
-    public static void updateDotenv(Path baseDir, Map<String, String> values) throws IOException {
-        Path envFile = baseDir.toAbsolutePath().normalize().resolve(".env");
+    public static void updateDotenv(Map<String, String> values) throws IOException {
+        createConfigDir();
+        Path envFile = globalEnvPath();
         List<String> lines = Files.isRegularFile(envFile)
                 ? new ArrayList<>(Files.readAllLines(envFile, StandardCharsets.UTF_8))
                 : new ArrayList<>();
@@ -203,6 +299,7 @@ public final class Config {
             }
         }
         Files.write(envFile, lines, StandardCharsets.UTF_8);
+        restrictPermissions(envFile);
     }
 
     private static boolean isAssignmentOf(String rawLine, String key) {

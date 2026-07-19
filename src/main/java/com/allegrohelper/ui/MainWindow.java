@@ -327,15 +327,30 @@ public final class MainWindow {
     }
 
     /**
-     * Points the series dropdown at a new default, as saved in Settings.
-     * Called only when that default actually changed, so a mode picked for
-     * this session survives an unrelated trip through the dialog. Setting the
-     * selection fires the combo's listener, which re-scans the photo source —
-     * which is what should happen: the Photos list previews what the new mode
-     * would group.
+     * Adopts the defaults Settings just saved. Only the values that actually
+     * changed arrive non-null, so a control the user set for this session
+     * survives an unrelated trip through the dialog.
+     *
+     * <p>Order matters: the base directory goes first, because the photo
+     * directory and the series mode were read from <em>its</em> {@code .env}
+     * and the offers to load come from it too. Setting the series mode fires
+     * the combo's listener, which re-scans the photo source — which is what
+     * should happen, so that re-scan is left to run last and pick up the new
+     * photo directory.
      */
-    private void applyDefaultSeriesMode(SeriesRecognition.Mode mode) {
-        seriesModeCombo.setSelectedIndex(mode.ordinal());
+    private void applyDefaults(SettingsDialog.Applied applied) {
+        if (applied.baseDir() != null) {
+            baseDirField.setText(applied.baseDir().toString());
+            loadOffersFromBaseDir();
+        }
+        if (applied.photoDir() != null) {
+            photoDirField.setText(applied.photoDir());
+        }
+        if (applied.seriesMode() != null) {
+            seriesModeCombo.setSelectedIndex(applied.seriesMode().ordinal());
+        } else if (applied.photoDir() != null || applied.baseDir() != null) {
+            refreshPhotos(); // no combo event to do it for us
+        }
     }
 
     /** Selects the given offer row (0-based), updating the details panel. */
@@ -443,7 +458,7 @@ public final class MainWindow {
         JMenuItem settings = new JMenuItem("Settings…");
         settings.addActionListener(e -> new SettingsDialog(frame,
                 Path.of(baseDirField.getText().strip()), this::onSettingsApplied,
-                this::applyDefaultSeriesMode).setVisible(true));
+                this::applyDefaults).setVisible(true));
         JMenuItem exit = new JMenuItem("Exit");
         // Close via the window event so it takes the same path as the title-bar X.
         exit.addActionListener(e -> frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING)));
@@ -2059,6 +2074,15 @@ public final class MainWindow {
             }
         }
         return -1;
+    }
+
+    /**
+     * Appends a line to the log from outside the package — for startup notices
+     * that happen before the window exists, such as the one-time copy of the
+     * settings file. Must be called on the EDT.
+     */
+    public void log(String line) {
+        appendLog(line);
     }
 
     /** Appends a line to the log and scrolls to it. Must be called on the EDT. */

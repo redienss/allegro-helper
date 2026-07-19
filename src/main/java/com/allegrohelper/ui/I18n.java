@@ -245,6 +245,8 @@ final class I18n {
         put("Language:", "Język:");
         // The Photos page reuses the "Photos" entry above as its name and header.
         put("Series recognition:", "Rozpoznawanie serii:");
+        // "Base directory:", "Photo directory:" and "Browse…" are already
+        // translated for the main window's rows above; the Photos page reuses them.
         put("Cancel", "Anuluj");
         put("Apply", "Zastosuj");
         put("System", "Systemowy");

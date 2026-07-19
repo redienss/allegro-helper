@@ -2,6 +2,8 @@ package com.allegrohelper;
 
 import com.allegrohelper.cli.Cli;
 import com.allegrohelper.ui.Language;
+import com.allegrohelper.core.Config;
+import com.allegrohelper.ui.BaseDir;
 import com.allegrohelper.ui.MainWindow;
 import com.allegrohelper.ui.Theme;
 
@@ -9,6 +11,7 @@ import javax.swing.SwingUtilities;
 import java.awt.GraphicsEnvironment;
 import java.awt.Toolkit;
 import java.lang.reflect.Field;
+import java.io.IOException;
 import java.nio.file.Path;
 
 /**
@@ -48,13 +51,34 @@ public final class App {
             System.exit(2);
         }
 
-        Path baseDir = args.length > 0 ? Path.of(args[0]) : Path.of(System.getProperty("user.dir"));
+        // An explicit argument wins; otherwise the base directory saved in
+        // File > Settings > Photos, falling back to the working directory.
+        Path baseDir = args.length > 0
+                ? Path.of(args[0])
+                : BaseDir.load(Path.of(System.getProperty("user.dir")));
+        // First run after settings moved out of the working directory: seed them
+        // from the base directory's .env so an existing install keeps its API
+        // key and prompts. Copies, never moves — see Config.migrateLegacyDotenv.
+        Path migratedFrom = null;
+        try {
+            migratedFrom = Config.migrateLegacyDotenv(baseDir);
+        } catch (IOException e) {
+            System.err.println("Could not copy " + baseDir.resolve(".env") + " to "
+                    + Config.globalEnvPath() + ": " + e.getMessage());
+        }
+
+        Path copiedFrom = migratedFrom;
         SwingUtilities.invokeLater(() -> {
             // Saved theme and language (File > Settings), defaulting to the
             // system look and feel and English; best-effort inside apply.
             Theme.apply(Theme.load());
             Language.apply(Language.load());
-            new MainWindow(baseDir).show();
+            MainWindow window = new MainWindow(baseDir);
+            window.show();
+            if (copiedFrom != null) {
+                window.log("Copied settings from " + copiedFrom + " to " + Config.globalEnvPath()
+                        + " — settings now live there and survive reinstalling the app.");
+            }
         });
     }
 

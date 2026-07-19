@@ -109,7 +109,7 @@ selected offer on the right.
 ### Menu bar
 
 - **File > Settings…** — a PhpStorm-style settings dialog (page list on the
-  left, the selected page on the right), with three pages:
+  left, the selected page on the right), with four pages:
   - **Appearance** — the theme: **System** (the platform look and feel,
     following the desktop theme — the default), **Dark**, or **Light** (both
     built on the JDK's own Nimbus look and feel, keeping the app
@@ -118,6 +118,11 @@ selected offer on the right.
     The whole window is translated on the spot (texts drawn at runtime, like an
     already-loaded photo list, catch up on their next refresh; the pipeline log
     stays English).
+  - **Photos** — the defaults the main window starts from: the **base
+    directory** (so launching from a desktop shortcut lands in the right place
+    rather than in your home directory), the **photo directory**, and the
+    **series recognition** mode — useful if you mostly work in one mode and
+    would rather not re-pick it on every launch.
   - **OpenAI API** — what the Describe step talks to: the **API key** (masked;
     with a link to OpenAI's key page if you don't have one yet), the **model**,
     and the two **prompts**. The system prompt is the instruction the model
@@ -127,7 +132,7 @@ selected offer on the right.
     brand and model make them certain). The user prompt is a template whose
     `{{OFFER_JSON}}` placeholder is replaced with the offer's data. Both start
     from the built-in defaults and can be edited freely; **Apply** writes what
-    differs from the defaults back to `.env`.
+    differs from the defaults to `~/.allegro-helper/.env`.
 
   Every setting takes effect immediately, no restart, and is remembered across
   launches.
@@ -385,9 +390,15 @@ The same pipeline runs without a UI:
 
 ## Configuration
 
-The base directory (chosen at the top of the window, default: the launch
-directory) determines `offers.csv`, `raw_photos/` and `offers/`. These
-environment variables are honored, from the environment or `.env`:
+Settings are saved in **`~/.allegro-helper/.env`**, so they survive
+reinstalling the app or pointing it at another directory. File > Settings
+writes them there; the first UI launch copies an existing `.env` from the base
+directory so nothing is lost. (`ALLEGRO_HELPER_CONFIG_DIR` moves the file.)
+
+The base directory (chosen at the top of the window, or in File > Settings >
+Photos, which remembers it for next launch) determines `offers.csv`,
+`raw_photos/` and `offers/`. These environment variables are honored, from the
+environment or either `.env`:
 `CSV_PATH`, `RAW_PHOTOS_DIR`, `OFFERS_DIR`, `MTP_GLOB_PATTERN`,
 `SERIES_GAP_THRESHOLD_SECONDS`, `SERIES_RECOGNITION`
 (`auto` | `single` | `subfolders`, the CLI equivalent of the series
@@ -397,9 +408,10 @@ equivalents of the two sliders: `0.5`–`2.0`, default `1.0` and `1.2`),
 OpenAI-compatible endpoint), `CHROME_BIN` and `CHROME_PROFILE_DIR` (the
 browser and profile used by **Copy all to Allegro**; by default Chrome is
 found on the PATH and the profile lives in `.chrome-profile/` under the base
-directory). A real environment variable takes precedence over
-a value in `.env`; the **Photo directory** field, the series recognition
-dropdown and the two strength sliders in the window take precedence over both.
+directory). Precedence, lowest to highest: the base directory's `.env`,
+`~/.allegro-helper/.env`, a real environment variable, then the **Photo
+directory** field, the series recognition dropdown and the two strength
+sliders in the window.
 
 ## Data layout
 
