@@ -248,7 +248,7 @@ public final class GenerateDescription {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(cfg.openaiBaseUrl + "/chat/completions"))
-                .timeout(Duration.ofSeconds(120))
+                .timeout(Duration.ofSeconds(300))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + cfg.openaiApiKey)
                 .POST(HttpRequest.BodyPublishers.ofString(Json.write(body, false), StandardCharsets.UTF_8))
