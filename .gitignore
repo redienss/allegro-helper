@@ -17,3 +17,5 @@ offers.csv
 .chrome-profile/
 # Reference copy of the Allegro form, saved while logged in (embeds account data).
 allegro-form/
+# Scratch photos for manually exercising the pipeline - not a fixture.
+test_data/
