@@ -1294,6 +1294,7 @@ public final class MainWindow {
         };
         for (JTextField field : new JTextField[]{qrUrlField, qrLabelField, qrFontSizeField, qrSizeField}) {
             field.getDocument().addDocumentListener(settleOnEdit);
+            field.setCaretColor(UiStyle.caretColor());
         }
         return form;
     }
