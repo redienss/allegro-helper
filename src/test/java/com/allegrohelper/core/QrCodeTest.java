@@ -68,7 +68,7 @@ class QrCodeTest {
     void skipsAnOfferWhoseQrJsonHasNoUrl() throws IOException {
         Path photos = photosDir();
         writeJpeg(plainPhoto(400, 300, Color.GRAY), photos.resolve("a.jpg"));
-        QrCode.writeSettings(offerDir, new QrCode.QrSettings("", "Label", 100, 24, QrCode.Position.SE, 0));
+        QrCode.writeSettings(offerDir, new QrCode.QrSettings("", "Label", 100, 24, QrCode.LabelPosition.BELOW, QrCode.Position.SE, 0));
 
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
 
@@ -81,7 +81,7 @@ class QrCodeTest {
         writeJpeg(plainPhoto(400, 300, Color.GRAY), photos.resolve("a.jpg"));
         writeJpeg(plainPhoto(400, 300, Color.GRAY), photos.resolve("b.jpg"));
         QrCode.writeSettings(offerDir, new QrCode.QrSettings(
-                "https://example.com/x", "Label", 120, 24, QrCode.Position.SE, 1));
+                "https://example.com/x", "Label", 120, 24, QrCode.LabelPosition.BELOW, QrCode.Position.SE, 1));
 
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
 
@@ -102,7 +102,7 @@ class QrCodeTest {
         Path photos = photosDir();
         writeJpeg(plainPhoto(200, 200, Color.WHITE), photos.resolve("a.jpg"));
         QrCode.writeSettings(offerDir, new QrCode.QrSettings(
-                "https://example.com/x", "", 80, 24, QrCode.Position.CENTER, 0));
+                "https://example.com/x", "", 80, 24, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0));
 
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
         Path out = offerDir.resolve("qr_coded");
@@ -117,13 +117,13 @@ class QrCodeTest {
         Path photos = photosDir();
         writeJpeg(plainPhoto(200, 200, Color.WHITE), photos.resolve("a.jpg"));
         QrCode.writeSettings(offerDir, new QrCode.QrSettings(
-                "https://example.com/x", "First label", 80, 24, QrCode.Position.CENTER, 0));
+                "https://example.com/x", "First label", 80, 24, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0));
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
         Path out = offerDir.resolve("qr_coded");
         byte[] first = Files.readAllBytes(out.resolve("a.jpg"));
 
         QrCode.writeSettings(offerDir, new QrCode.QrSettings(
-                "https://example.com/x", "A very different second label", 80, 24, QrCode.Position.CENTER, 0));
+                "https://example.com/x", "A very different second label", 80, 24, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0));
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
         byte[] second = Files.readAllBytes(out.resolve("a.jpg"));
 
@@ -145,11 +145,11 @@ class QrCodeTest {
         writeJpeg(plainPhoto(200, 200, Color.WHITE), photos.resolve("a.jpg"));
         writeJpeg(plainPhoto(200, 200, Color.WHITE), photos.resolve("b.jpg"));
         QrCode.writeSettings(offerDir, new QrCode.QrSettings(
-                "https://example.com/x", "First label", 80, 24, QrCode.Position.CENTER, 1));
+                "https://example.com/x", "First label", 80, 24, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 1));
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
 
         QrCode.writeSettings(offerDir, new QrCode.QrSettings(
-                "https://example.com/x", "A very different second label", 80, 24, QrCode.Position.CENTER, 1));
+                "https://example.com/x", "A very different second label", 80, 24, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 1));
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
 
         Path out = offerDir.resolve("qr_coded");
@@ -164,7 +164,7 @@ class QrCodeTest {
         writeJpeg(plainPhoto(300, 300, Color.GRAY), photos.resolve("a.jpg"));
         writeJpeg(plainPhoto(300, 300, Color.GRAY), photos.resolve("b.jpg"));
         QrCode.writeSettings(offerDir, new QrCode.QrSettings(
-                "https://example.com/x", "", 100, 24, QrCode.Position.SE, 99));
+                "https://example.com/x", "", 100, 24, QrCode.LabelPosition.BELOW, QrCode.Position.SE, 99));
 
         QrCode.qrCodeOffer(offerDir, Reporter.stdout());
 
@@ -180,7 +180,7 @@ class QrCodeTest {
     @Test
     void writeSettingsRoundTripsThroughReadSettings() throws IOException {
         QrCode.QrSettings settings = new QrCode.QrSettings(
-                "https://youtu.be/xElxEl5m9Wo", "YouTube 360º video", 250, 32, QrCode.Position.NW, 3);
+                "https://youtu.be/xElxEl5m9Wo", "YouTube 360º video", 250, 32, QrCode.LabelPosition.BELOW, QrCode.Position.NW, 3);
         QrCode.writeSettings(offerDir, settings);
         assertEquals(settings, QrCode.readSettings(offerDir));
     }
@@ -202,7 +202,7 @@ class QrCodeTest {
     void compositeDrawsAWhiteQuietZoneAndDarkModules() {
         BufferedImage photo = plainPhoto(800, 600, new Color(128, 128, 128));
         QrCode.QrSettings settings = new QrCode.QrSettings(
-                "https://example.com/product/12345", "", 200, 24, QrCode.Position.CENTER, 0);
+                "https://example.com/product/12345", "", 200, 24, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0);
 
         BufferedImage result = QrCode.composite(photo, settings);
 
@@ -223,15 +223,15 @@ class QrCodeTest {
     void compositeNeverMutatesTheInputImage() {
         BufferedImage photo = plainPhoto(500, 400, Color.RED);
         int before = photo.getRGB(10, 10);
-        QrCode.composite(photo, new QrCode.QrSettings("https://example.com", "", 150, 24, QrCode.Position.SE, 0));
+        QrCode.composite(photo, new QrCode.QrSettings("https://example.com", "", 150, 24, QrCode.LabelPosition.BELOW, QrCode.Position.SE, 0));
         assertEquals(before, photo.getRGB(10, 10), "composite must return a copy, not mutate the input");
     }
 
     @Test
     void positionAnchorsThePlateToTheRequestedCorner() {
         BufferedImage photo = plainPhoto(1000, 800, new Color(128, 128, 128));
-        QrCode.QrSettings nw = new QrCode.QrSettings("https://example.com/nw", "", 150, 24, QrCode.Position.NW, 0);
-        QrCode.QrSettings se = new QrCode.QrSettings("https://example.com/se", "", 150, 24, QrCode.Position.SE, 0);
+        QrCode.QrSettings nw = new QrCode.QrSettings("https://example.com/nw", "", 150, 24, QrCode.LabelPosition.BELOW, QrCode.Position.NW, 0);
+        QrCode.QrSettings se = new QrCode.QrSettings("https://example.com/se", "", 150, 24, QrCode.LabelPosition.BELOW, QrCode.Position.SE, 0);
 
         BufferedImage resultNw = QrCode.composite(photo, nw);
         BufferedImage resultSe = QrCode.composite(photo, se);
@@ -250,7 +250,7 @@ class QrCodeTest {
         BufferedImage photo = plainPhoto(120, 100, new Color(128, 128, 128));
         QrCode.QrSettings settings = new QrCode.QrSettings(
                 "https://example.com/x", "A label that would not otherwise fit", 5000, 24,
-                QrCode.Position.CENTER, 0);
+                QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0);
 
         BufferedImage result = QrCode.composite(photo, settings);
 
@@ -262,15 +262,45 @@ class QrCodeTest {
     void labelFontSizeIsIndependentOfQrSize() {
         BufferedImage photo = plainPhoto(1600, 1200, new Color(128, 128, 128));
         QrCode.QrSettings small = new QrCode.QrSettings(
-                "https://example.com/x", "Scan me", 300, 12, QrCode.Position.CENTER, 0);
+                "https://example.com/x", "Scan me", 300, 12, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0);
         QrCode.QrSettings large = new QrCode.QrSettings(
-                "https://example.com/x", "Scan me", 300, 80, QrCode.Position.CENTER, 0);
+                "https://example.com/x", "Scan me", 300, 80, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0);
 
         int[] smallBox = whiteBoundingBox(QrCode.composite(photo, small));
         int[] largeBox = whiteBoundingBox(QrCode.composite(photo, large));
 
         assertTrue(largeBox[0] > smallBox[0], "a larger label font size must widen the backing plate");
         assertTrue(largeBox[1] > smallBox[1], "a larger label font size must heighten the backing plate");
+    }
+
+    @Test
+    void labelPositionMovesTheCaptionAboveOrBelowTheQrCode() {
+        BufferedImage photo = plainPhoto(800, 800, new Color(128, 128, 128));
+        QrCode.QrSettings below = new QrCode.QrSettings(
+                "https://example.com/x", "Scan me", 200, 24, QrCode.LabelPosition.BELOW, QrCode.Position.CENTER, 0);
+        QrCode.QrSettings above = new QrCode.QrSettings(
+                "https://example.com/x", "Scan me", 200, 24, QrCode.LabelPosition.ABOVE, QrCode.Position.CENTER, 0);
+
+        int[] belowQrTop = blackBoundingBox(QrCode.composite(photo, below));
+        int[] aboveQrTop = blackBoundingBox(QrCode.composite(photo, above));
+
+        assertTrue(aboveQrTop[1] > belowQrTop[1],
+                "moving the label above the QR code must push the QR modules further down");
+    }
+
+    /** The {left, top} of the smallest box enclosing every pure-black pixel — the QR modules' footprint. */
+    private static int[] blackBoundingBox(BufferedImage img) {
+        int minX = img.getWidth();
+        int minY = img.getHeight();
+        for (int y = 0; y < img.getHeight(); y++) {
+            for (int x = 0; x < img.getWidth(); x++) {
+                if ((img.getRGB(x, y) & 0xFFFFFF) == 0x000000) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                }
+            }
+        }
+        return new int[] {minX, minY};
     }
 
     /** The {width, height} of the smallest box enclosing every pure-white pixel — the backing plate's footprint. */

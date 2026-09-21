@@ -26,8 +26,9 @@ import java.util.Map;
  *
  * <p>Unlike every other retouching step, this one is <b>per-offer</b>, not
  * global: different items link to different videos or galleries, so each
- * offer keeps its own URL/label/size/position/target-photo in a sidecar file,
- * {@code qr.json}, written by the UI's QR Code tab and read only here — never
+ * offer keeps its own URL/label/label-font-size/label-position/size/position/
+ * target-photo in a sidecar file, {@code qr.json}, written by the UI's QR
+ * Code tab and read only here — never
  * touched by Match or Import, so re-running those cannot lose it. An offer
  * with no {@code qr.json} is left untouched, the same as {@link AutoCrop}
  * declining a series it cannot confidently crop: a missing configuration is
@@ -57,6 +58,14 @@ public final class QrCode {
     /** The label's font size when an offer's {@code qr.json} does not say otherwise. */
     public static final int DEFAULT_LABEL_FONT_SIZE = 24;
 
+    /** Where the label caption sits relative to the QR code on the backing plate. */
+    public enum LabelPosition {
+        BELOW, ABOVE
+    }
+
+    /** The label's side of the QR code when an offer's {@code qr.json} does not say otherwise. */
+    public static final LabelPosition DEFAULT_LABEL_POSITION = LabelPosition.BELOW;
+
     /**
      * One offer's QR configuration, as saved to {@code qr.json}.
      *
@@ -65,11 +74,12 @@ public final class QrCode {
      * @param labelFontSize the label caption's font size, in pixels — independent
      *                      of {@code sizePx}, so a small QR code can still carry
      *                      a readable label
+     * @param labelPosition whether the caption is drawn above or below the QR code
      * @param photoIndex    which photo of the offer's series (in the same order
      *                      {@link ImportPhotos#listJpegs} lists them) gets stamped
      */
-    public record QrSettings(String url, String label, int sizePx, int labelFontSize, Position position,
-                              int photoIndex) {
+    public record QrSettings(String url, String label, int sizePx, int labelFontSize, LabelPosition labelPosition,
+                              Position position, int photoIndex) {
     }
 
     // ------------------------------------------------------------- pipeline step
@@ -216,9 +226,11 @@ public final class QrCode {
             int sizePx = ((Number) data.getOrDefault("sizePx", 300.0)).intValue();
             int labelFontSize = ((Number) data.getOrDefault("labelFontSize", (double) DEFAULT_LABEL_FONT_SIZE))
                     .intValue();
+            LabelPosition labelPosition = LabelPosition.valueOf(
+                    String.valueOf(data.getOrDefault("labelPosition", DEFAULT_LABEL_POSITION.name())));
             Position position = Position.valueOf(String.valueOf(data.getOrDefault("position", "SE")));
             int photoIndex = ((Number) data.getOrDefault("photoIndex", 0.0)).intValue();
-            return new QrSettings(url, label, sizePx, labelFontSize, position, photoIndex);
+            return new QrSettings(url, label, sizePx, labelFontSize, labelPosition, position, photoIndex);
         } catch (IOException | RuntimeException e) {
             return null;
         }
@@ -231,6 +243,7 @@ public final class QrCode {
         data.put("label", settings.label());
         data.put("sizePx", settings.sizePx());
         data.put("labelFontSize", settings.labelFontSize());
+        data.put("labelPosition", settings.labelPosition().name());
         data.put("position", settings.position().name());
         data.put("photoIndex", settings.photoIndex());
         Files.writeString(file, Json.write(data, true), StandardCharsets.UTF_8);
@@ -255,10 +268,10 @@ public final class QrCode {
 
         int fontSize = Math.max(1, settings.labelFontSize());
         int moduleSize = Math.max(1, settings.sizePx() / n);
-        Plate plate = layoutPlate(n, moduleSize, label, fontSize);
+        Plate plate = layoutPlate(n, moduleSize, label, fontSize, settings.labelPosition());
         while ((plate.width > maxW || plate.height > maxH) && moduleSize > 1) {
             moduleSize--;
-            plate = layoutPlate(n, moduleSize, label, fontSize);
+            plate = layoutPlate(n, moduleSize, label, fontSize, settings.labelPosition());
         }
 
         BufferedImage out = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_RGB);
@@ -280,7 +293,7 @@ public final class QrCode {
         g.setColor(Color.BLACK);
         int quiet = moduleSize * 4;
         int qrOriginX = px + quiet;
-        int qrOriginY = py + quiet;
+        int qrOriginY = py + plate.qrOffsetY;
         for (int r = 0; r < n; r++) {
             for (int c = 0; c < n; c++) {
                 if (modules[r][c]) {
@@ -292,7 +305,9 @@ public final class QrCode {
         if (!label.isEmpty()) {
             g.setFont(plate.font);
             FontMetrics fm = g.getFontMetrics();
-            int textY = qrOriginY + plate.qrPx + quiet + fm.getAscent();
+            int textY = settings.labelPosition() == LabelPosition.ABOVE
+                    ? py + quiet + fm.getAscent()
+                    : qrOriginY + plate.qrPx + quiet + fm.getAscent();
             int textX = px + (plate.width - fm.stringWidth(label)) / 2;
             g.drawString(label, textX, textY);
         }
@@ -300,23 +315,34 @@ public final class QrCode {
         return out;
     }
 
-    /** The backing plate's geometry and (when a label is present) its font, for a given module pixel size. */
-    private record Plate(int width, int height, int qrPx, Font font) {
+    /**
+     * The backing plate's geometry and (when a label is present) its font,
+     * for a given module pixel size. {@code qrOffsetY} is the distance from
+     * the plate's top edge to the QR modules — past the top quiet zone alone
+     * when the label is below or absent, and past the label's own band too
+     * when it is above.
+     */
+    private record Plate(int width, int height, int qrPx, int qrOffsetY, Font font) {
     }
 
-    private static Plate layoutPlate(int n, int moduleSize, String label, int fontSize) {
+    private static Plate layoutPlate(int n, int moduleSize, String label, int fontSize,
+                                      LabelPosition labelPosition) {
         int quiet = moduleSize * 4;
         int qrPx = moduleSize * n;
         int width = qrPx + quiet * 2;
         int height = qrPx + quiet * 2;
+        int qrOffsetY = quiet;
         Font font = null;
         if (!label.isEmpty()) {
             font = new Font(Font.SANS_SERIF, Font.PLAIN, fontSize);
             FontMetrics fm = fontMetrics(font);
             width = Math.max(width, fm.stringWidth(label) + quiet * 2);
             height += quiet + fm.getHeight();
+            if (labelPosition == LabelPosition.ABOVE) {
+                qrOffsetY += quiet + fm.getHeight();
+            }
         }
-        return new Plate(width, height, qrPx, font);
+        return new Plate(width, height, qrPx, qrOffsetY, font);
     }
 
     private static FontMetrics fontMetrics(Font font) {

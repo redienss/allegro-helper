@@ -63,7 +63,7 @@ public final class QrCodePreview {
                     liveSettings.url(), liveSettings.label(),
                     Math.max(1, (int) Math.round(liveSettings.sizePx() * sample.scale())),
                     Math.max(1, (int) Math.round(liveSettings.labelFontSize() * sample.scale())),
-                    liveSettings.position(), liveSettings.photoIndex());
+                    liveSettings.labelPosition(), liveSettings.position(), liveSettings.photoIndex());
             image = QrCode.composite(image, scaled);
         }
         return new Result(image, index, photos.size());

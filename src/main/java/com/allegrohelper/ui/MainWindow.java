@@ -271,6 +271,9 @@ public final class MainWindow {
     private final JTextField qrUrlField = new JTextField();
     private final JTextField qrLabelField = new JTextField();
     private final JTextField qrFontSizeField = new JTextField();
+    /** Item order mirrors {@link QrCode.LabelPosition#values()} — index maps straight to ordinal. */
+    private final JComboBox<String> qrLabelPositionCombo = new JComboBox<>(new String[]{
+            "Below the QR code", "Above the QR code"});
     private final JTextField qrSizeField = new JTextField();
     private final Map<QrCode.Position, JToggleButton> qrPositionButtons = new EnumMap<>(QrCode.Position.class);
     private QrCode.Position qrSelectedPosition = QrCode.Position.SE;
@@ -1255,6 +1258,16 @@ public final class MainWindow {
         qrLabelField.setToolTipText(I18n.t("Shown as a caption next to the QR code on the photo."));
         qrFontSizeField.setToolTipText(I18n.t("The label caption's font size, in pixels."));
         qrFontSizeField.setColumns(8);
+        qrLabelPositionCombo.setToolTipText(I18n.t("Where the caption is drawn relative to the QR code."));
+        qrLabelPositionCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Object shown = value == null ? null : I18n.t(value.toString());
+                return super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+            }
+        });
+        qrLabelPositionCombo.addActionListener(e -> refreshQrPreview());
         qrSizeField.setToolTipText(
                 I18n.t("The QR code's own size, in pixels (not counting its white margin)."));
         qrSizeField.setColumns(8);
@@ -1265,10 +1278,11 @@ public final class MainWindow {
         addQrFormRow(form, c, 0, "URL:", qrUrlField, 1.0);
         addQrFormRow(form, c, 1, "Label:", qrLabelField, 1.0);
         addQrFormRow(form, c, 2, "Label font size (px):", qrFontSizeField, 0.0);
-        addQrFormRow(form, c, 3, "Size (px):", qrSizeField, 0.0);
+        addQrFormRow(form, c, 3, "Label position:", qrLabelPositionCombo, 0.0);
+        addQrFormRow(form, c, 4, "Size (px):", qrSizeField, 0.0);
 
         c.gridx = 0;
-        c.gridy = 4;
+        c.gridy = 5;
         c.weightx = 0;
         c.fill = GridBagConstraints.NONE;
         c.anchor = GridBagConstraints.NORTHWEST;
@@ -1301,7 +1315,7 @@ public final class MainWindow {
 
     /** One label+field row of {@link #qrForm}; {@code weight} is the field's share of extra width. */
     private void addQrFormRow(JPanel form, GridBagConstraints c, int row, String label,
-                              JTextField field, double weight) {
+                              JComponent field, double weight) {
         c.gridx = 0;
         c.gridy = row;
         c.weightx = 0;
@@ -1357,6 +1371,7 @@ public final class MainWindow {
         qrUrlField.setText(settings.url());
         qrLabelField.setText(settings.label());
         qrFontSizeField.setText(String.valueOf(settings.labelFontSize()));
+        qrLabelPositionCombo.setSelectedIndex(settings.labelPosition().ordinal());
         qrSizeField.setText(String.valueOf(settings.sizePx()));
         selectQrPosition(settings.position());
         qrPreviewPhotoIndex = settings.photoIndex();
@@ -1367,6 +1382,7 @@ public final class MainWindow {
         qrUrlField.setText("");
         qrLabelField.setText("");
         qrFontSizeField.setText(String.valueOf(DEFAULT_QR_LABEL_FONT_SIZE));
+        qrLabelPositionCombo.setSelectedIndex(QrCode.DEFAULT_LABEL_POSITION.ordinal());
         qrSizeField.setText(String.valueOf(DEFAULT_QR_SIZE));
         selectQrPosition(QrCode.Position.SE);
         qrPreviewPhotoIndex = 0;
@@ -1422,7 +1438,8 @@ public final class MainWindow {
             return;
         }
         QrCode.QrSettings settings = new QrCode.QrSettings(
-                url, qrLabelField.getText().strip(), sizePx, fontSize, qrSelectedPosition, qrPreviewPhotoIndex);
+                url, qrLabelField.getText().strip(), sizePx, fontSize, selectedQrLabelPosition(),
+                qrSelectedPosition, qrPreviewPhotoIndex);
         Path target = currentOfferDir.resolve("qr.json");
         try {
             QrCode.writeSettings(currentOfferDir, settings);
@@ -1492,7 +1509,7 @@ public final class MainWindow {
         String url = qrUrlField.getText().strip();
         QrCode.QrSettings liveSettings = url.isEmpty() ? null : new QrCode.QrSettings(
                 url, qrLabelField.getText().strip(), parseQrSizeOrDefault(), parseQrFontSizeOrDefault(),
-                qrSelectedPosition, photoIndex);
+                selectedQrLabelPosition(), qrSelectedPosition, photoIndex);
         qrPreviewPanel.setStatus(I18n.t("Rendering the preview…"));
         qrPreviewLoader.submit(() -> {
             String failure = null;
@@ -1526,6 +1543,11 @@ public final class MainWindow {
                 }
             });
         });
+    }
+
+    /** The label position combo's current selection, translated back from its list index. */
+    private QrCode.LabelPosition selectedQrLabelPosition() {
+        return QrCode.LabelPosition.values()[qrLabelPositionCombo.getSelectedIndex()];
     }
 
     /** The size field's value, or the default when it is not (yet) a valid positive integer. */

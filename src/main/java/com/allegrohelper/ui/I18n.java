@@ -166,6 +166,9 @@ final class I18n {
         put("URL:", "URL:");
         put("Label:", "Etykieta:");
         put("Label font size (px):", "Rozmiar czcionki etykiety (px):");
+        put("Label position:", "Pozycja etykiety:");
+        put("Below the QR code", "Pod kodem QR");
+        put("Above the QR code", "Nad kodem QR");
         put("Size (px):", "Rozmiar (px):");
         put("Position:", "Pozycja:");
         put("The QR code links to this address.", "Kod QR prowadzi pod ten adres.");
@@ -173,6 +176,8 @@ final class I18n {
                 "Wyświetlane jako podpis obok kodu QR na zdjęciu.");
         put("The label caption's font size, in pixels.",
                 "Rozmiar czcionki podpisu etykiety, w pikselach.");
+        put("Where the caption is drawn relative to the QR code.",
+                "Gdzie rysowany jest podpis względem kodu QR.");
         put("The QR code's own size, in pixels (not counting its white margin).",
                 "Rozmiar samego kodu QR w pikselach (bez białego marginesu).");
         put("Top-left", "Lewy górny róg");
