@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,15 +54,22 @@ public final class QrCode {
         }
     }
 
+    /** The label's font size when an offer's {@code qr.json} does not say otherwise. */
+    public static final int DEFAULT_LABEL_FONT_SIZE = 24;
+
     /**
      * One offer's QR configuration, as saved to {@code qr.json}.
      *
-     * @param sizePx    the QR code's own module area, in pixels — the quiet
-     *                  zone and any label sit outside this
-     * @param photoIndex which photo of the offer's series (in the same order
-     *                   {@link ImportPhotos#listJpegs} lists them) gets stamped
+     * @param sizePx        the QR code's own module area, in pixels — the quiet
+     *                      zone and any label sit outside this
+     * @param labelFontSize the label caption's font size, in pixels — independent
+     *                      of {@code sizePx}, so a small QR code can still carry
+     *                      a readable label
+     * @param photoIndex    which photo of the offer's series (in the same order
+     *                      {@link ImportPhotos#listJpegs} lists them) gets stamped
      */
-    public record QrSettings(String url, String label, int sizePx, Position position, int photoIndex) {
+    public record QrSettings(String url, String label, int sizePx, int labelFontSize, Position position,
+                              int photoIndex) {
     }
 
     // ------------------------------------------------------------- pipeline step
@@ -89,10 +97,15 @@ public final class QrCode {
     /**
      * Stamps one offer's configured photo into its {@code qr_coded/}
      * directory, copying the rest of the series through unchanged.
-     * Idempotent: a {@code qr_coded/} already holding one entry per photo is
-     * left alone. An offer with no {@code qr.json} (or an unreadable one) is
-     * skipped without creating {@code qr_coded/} at all, so downstream steps
-     * fall back to {@code cropped/} exactly as if this step had never run.
+     * Idempotent: a {@code qr_coded/} already holding one entry per photo,
+     * stamped with the <em>same</em> {@code qr.json} settings that are
+     * configured now, is left alone — recorded via a hidden marker file (see
+     * {@link #appliedMarker}), so editing the URL, label, size or position
+     * and re-running invalidates the skip and re-stamps, while re-running
+     * with nothing changed does not waste the work. An offer with no {@code
+     * qr.json} (or an unreadable one) is skipped without creating {@code
+     * qr_coded/} at all, so downstream steps fall back to {@code cropped/}
+     * exactly as if this step had never run.
      */
     public static void qrCodeOffer(Path offerDir, Reporter reporter) throws IOException {
         Path inputDir = qrCodeInput(offerDir);
@@ -104,10 +117,6 @@ public final class QrCode {
             reporter.log(name + ": no photos to QR-code.");
             return;
         }
-        if (Files.isDirectory(outputDir) && countEntries(outputDir) == photos.size()) {
-            reporter.log(name + ": QR code already applied, skipping.");
-            return;
-        }
 
         QrSettings settings = readSettings(offerDir);
         if (settings == null) {
@@ -116,6 +125,13 @@ public final class QrCode {
         }
         if (settings.url() == null || settings.url().isBlank()) {
             reporter.log(name + ": qr.json has no URL, skipping.");
+            return;
+        }
+
+        Path marker = appliedMarker(offerDir);
+        if (Files.isDirectory(outputDir) && countEntries(outputDir) == photos.size()
+                && settings.equals(readSettingsFile(marker))) {
+            reporter.log(name + ": QR code already applied with these settings, skipping.");
             return;
         }
 
@@ -131,7 +147,7 @@ public final class QrCode {
             Path photo = photos.get(i);
             Path dest = outputDir.resolve(photo.getFileName().toString());
             if (i != photoIndex) {
-                Files.copy(photo, dest, java.nio.file.StandardCopyOption.COPY_ATTRIBUTES);
+                Files.copy(photo, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
                 continue;
             }
             BufferedImage img = ImageIO.read(photo.toFile());
@@ -142,8 +158,20 @@ public final class QrCode {
             BufferedImage stamped = composite(img, settings);
             Retouch.writeJpeg(stamped, dest);
         }
+        writeSettingsFile(marker, settings);
         reporter.log(name + ": stamped a QR code onto photo #" + (photoIndex + 1) + " of "
                 + photos.size() + ".");
+    }
+
+    /**
+     * The hidden marker file recording the {@code QrSettings} that last
+     * produced {@code qr_coded/} — outside that directory (not a photo, so
+     * it must not perturb {@link #countEntries}'s "one entry per photo"
+     * check) but alongside {@code qr.json}, whose current content it is
+     * compared against on the next run.
+     */
+    private static Path appliedMarker(Path offerDir) {
+        return offerDir.resolve(".qr_coded.settings.json");
     }
 
     /**
@@ -168,7 +196,16 @@ public final class QrCode {
 
     /** Reads {@code offers/<id>/qr.json}, or null if it does not exist or cannot be parsed. */
     public static QrSettings readSettings(Path offerDir) {
-        Path file = offerDir.resolve("qr.json");
+        return readSettingsFile(offerDir.resolve("qr.json"));
+    }
+
+    /** Writes {@code offers/<id>/qr.json} — the UI's QR Code tab Save button. */
+    public static void writeSettings(Path offerDir, QrSettings settings) throws IOException {
+        writeSettingsFile(offerDir.resolve("qr.json"), settings);
+    }
+
+    /** The parsing half of {@link #readSettings}, reused by {@link #appliedMarker}'s file. */
+    private static QrSettings readSettingsFile(Path file) {
         if (!Files.isRegularFile(file)) {
             return null;
         }
@@ -177,23 +214,26 @@ public final class QrCode {
             String url = String.valueOf(data.getOrDefault("url", ""));
             String label = String.valueOf(data.getOrDefault("label", ""));
             int sizePx = ((Number) data.getOrDefault("sizePx", 300.0)).intValue();
+            int labelFontSize = ((Number) data.getOrDefault("labelFontSize", (double) DEFAULT_LABEL_FONT_SIZE))
+                    .intValue();
             Position position = Position.valueOf(String.valueOf(data.getOrDefault("position", "SE")));
             int photoIndex = ((Number) data.getOrDefault("photoIndex", 0.0)).intValue();
-            return new QrSettings(url, label, sizePx, position, photoIndex);
+            return new QrSettings(url, label, sizePx, labelFontSize, position, photoIndex);
         } catch (IOException | RuntimeException e) {
             return null;
         }
     }
 
-    /** Writes {@code offers/<id>/qr.json} — the UI's QR Code tab Save button. */
-    public static void writeSettings(Path offerDir, QrSettings settings) throws IOException {
+    /** The serializing half of {@link #writeSettings}, reused by {@link #appliedMarker}'s file. */
+    private static void writeSettingsFile(Path file, QrSettings settings) throws IOException {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("url", settings.url());
         data.put("label", settings.label());
         data.put("sizePx", settings.sizePx());
+        data.put("labelFontSize", settings.labelFontSize());
         data.put("position", settings.position().name());
         data.put("photoIndex", settings.photoIndex());
-        Files.writeString(offerDir.resolve("qr.json"), Json.write(data, true), StandardCharsets.UTF_8);
+        Files.writeString(file, Json.write(data, true), StandardCharsets.UTF_8);
     }
 
     // ------------------------------------------------------------- compositing
@@ -213,11 +253,12 @@ public final class QrCode {
         int maxW = Math.max(4 * n, img.getWidth() - 2 * marginPx);
         int maxH = Math.max(4 * n, img.getHeight() - 2 * marginPx);
 
+        int fontSize = Math.max(1, settings.labelFontSize());
         int moduleSize = Math.max(1, settings.sizePx() / n);
-        Plate plate = layoutPlate(n, moduleSize, label);
+        Plate plate = layoutPlate(n, moduleSize, label, fontSize);
         while ((plate.width > maxW || plate.height > maxH) && moduleSize > 1) {
             moduleSize--;
-            plate = layoutPlate(n, moduleSize, label);
+            plate = layoutPlate(n, moduleSize, label, fontSize);
         }
 
         BufferedImage out = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_RGB);
@@ -263,14 +304,13 @@ public final class QrCode {
     private record Plate(int width, int height, int qrPx, Font font) {
     }
 
-    private static Plate layoutPlate(int n, int moduleSize, String label) {
+    private static Plate layoutPlate(int n, int moduleSize, String label, int fontSize) {
         int quiet = moduleSize * 4;
         int qrPx = moduleSize * n;
         int width = qrPx + quiet * 2;
         int height = qrPx + quiet * 2;
         Font font = null;
         if (!label.isEmpty()) {
-            int fontSize = Math.max(8, Math.min(60, (int) Math.round(moduleSize * 2.2)));
             font = new Font(Font.SANS_SERIF, Font.PLAIN, fontSize);
             FontMetrics fm = fontMetrics(font);
             width = Math.max(width, fm.stringWidth(label) + quiet * 2);

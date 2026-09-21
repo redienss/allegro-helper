@@ -18,9 +18,10 @@ import java.nio.file.Path;
  * {@link RetouchPreview} reuses {@link Retouch}/{@link AutoCrop}: a preview
  * that drifts from the pipeline is worse than none. The photo is decoded
  * <em>subsampled</em> to display size (see {@link RetouchPreview} for why
- * that is safe), and the requested QR size is scaled down to match — a
- * caller passing full-resolution settings against a quarter-size preview
- * image would otherwise see a QR code four times too large for the frame.
+ * that is safe), and the requested QR size and label font size are both
+ * scaled down to match — a caller passing full-resolution settings against a
+ * quarter-size preview image would otherwise see a QR code four times too
+ * large for the frame.
  */
 public final class QrCodePreview {
 
@@ -61,6 +62,7 @@ public final class QrCodePreview {
             QrCode.QrSettings scaled = new QrCode.QrSettings(
                     liveSettings.url(), liveSettings.label(),
                     Math.max(1, (int) Math.round(liveSettings.sizePx() * sample.scale())),
+                    Math.max(1, (int) Math.round(liveSettings.labelFontSize() * sample.scale())),
                     liveSettings.position(), liveSettings.photoIndex());
             image = QrCode.composite(image, scaled);
         }

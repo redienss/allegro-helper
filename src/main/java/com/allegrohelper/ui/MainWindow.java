@@ -270,6 +270,7 @@ public final class MainWindow {
     // steps through a different photo than the Retouch Preview tab does.
     private final JTextField qrUrlField = new JTextField();
     private final JTextField qrLabelField = new JTextField();
+    private final JTextField qrFontSizeField = new JTextField();
     private final JTextField qrSizeField = new JTextField();
     private final Map<QrCode.Position, JToggleButton> qrPositionButtons = new EnumMap<>(QrCode.Position.class);
     private QrCode.Position qrSelectedPosition = QrCode.Position.SE;
@@ -1175,6 +1176,8 @@ public final class MainWindow {
 
     /** The QR code's default module size until an offer's saved settings say otherwise. */
     private static final int DEFAULT_QR_SIZE = 300;
+    /** The label's default font size until an offer's saved settings say otherwise. */
+    private static final int DEFAULT_QR_LABEL_FONT_SIZE = QrCode.DEFAULT_LABEL_FONT_SIZE;
 
     /**
      * The QR Code tab: one of the offer's photos with a configured QR code
@@ -1250,6 +1253,8 @@ public final class MainWindow {
     private JPanel qrForm() {
         qrUrlField.setToolTipText(I18n.t("The QR code links to this address."));
         qrLabelField.setToolTipText(I18n.t("Shown as a caption next to the QR code on the photo."));
+        qrFontSizeField.setToolTipText(I18n.t("The label caption's font size, in pixels."));
+        qrFontSizeField.setColumns(8);
         qrSizeField.setToolTipText(
                 I18n.t("The QR code's own size, in pixels (not counting its white margin)."));
         qrSizeField.setColumns(8);
@@ -1259,10 +1264,11 @@ public final class MainWindow {
         c.insets = new Insets(3, 3, 3, 3);
         addQrFormRow(form, c, 0, "URL:", qrUrlField, 1.0);
         addQrFormRow(form, c, 1, "Label:", qrLabelField, 1.0);
-        addQrFormRow(form, c, 2, "Size (px):", qrSizeField, 0.0);
+        addQrFormRow(form, c, 2, "Label font size (px):", qrFontSizeField, 0.0);
+        addQrFormRow(form, c, 3, "Size (px):", qrSizeField, 0.0);
 
         c.gridx = 0;
-        c.gridy = 3;
+        c.gridy = 4;
         c.weightx = 0;
         c.fill = GridBagConstraints.NONE;
         c.anchor = GridBagConstraints.NORTHWEST;
@@ -1286,7 +1292,7 @@ public final class MainWindow {
             public void changedUpdate(DocumentEvent e) {
             }
         };
-        for (JTextField field : new JTextField[]{qrUrlField, qrLabelField, qrSizeField}) {
+        for (JTextField field : new JTextField[]{qrUrlField, qrLabelField, qrFontSizeField, qrSizeField}) {
             field.getDocument().addDocumentListener(settleOnEdit);
         }
         return form;
@@ -1349,6 +1355,7 @@ public final class MainWindow {
         }
         qrUrlField.setText(settings.url());
         qrLabelField.setText(settings.label());
+        qrFontSizeField.setText(String.valueOf(settings.labelFontSize()));
         qrSizeField.setText(String.valueOf(settings.sizePx()));
         selectQrPosition(settings.position());
         qrPreviewPhotoIndex = settings.photoIndex();
@@ -1358,6 +1365,7 @@ public final class MainWindow {
     private void clearQrFields() {
         qrUrlField.setText("");
         qrLabelField.setText("");
+        qrFontSizeField.setText(String.valueOf(DEFAULT_QR_LABEL_FONT_SIZE));
         qrSizeField.setText(String.valueOf(DEFAULT_QR_SIZE));
         selectQrPosition(QrCode.Position.SE);
         qrPreviewPhotoIndex = 0;
@@ -1402,8 +1410,18 @@ public final class MainWindow {
             error(I18n.t("Size (px) must be a positive whole number."));
             return;
         }
+        int fontSize;
+        try {
+            fontSize = Integer.parseInt(qrFontSizeField.getText().strip());
+            if (fontSize <= 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            error(I18n.t("Label font size (px) must be a positive whole number."));
+            return;
+        }
         QrCode.QrSettings settings = new QrCode.QrSettings(
-                url, qrLabelField.getText().strip(), sizePx, qrSelectedPosition, qrPreviewPhotoIndex);
+                url, qrLabelField.getText().strip(), sizePx, fontSize, qrSelectedPosition, qrPreviewPhotoIndex);
         Path target = currentOfferDir.resolve("qr.json");
         try {
             QrCode.writeSettings(currentOfferDir, settings);
@@ -1472,7 +1490,8 @@ public final class MainWindow {
         int photoIndex = qrPreviewPhotoIndex;
         String url = qrUrlField.getText().strip();
         QrCode.QrSettings liveSettings = url.isEmpty() ? null : new QrCode.QrSettings(
-                url, qrLabelField.getText().strip(), parseQrSizeOrDefault(), qrSelectedPosition, photoIndex);
+                url, qrLabelField.getText().strip(), parseQrSizeOrDefault(), parseQrFontSizeOrDefault(),
+                qrSelectedPosition, photoIndex);
         qrPreviewPanel.setStatus(I18n.t("Rendering the preview…"));
         qrPreviewLoader.submit(() -> {
             String failure = null;
@@ -1515,6 +1534,16 @@ public final class MainWindow {
             return value > 0 ? value : DEFAULT_QR_SIZE;
         } catch (NumberFormatException e) {
             return DEFAULT_QR_SIZE;
+        }
+    }
+
+    /** The label font size field's value, or the default when it is not (yet) a valid positive integer. */
+    private int parseQrFontSizeOrDefault() {
+        try {
+            int value = Integer.parseInt(qrFontSizeField.getText().strip());
+            return value > 0 ? value : DEFAULT_QR_LABEL_FONT_SIZE;
+        } catch (NumberFormatException e) {
+            return DEFAULT_QR_LABEL_FONT_SIZE;
         }
     }
 

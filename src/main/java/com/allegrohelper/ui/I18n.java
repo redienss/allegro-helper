@@ -165,11 +165,14 @@ final class I18n {
         // QR Code tab
         put("URL:", "URL:");
         put("Label:", "Etykieta:");
+        put("Label font size (px):", "Rozmiar czcionki etykiety (px):");
         put("Size (px):", "Rozmiar (px):");
         put("Position:", "Pozycja:");
         put("The QR code links to this address.", "Kod QR prowadzi pod ten adres.");
         put("Shown as a caption next to the QR code on the photo.",
                 "Wyświetlane jako podpis obok kodu QR na zdjęciu.");
+        put("The label caption's font size, in pixels.",
+                "Rozmiar czcionki podpisu etykiety, w pikselach.");
         put("The QR code's own size, in pixels (not counting its white margin).",
                 "Rozmiar samego kodu QR w pikselach (bez białego marginesu).");
         put("Top-left", "Lewy górny róg");
@@ -184,6 +187,8 @@ final class I18n {
         put("Enter a URL before saving.", "Wpisz adres URL przed zapisaniem.");
         put("Size (px) must be a positive whole number.",
                 "Rozmiar (px) musi być dodatnią liczbą całkowitą.");
+        put("Label font size (px) must be a positive whole number.",
+                "Rozmiar czcionki etykiety (px) musi być dodatnią liczbą całkowitą.");
 
         put("Photos (Output)", "Zdjęcia (wynik)");
         put("Allegro Lokalnie Form", "Formularz Allegro Lokalnie");
