@@ -273,7 +273,7 @@ public final class MainWindow {
     private final JTextField qrFontSizeField = new JTextField();
     /** Item order mirrors {@link QrCode.LabelPosition#values()} — index maps straight to ordinal. */
     private final JComboBox<String> qrLabelPositionCombo = new JComboBox<>(new String[]{
-            "Below the QR code", "Above the QR code"});
+            "Above the QR code", "Below the QR code"});
     private final JTextField qrSizeField = new JTextField();
     private final Map<QrCode.Position, JToggleButton> qrPositionButtons = new EnumMap<>(QrCode.Position.class);
     private QrCode.Position qrSelectedPosition = QrCode.Position.SE;

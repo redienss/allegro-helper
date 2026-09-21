@@ -58,9 +58,15 @@ public final class QrCode {
     /** The label's font size when an offer's {@code qr.json} does not say otherwise. */
     public static final int DEFAULT_LABEL_FONT_SIZE = 24;
 
-    /** Where the label caption sits relative to the QR code on the backing plate. */
+    /**
+     * Where the label caption sits relative to the QR code on the backing
+     * plate. Declared {@code ABOVE} before {@code BELOW} — the reverse of
+     * which one is the default — because the UI's dropdown lists them in
+     * this order (top item first reads top-of-photo first) and maps its
+     * selection index straight to {@link #values()}.
+     */
     public enum LabelPosition {
-        BELOW, ABOVE
+        ABOVE, BELOW
     }
 
     /** The label's side of the QR code when an offer's {@code qr.json} does not say otherwise. */
