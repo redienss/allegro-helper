@@ -117,6 +117,7 @@ final class I18n {
         put("Brightness", "Jasność");
         put("Contrast", "Kontrast");
         put("Auto-crop", "Kadrowanie");
+        put("QR Code", "Kod QR"); // Workflow checkbox and the tab title share this literal
         put("Describe", "Opisz"); // not "Opis" — that's the form tab's Description label
         put("Running…", "Działa…");
         put("Start Workflow", "Uruchom przebieg pracy");
@@ -160,6 +161,30 @@ final class I18n {
         put("1.00x leaves the photo as it is; less darkens it, more brightens it.",
                 "1,00x zostawia zdjęcie bez zmian; mniej przyciemnia, więcej rozjaśnia.");
         put("Could not render the preview: {0}", "Nie udało się utworzyć podglądu: {0}");
+
+        // QR Code tab
+        put("URL:", "URL:");
+        put("Label:", "Etykieta:");
+        put("Size (px):", "Rozmiar (px):");
+        put("Position:", "Pozycja:");
+        put("The QR code links to this address.", "Kod QR prowadzi pod ten adres.");
+        put("Shown as a caption next to the QR code on the photo.",
+                "Wyświetlane jako podpis obok kodu QR na zdjęciu.");
+        put("The QR code's own size, in pixels (not counting its white margin).",
+                "Rozmiar samego kodu QR w pikselach (bez białego marginesu).");
+        put("Top-left", "Lewy górny róg");
+        put("Top", "Góra");
+        put("Top-right", "Prawy górny róg");
+        put("Left", "Lewo");
+        put("Center", "Środek");
+        put("Right", "Prawo");
+        put("Bottom-left", "Lewy dolny róg");
+        put("Bottom", "Dół");
+        put("Bottom-right", "Prawy dolny róg");
+        put("Enter a URL before saving.", "Wpisz adres URL przed zapisaniem.");
+        put("Size (px) must be a positive whole number.",
+                "Rozmiar (px) musi być dodatnią liczbą całkowitą.");
+
         put("Photos (Output)", "Zdjęcia (wynik)");
         put("Allegro Lokalnie Form", "Formularz Allegro Lokalnie");
         put("Delete", "Usuń");

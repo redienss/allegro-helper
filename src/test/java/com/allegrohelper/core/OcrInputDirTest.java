@@ -58,6 +58,12 @@ class OcrInputDirTest {
     }
 
     @Test
+    void readsQrCodedAboveEverythingElse() throws IOException {
+        mkdirs("photos", "white_balanced", "brightened", "contrasted", "cropped", "qr_coded");
+        assertEquals(offerDir.resolve("qr_coded"), Ocr.inputDir(offerDir));
+    }
+
+    @Test
     void ordersContrastAboveBrightnessAboveWhiteBalance() throws IOException {
         mkdirs("photos", "white_balanced", "brightened", "contrasted");
         assertEquals(offerDir.resolve("contrasted"), Ocr.inputDir(offerDir));
@@ -87,9 +93,10 @@ class OcrInputDirTest {
     @Test
     void matchesAutoCropsChainForEveryStepCombination() throws IOException {
         // The two chains must agree, or a run crops from one directory and
-        // OCRs from another. Walk all 16 combinations of the retouch outputs.
-        String[] optional = {"white_balanced", "brightened", "contrasted", "cropped"};
-        for (int mask = 0; mask < 16; mask++) {
+        // OCRs from another. Walk all 32 combinations of white balance,
+        // brightness, contrast, auto-crop's cropped/ and QR code's qr_coded/.
+        String[] optional = {"white_balanced", "brightened", "contrasted", "cropped", "qr_coded"};
+        for (int mask = 0; mask < 32; mask++) {
             Path dir = Files.createTempDirectory("offer");
             Files.createDirectories(dir.resolve("photos"));
             for (int bit = 0; bit < optional.length; bit++) {
@@ -97,13 +104,15 @@ class OcrInputDirTest {
                     Files.createDirectories(dir.resolve(optional[bit]));
                 }
             }
-            // cropped/ is auto-crop's own output, so it is not one of its inputs.
+            // cropped/ and qr_coded/ are auto-crop's and the QR step's own
+            // outputs, so neither is one of auto-crop's inputs.
             Path expected = Files.isDirectory(dir.resolve("contrasted")) ? dir.resolve("contrasted")
                     : Files.isDirectory(dir.resolve("brightened")) ? dir.resolve("brightened")
                     : Files.isDirectory(dir.resolve("white_balanced")) ? dir.resolve("white_balanced")
                     : dir.resolve("photos");
             Path ocrInput = Ocr.inputDir(dir);
-            Path want = Files.isDirectory(dir.resolve("cropped")) ? dir.resolve("cropped") : expected;
+            Path want = Files.isDirectory(dir.resolve("qr_coded")) ? dir.resolve("qr_coded")
+                    : Files.isDirectory(dir.resolve("cropped")) ? dir.resolve("cropped") : expected;
             assertEquals(want, ocrInput, "combination mask " + mask);
         }
     }

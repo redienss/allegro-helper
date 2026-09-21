@@ -3,6 +3,8 @@ package com.allegrohelper.ui;
 import com.allegrohelper.core.AllegroForm;
 import com.allegrohelper.core.Config;
 import com.allegrohelper.core.PhoneScan;
+import com.allegrohelper.core.QrCode;
+import com.allegrohelper.core.QrCodePreview;
 import com.allegrohelper.core.Reporter;
 import com.allegrohelper.core.Retouch;
 import com.allegrohelper.core.RetouchPreview;
@@ -13,6 +15,7 @@ import com.allegrohelper.core.Workflow;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
@@ -30,6 +33,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JRootPane;
+import javax.swing.JToggleButton;
 import javax.swing.KeyStroke;
 import javax.swing.ImageIcon;
 import javax.swing.JScrollPane;
@@ -40,6 +44,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.ListSelectionModel;
+import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.AbstractDocument;
@@ -78,6 +83,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,10 +105,11 @@ public final class MainWindow {
     private static final int TAB_DESCRIPTION_INPUT = 0;   // more_data_<N>.txt editor
     private static final int TAB_PHOTOS_INPUT = 1;    // original photos gallery
     private static final int TAB_RETOUCH_PREVIEW = 2; // before/after of the retouching steps
-    private static final int TAB_PHOTOS_OUTPUT = 3;   // retouched photos gallery
-    private static final int TAB_OCR = 4;             // ocr.txt editor
-    private static final int TAB_DESCRIPTION_OUTPUT = 5;  // description.txt editor
-    private static final int TAB_ALLEGRO_FORM = 6;    // copy helper for the Allegro Lokalnie form
+    private static final int TAB_QR_CODE = 3;         // QR code placement onto one photo
+    private static final int TAB_PHOTOS_OUTPUT = 4;   // retouched photos gallery
+    private static final int TAB_OCR = 5;             // ocr.txt editor
+    private static final int TAB_DESCRIPTION_OUTPUT = 6;  // description.txt editor
+    private static final int TAB_ALLEGRO_FORM = 7;    // copy helper for the Allegro Lokalnie form
 
     /**
      * Thumbnail box size (px) for the Photos (Input)/(Output) galleries, sized
@@ -162,6 +169,10 @@ public final class MainWindow {
     private final JCheckBox brightnessBox = new JCheckBox("Brightness", true);
     private final JCheckBox contrastBox = new JCheckBox("Contrast", true);
     private final JCheckBox autoCropBox = new JCheckBox("Auto-crop", true);
+    // Off by default: a QR code links to something offer-specific (a video, an
+    // extended gallery) that has to be configured per offer on the QR Code tab
+    // first, unlike every other step which is useful with no setup at all.
+    private final JCheckBox qrCodeBox = new JCheckBox("QR Code", false);
     private final JCheckBox ocrBox = new JCheckBox("OCR", true);
     private final JCheckBox describeBox = new JCheckBox("Describe", true);
 
@@ -252,6 +263,37 @@ public final class MainWindow {
     /** Photos in the selected offer, as of the last render; 0 before there has been one. */
     private int previewPhotoCount;
 
+    // QR Code tab: per-offer settings (saved to offers/<id>/qr.json, never
+    // touched by Match or Import) and a live preview of one photo with the
+    // configured code stamped on — same rendering the pipeline step itself
+    // uses, via QrCodePreview, and its own stepper/executor/token, since it
+    // steps through a different photo than the Retouch Preview tab does.
+    private final JTextField qrUrlField = new JTextField();
+    private final JTextField qrLabelField = new JTextField();
+    private final JTextField qrSizeField = new JTextField();
+    private final Map<QrCode.Position, JToggleButton> qrPositionButtons = new EnumMap<>(QrCode.Position.class);
+    private QrCode.Position qrSelectedPosition = QrCode.Position.SE;
+    private final ImagePanel qrPreviewPanel = new ImagePanel("");
+    private final JButton qrFirstPhotoButton = new JButton("|<");
+    private final JButton qrPreviousPhotoButton = new JButton("< Prev");
+    private final JButton qrNextPhotoButton = new JButton("Next >");
+    private final JButton qrLastPhotoButton = new JButton(">|");
+    private final JLabel qrPhotoIndexLabel = new JLabel();
+    private int qrPreviewPhotoIndex;
+    private int qrPreviewPhotoCount;
+    private final ExecutorService qrPreviewLoader = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "qr-preview");
+        t.setDaemon(true);
+        return t;
+    });
+    private final AtomicInteger qrPreviewToken = new AtomicInteger();
+    private boolean qrPreviewStale = true;
+    /** Re-renders the QR preview once the text fields have been still for a moment — see {@link StrengthDial}. */
+    private final Timer qrFieldSettle = new Timer(300, e -> refreshQrPreview());
+    private JButton qrDeleteButton;
+    private JButton qrClearButton;
+    private JButton qrSaveButton;
+
     // Allegro Lokalnie Form tab: copy sources for the listing form.
     private final JTextField formTitleField = new JTextField();
     private final JTextPane formDescriptionArea = new JTextPane();
@@ -266,6 +308,7 @@ public final class MainWindow {
     private JPanel bottomBars;
     private static final String CARD_EDITOR = "editor";
     private static final String CARD_PHOTOS = "photos";
+    private static final String CARD_QR = "qr";
 
     /** The height-capped left-panel sections, kept so a theme change can re-measure them. */
     private final List<JPanel> cappedSections = new ArrayList<>();
@@ -285,7 +328,7 @@ public final class MainWindow {
      * editors from disk, so without the marker an unsaved description vanished
      * on Start with nothing having warned about it.
      */
-    private final boolean[] editorDirty = new boolean[7];
+    private final boolean[] editorDirty = new boolean[8];
 
     /**
      * Set while the editors are being filled from disk, so the document
@@ -719,6 +762,7 @@ public final class MainWindow {
         boxes.add(brightnessBox);
         boxes.add(contrastBox);
         boxes.add(autoCropBox);
+        boxes.add(qrCodeBox);
         boxes.add(ocrBox);
         boxes.add(describeBox);
         panel.add(boxes, BorderLayout.CENTER);
@@ -809,6 +853,7 @@ public final class MainWindow {
         rightTabs.addTab("Description (Input)", new JScrollPane(moreDataArea));
         rightTabs.addTab("Photos (Input)", photosInputGallery.component());
         rightTabs.addTab("Retouch Preview", buildRetouchPreviewTab());
+        rightTabs.addTab("QR Code", buildQrCodeTab());
         rightTabs.addTab("Photos (Output)", photosOutputGallery.component());
         rightTabs.addTab("OCR", new JScrollPane(ocrArea));
         rightTabs.addTab("Description (Output)", new JScrollPane(detailsArea));
@@ -826,6 +871,9 @@ public final class MainWindow {
             updateBottomBar();
             if (previewStale) {
                 refreshRetouchPreview(); // deferred while the preview tab was hidden
+            }
+            if (qrPreviewStale) {
+                refreshQrPreview(); // deferred while the QR Code tab was hidden
             }
         });
         updateTabStyles();
@@ -859,9 +907,31 @@ public final class MainWindow {
         JPanel photoButtonBar = new JPanel(new BorderLayout());
         photoButtonBar.add(openRow, BorderLayout.EAST);
 
+        // QR Code tab: the same Delete/Clear/Save vocabulary as the editor tabs,
+        // but against qr.json instead of a text file — its own buttons, since
+        // deleteActiveFile/clearActiveEditor/saveActiveTab are wired to the text
+        // editors' isEditorTab() check.
+        qrDeleteButton = new JButton("Delete");
+        qrDeleteButton.addActionListener(e -> deleteQrSettings());
+        qrClearButton = new JButton("Clear");
+        qrClearButton.addActionListener(e -> clearQrForm());
+        JPanel qrLeftButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        qrLeftButtons.add(qrDeleteButton);
+        qrLeftButtons.add(qrClearButton);
+
+        qrSaveButton = new JButton("Save");
+        qrSaveButton.addActionListener(e -> saveQrSettings());
+        JPanel qrRightButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+        qrRightButtons.add(qrSaveButton);
+
+        JPanel qrButtonBar = new JPanel(new BorderLayout());
+        qrButtonBar.add(qrLeftButtons, BorderLayout.WEST);
+        qrButtonBar.add(qrRightButtons, BorderLayout.EAST);
+
         bottomBars = new JPanel(new CardLayout());
         bottomBars.add(editorButtonBar, CARD_EDITOR);
         bottomBars.add(photoButtonBar, CARD_PHOTOS);
+        bottomBars.add(qrButtonBar, CARD_QR);
         panel.add(bottomBars, BorderLayout.SOUTH);
 
         updateBottomBar();
@@ -1101,6 +1171,353 @@ public final class MainWindow {
         afterHistogram.setExposure(null);
     }
 
+    // ------------------------------------------------------------- QR Code tab
+
+    /** The QR code's default module size until an offer's saved settings say otherwise. */
+    private static final int DEFAULT_QR_SIZE = 300;
+
+    /**
+     * The QR Code tab: one of the offer's photos with a configured QR code
+     * stamped on it — a link to a 360° video, an extended photo gallery, or
+     * anything else a marketplace's own photo cap leaves out. Rendered by
+     * {@link QrCodePreview}, the pipeline's own compositing code, so the
+     * preview cannot drift from a run.
+     *
+     * <p>Unlike the Retouch Preview tab, these settings are saved <em>per
+     * offer</em> — different items link to different things — to {@code
+     * offers/<id>/qr.json} via {@link #saveQrSettings()}, read back on every
+     * offer selection by {@link #loadQrFields}. The Workflow section's QR
+     * Code checkbox only gates whether the step runs at all in a given Start;
+     * an offer with nothing saved here is simply skipped, the same as an
+     * auto-crop that declines a series.
+     */
+    private JComponent buildQrCodeTab() {
+        qrFieldSettle.setRepeats(false); // one render per pause in typing, not one per keystroke
+
+        JPanel panel = new JPanel(new QrTabLayout(6));
+        panel.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
+        panel.add(qrPreviewPanel);
+        panel.add(qrPhotoStepper());
+        panel.add(qrForm());
+        return panel;
+    }
+
+    /** The photo stepper under the preview, same shape and behavior as Retouch Preview's. */
+    private JPanel qrPhotoStepper() {
+        JPanel row = new JPanel(new StepperLayout(6));
+        qrFirstPhotoButton.addActionListener(e -> showQrPreviewPhoto(0));
+        qrPreviousPhotoButton.addActionListener(e -> showQrPreviewPhoto(qrPreviewPhotoIndex - 1));
+        qrNextPhotoButton.addActionListener(e -> showQrPreviewPhoto(qrPreviewPhotoIndex + 1));
+        qrLastPhotoButton.addActionListener(e -> showQrPreviewPhoto(qrPreviewPhotoCount - 1));
+        qrFirstPhotoButton.setToolTipText(I18n.t("First photo"));
+        qrLastPhotoButton.setToolTipText(I18n.t("Last photo"));
+        row.add(qrFirstPhotoButton);
+        row.add(qrPreviousPhotoButton);
+        row.add(qrPhotoIndexLabel);
+        row.add(qrNextPhotoButton);
+        row.add(qrLastPhotoButton);
+        showQrPhotoIndex();
+        return row;
+    }
+
+    /** Steps the QR preview to another photo of the offer — this is also which photo Save targets. */
+    private void showQrPreviewPhoto(int index) {
+        if (index < 0 || index >= qrPreviewPhotoCount) {
+            return;
+        }
+        qrPreviewPhotoIndex = index;
+        showQrPhotoIndex();
+        refreshQrPreview();
+    }
+
+    /** Shows which photo of the series is targeted, and greys the buttons out at the ends — see {@code showPhotoIndex}. */
+    private void showQrPhotoIndex() {
+        qrPhotoIndexLabel.setText(qrPreviewPhotoCount == 0
+                ? "–" : (qrPreviewPhotoIndex + 1) + "/" + qrPreviewPhotoCount);
+        qrPhotoIndexLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        String widest = qrPreviewPhotoCount + "/" + qrPreviewPhotoCount;
+        qrPhotoIndexLabel.setPreferredSize(new Dimension(
+                qrPhotoIndexLabel.getFontMetrics(qrPhotoIndexLabel.getFont()).stringWidth(widest),
+                qrPhotoIndexLabel.getPreferredSize().height));
+        boolean more = qrPreviewPhotoIndex < qrPreviewPhotoCount - 1;
+        qrFirstPhotoButton.setEnabled(qrPreviewPhotoIndex > 0);
+        qrPreviousPhotoButton.setEnabled(qrPreviewPhotoIndex > 0);
+        qrNextPhotoButton.setEnabled(more);
+        qrLastPhotoButton.setEnabled(more);
+    }
+
+    /** The URL/label/size/position form beneath the stepper. */
+    private JPanel qrForm() {
+        qrUrlField.setToolTipText(I18n.t("The QR code links to this address."));
+        qrLabelField.setToolTipText(I18n.t("Shown as a caption next to the QR code on the photo."));
+        qrSizeField.setToolTipText(
+                I18n.t("The QR code's own size, in pixels (not counting its white margin)."));
+        qrSizeField.setColumns(8);
+
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(3, 3, 3, 3);
+        addQrFormRow(form, c, 0, "URL:", qrUrlField, 1.0);
+        addQrFormRow(form, c, 1, "Label:", qrLabelField, 1.0);
+        addQrFormRow(form, c, 2, "Size (px):", qrSizeField, 0.0);
+
+        c.gridx = 0;
+        c.gridy = 3;
+        c.weightx = 0;
+        c.fill = GridBagConstraints.NONE;
+        c.anchor = GridBagConstraints.NORTHWEST;
+        form.add(new JLabel(I18n.t("Position:")), c);
+        c.gridx = 1;
+        c.anchor = GridBagConstraints.WEST;
+        form.add(qrPositionGrid(), c);
+
+        DocumentListener settleOnEdit = new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                qrFieldSettle.restart();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                qrFieldSettle.restart();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+            }
+        };
+        for (JTextField field : new JTextField[]{qrUrlField, qrLabelField, qrSizeField}) {
+            field.getDocument().addDocumentListener(settleOnEdit);
+        }
+        return form;
+    }
+
+    /** One label+field row of {@link #qrForm}; {@code weight} is the field's share of extra width. */
+    private void addQrFormRow(JPanel form, GridBagConstraints c, int row, String label,
+                              JTextField field, double weight) {
+        c.gridx = 0;
+        c.gridy = row;
+        c.weightx = 0;
+        c.fill = GridBagConstraints.NONE;
+        c.anchor = GridBagConstraints.WEST;
+        form.add(new JLabel(I18n.t(label)), c);
+        c.gridx = 1;
+        c.weightx = weight;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        form.add(field, c);
+    }
+
+    /**
+     * The nine-position picker: a 3x3 grid of toggle buttons in a
+     * {@link ButtonGroup}, one per {@link QrCode.Position}, laid out in the
+     * same arrangement they anchor to on the photo.
+     */
+    private JPanel qrPositionGrid() {
+        JPanel grid = new JPanel(new GridLayout(3, 3, 2, 2));
+        ButtonGroup group = new ButtonGroup();
+        QrCode.Position[] order = {
+            QrCode.Position.NW, QrCode.Position.N, QrCode.Position.NE,
+            QrCode.Position.W, QrCode.Position.CENTER, QrCode.Position.E,
+            QrCode.Position.SW, QrCode.Position.S, QrCode.Position.SE,
+        };
+        String[] symbols = {"↖", "↑", "↗", "←", "•", "→", "↙", "↓", "↘"};
+        String[] tooltips = {
+            "Top-left", "Top", "Top-right", "Left", "Center", "Right", "Bottom-left", "Bottom", "Bottom-right",
+        };
+        for (int i = 0; i < order.length; i++) {
+            QrCode.Position position = order[i];
+            JToggleButton button = new JToggleButton(symbols[i]);
+            button.setToolTipText(I18n.t(tooltips[i]));
+            button.setSelected(position == qrSelectedPosition);
+            button.addActionListener(e -> {
+                qrSelectedPosition = position;
+                refreshQrPreview();
+            });
+            group.add(button);
+            qrPositionButtons.put(position, button);
+            grid.add(button);
+        }
+        return grid;
+    }
+
+    /** Loads {@code offers/<id>/qr.json} into the form, or blanks it when the offer has none saved. */
+    private void loadQrFields(Path offerDir) {
+        QrCode.QrSettings settings = QrCode.readSettings(offerDir);
+        if (settings == null) {
+            clearQrFields();
+            return;
+        }
+        qrUrlField.setText(settings.url());
+        qrLabelField.setText(settings.label());
+        qrSizeField.setText(String.valueOf(settings.sizePx()));
+        selectQrPosition(settings.position());
+        qrPreviewPhotoIndex = settings.photoIndex();
+    }
+
+    /** Blanks the form back to defaults — used for "no offer" states and by the Clear button. */
+    private void clearQrFields() {
+        qrUrlField.setText("");
+        qrLabelField.setText("");
+        qrSizeField.setText(String.valueOf(DEFAULT_QR_SIZE));
+        selectQrPosition(QrCode.Position.SE);
+        qrPreviewPhotoIndex = 0;
+    }
+
+    private void selectQrPosition(QrCode.Position position) {
+        qrSelectedPosition = position;
+        JToggleButton button = qrPositionButtons.get(position);
+        if (button != null) {
+            button.setSelected(true);
+        }
+    }
+
+    /** Blanks the form only; the file is unchanged until Save is clicked — mirrors {@code clearActiveEditor}. */
+    private void clearQrForm() {
+        if (currentOfferDir == null) {
+            error(I18n.t("Select an offer in the grid first."));
+            return;
+        }
+        clearQrFields();
+        refreshQrPreview();
+    }
+
+    /** Validates the form and writes it to {@code offers/<id>/qr.json}. */
+    private void saveQrSettings() {
+        if (currentOfferDir == null) {
+            error(I18n.t("No offer directory yet — run Match first."));
+            return;
+        }
+        String url = qrUrlField.getText().strip();
+        if (url.isEmpty()) {
+            error(I18n.t("Enter a URL before saving."));
+            return;
+        }
+        int sizePx;
+        try {
+            sizePx = Integer.parseInt(qrSizeField.getText().strip());
+            if (sizePx <= 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            error(I18n.t("Size (px) must be a positive whole number."));
+            return;
+        }
+        QrCode.QrSettings settings = new QrCode.QrSettings(
+                url, qrLabelField.getText().strip(), sizePx, qrSelectedPosition, qrPreviewPhotoIndex);
+        Path target = currentOfferDir.resolve("qr.json");
+        try {
+            QrCode.writeSettings(currentOfferDir, settings);
+            appendLog("Saved " + target);
+        } catch (IOException e) {
+            error(I18n.t("Failed to save {0}: {1}", target, e.getMessage()));
+        }
+    }
+
+    /** Deletes {@code qr.json}, after confirmation, and blanks the form — mirrors {@code deleteActiveFile}. */
+    private void deleteQrSettings() {
+        if (currentOfferDir == null) {
+            error(I18n.t("Select an offer in the grid first."));
+            return;
+        }
+        Path target = currentOfferDir.resolve("qr.json");
+        if (!Files.exists(target)) {
+            JOptionPane.showMessageDialog(frame, I18n.t("There is no file to delete yet:\n{0}", target),
+                    "Allegro Helper", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        int choice = JOptionPane.showConfirmDialog(frame,
+                I18n.t("Delete this file? This cannot be undone.\n\n{0}", target),
+                I18n.t("Delete file"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+        try {
+            Files.delete(target);
+            clearQrFields();
+            refreshQrPreview();
+            appendLog("Deleted " + target);
+        } catch (IOException e) {
+            error(I18n.t("Failed to delete {0}: {1}", target, e.getMessage()));
+        }
+    }
+
+    /**
+     * Re-renders the QR preview off the EDT, same shape as {@link
+     * #refreshRetouchPreview}: skipped while the tab is hidden ({@link
+     * #qrPreviewStale} catches it up on tab switch), rendered on its own
+     * executor, superseded results dropped via {@link #qrPreviewToken}.
+     *
+     * <p>Renders from the live field values, not the saved {@code qr.json} —
+     * typing shows its effect immediately, before Save. A blank URL shows the
+     * plain photo, same as an unconfigured offer.
+     */
+    private void refreshQrPreview() {
+        if (rightTabs.getSelectedIndex() != TAB_QR_CODE) {
+            qrPreviewStale = true;
+            return;
+        }
+        qrPreviewStale = false;
+        int my = qrPreviewToken.incrementAndGet();
+
+        Path offerDir = currentOfferDir;
+        if (offerDir == null) {
+            qrPreviewPhotoCount = 0;
+            showQrPhotoIndex();
+            qrPreviewPanel.setStatus(offerTable.getSelectedRow() < 0
+                    ? I18n.t("Select an offer in the grid.")
+                    : I18n.t("Not matched yet — run Match."));
+            return;
+        }
+
+        int photoIndex = qrPreviewPhotoIndex;
+        String url = qrUrlField.getText().strip();
+        QrCode.QrSettings liveSettings = url.isEmpty() ? null : new QrCode.QrSettings(
+                url, qrLabelField.getText().strip(), parseQrSizeOrDefault(), qrSelectedPosition, photoIndex);
+        qrPreviewPanel.setStatus(I18n.t("Rendering the preview…"));
+        qrPreviewLoader.submit(() -> {
+            String failure = null;
+            QrCodePreview.Result result = null;
+            try {
+                result = QrCodePreview.render(offerDir, photoIndex, liveSettings, PREVIEW_MAX_SIZE);
+            } catch (IOException e) {
+                failure = I18n.t("Could not render the preview: {0}", e.getMessage());
+            } catch (RuntimeException e) {
+                // E.g. a URL too long for a QR code even at version 40 — the
+                // encoder's own message names the reason.
+                failure = I18n.t("Could not render the preview: {0}", e.getMessage());
+            }
+            QrCodePreview.Result rendered = result;
+            String message = failure;
+            SwingUtilities.invokeLater(() -> {
+                if (qrPreviewToken.get() != my) {
+                    return; // a newer render superseded this one
+                }
+                if (message != null) {
+                    qrPreviewPanel.setStatus(message);
+                } else if (rendered == null) {
+                    qrPreviewPhotoCount = 0;
+                    showQrPhotoIndex();
+                    qrPreviewPanel.setStatus(I18n.t("No photos."));
+                } else {
+                    qrPreviewPanel.setImage(rendered.image(), null);
+                    qrPreviewPhotoCount = rendered.count();
+                    qrPreviewPhotoIndex = rendered.index();
+                    showQrPhotoIndex();
+                }
+            });
+        });
+    }
+
+    /** The size field's value, or the default when it is not (yet) a valid positive integer. */
+    private int parseQrSizeOrDefault() {
+        try {
+            int value = Integer.parseInt(qrSizeField.getText().strip());
+            return value > 0 ? value : DEFAULT_QR_SIZE;
+        } catch (NumberFormatException e) {
+            return DEFAULT_QR_SIZE;
+        }
+    }
+
     /**
      * The Allegro Lokalnie Form tab: everything the listing form at
      * {@link #ALLEGRO_FORM_URL} needs, laid out for copying — the finished
@@ -1261,8 +1678,10 @@ public final class MainWindow {
         if (bottomBars == null) {
             return;
         }
-        ((CardLayout) bottomBars.getLayout())
-                .show(bottomBars, isEditorTab() ? CARD_EDITOR : CARD_PHOTOS);
+        String card = isEditorTab() ? CARD_EDITOR
+                : rightTabs.getSelectedIndex() == TAB_QR_CODE ? CARD_QR
+                : CARD_PHOTOS;
+        ((CardLayout) bottomBars.getLayout()).show(bottomBars, card);
         if (openPhotoDirButton != null) {
             openPhotoDirButton.setEnabled(activePhotoDir() != null);
         }
@@ -1489,7 +1908,9 @@ public final class MainWindow {
             formGallery.message(I18n.t("Select an offer in the grid."));
             formTitleField.setText("");
             formDescriptionArea.setText("");
+            clearQrFields();
             refreshRetouchPreview();
+            refreshQrPreview();
             updateBottomBar();
             return;
         }
@@ -1509,6 +1930,7 @@ public final class MainWindow {
         Path offerDir = OfferFiles.resolveOfferDir(cfg, name, modelRow);
         if (!Objects.equals(offerDir, currentOfferDir)) {
             previewPhotoIndex = 0; // another offer, another series: back to its first photo
+            qrPreviewPhotoIndex = 0; // loadQrFields overrides this if qr.json has a saved photoIndex
         }
         currentOfferDir = offerDir;
         if (offerDir == null) {
@@ -1523,6 +1945,7 @@ public final class MainWindow {
             photosOutputGallery.message(I18n.t("Not retouched yet — run a retouching step."));
             formGallery.message(I18n.t("Not matched yet — run Match."));
             formDescriptionArea.setText("");
+            clearQrFields();
         } else {
             descriptionTarget = offerDir.resolve("description.txt");
             detailsArea.setText(OfferFiles.readIfExists(descriptionTarget));
@@ -1534,6 +1957,7 @@ public final class MainWindow {
             photosOutputGallery.show(OfferFiles.outputPhotoDir(offerDir));
             formGallery.show(OfferFiles.outputPhotoDir(offerDir));
             formDescriptionArea.setText(OfferFiles.readIfExists(descriptionTarget));
+            loadQrFields(offerDir);
         }
         formTitleField.setText(name);
         formTitleField.setCaretPosition(0);
@@ -1541,6 +1965,7 @@ public final class MainWindow {
         ocrArea.setCaretPosition(0);
         formDescriptionArea.setCaretPosition(0);
         refreshRetouchPreview();
+        refreshQrPreview();
         updateBottomBar();
     }
 
@@ -2026,6 +2451,9 @@ public final class MainWindow {
         }
         if (autoCropBox.isSelected()) {
             steps.add(Workflow.Step.AUTOCROP);
+        }
+        if (qrCodeBox.isSelected()) {
+            steps.add(Workflow.Step.QR_CODE);
         }
         if (ocrBox.isSelected()) {
             steps.add(Workflow.Step.OCR);

@@ -30,9 +30,9 @@ final class OfferFiles {
 
     /**
      * The final photos of an offer: the output of the latest pipeline step that
-     * has run — cropped, else contrasted, else brightened, else white-balanced,
-     * else the pre-split {@code retouched/} kept for offers processed before the
-     * retouch step was split up.
+     * has run — QR-coded, else cropped, else contrasted, else brightened, else
+     * white-balanced, else the pre-split {@code retouched/} kept for offers
+     * processed before the retouch step was split up.
      *
      * <p>The single source of truth for "the finished photos": the galleries and
      * the <em>Open photo dir</em> button all call it, so they cannot drift.
@@ -43,7 +43,7 @@ final class OfferFiles {
      */
     static Path outputPhotoDir(Path offerDir) {
         for (String dirName : new String[] {
-                "cropped", "contrasted", "brightened", "white_balanced", "retouched"}) {
+                "qr_coded", "cropped", "contrasted", "brightened", "white_balanced", "retouched"}) {
             Path dir = offerDir.resolve(dirName);
             if (Files.isDirectory(dir)) {
                 return dir;

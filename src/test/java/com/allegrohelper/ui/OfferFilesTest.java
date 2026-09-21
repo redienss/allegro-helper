@@ -40,6 +40,12 @@ class OfferFilesTest {
     }
 
     @Test
+    void outputPhotoDirPrefersQrCodedAboveEverythingElse() throws IOException {
+        mkdirs("photos", "white_balanced", "brightened", "contrasted", "cropped", "qr_coded");
+        assertEquals(dir.resolve("qr_coded"), OfferFiles.outputPhotoDir(dir));
+    }
+
+    @Test
     void outputPhotoDirWalksTheRetouchChainInOrder() throws IOException {
         mkdirs("photos", "white_balanced", "brightened", "contrasted", "cropped");
         assertEquals(dir.resolve("cropped"), OfferFiles.outputPhotoDir(dir));

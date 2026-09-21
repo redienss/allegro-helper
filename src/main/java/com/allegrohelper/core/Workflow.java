@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Runs the enabled pipeline steps in sequence (import → match → white balance →
- * brightness → contrast → auto-crop → ocr → describe), emitting a section header per step and
+ * brightness → contrast → auto-crop → qr code → ocr → describe), emitting a section header per step and
  * reporting overall progress as
  * {@code (completedSteps + currentStepFraction) / totalSteps}.
  */
@@ -20,6 +20,7 @@ public final class Workflow {
         BRIGHTNESS("brightness"),
         CONTRAST("contrast"),
         AUTOCROP("auto-crop"),
+        QR_CODE("qr code"),
         OCR("ocr"),
         DESCRIBE("describe");
 
@@ -119,6 +120,7 @@ public final class Workflow {
             case BRIGHTNESS -> Retouch.runAll(cfg, Retouch.Mode.BRIGHTNESS, reporter);
             case CONTRAST -> Retouch.runAll(cfg, Retouch.Mode.CONTRAST, reporter);
             case AUTOCROP -> AutoCrop.runAll(cfg, reporter);
+            case QR_CODE -> QrCode.runAll(cfg, reporter);
             case OCR -> Ocr.runAll(cfg, reporter);
             case DESCRIBE -> GenerateDescription.runAll(cfg, reporter);
         }

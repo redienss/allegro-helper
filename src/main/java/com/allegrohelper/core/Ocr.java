@@ -61,9 +61,10 @@ import java.util.concurrent.TimeUnit;
  * behind (redo).
  *
  * <p>Photos are read from the most-processed directory available, the same
- * chain the gallery and auto-crop walk: {@code cropped/}, else
- * {@code contrasted/}, else {@code brightened/}, else {@code white_balanced/},
- * else the legacy {@code retouched/}, else the originals in {@code photos/}.
+ * chain the gallery and auto-crop walk: {@code qr_coded/}, else
+ * {@code cropped/}, else {@code contrasted/}, else {@code brightened/}, else
+ * {@code white_balanced/}, else the legacy {@code retouched/}, else the
+ * originals in {@code photos/}.
  * Ending at the originals is what lets OCR run with every retouching step
  * unticked — the step reads text off a photo, and none of the retouching is a
  * precondition for that. Originals still carry EXIF orientation, so the decode
@@ -78,7 +79,7 @@ public final class Ocr {
      * so a renamed output directory cannot silently drop out of the chain.
      */
     private static final String[] INPUT_DIRS = {
-        "cropped", Retouch.Mode.CONTRAST.dirName, Retouch.Mode.BRIGHTNESS.dirName,
+        "qr_coded", "cropped", Retouch.Mode.CONTRAST.dirName, Retouch.Mode.BRIGHTNESS.dirName,
         Retouch.Mode.WHITE_BALANCE.dirName, "retouched", "photos"};
 
     /** Kill a tesseract run that hangs on a pathological image. */

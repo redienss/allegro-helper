@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Headless command-line entry point:
- * {@code import | match | whitebalance | brightness | contrast | autocrop | ocr | describe | all}
+ * {@code import | match | whitebalance | brightness | contrast | autocrop | qrcode | ocr | describe | all}
  * ({@code retouch} is an alias for the three retouching steps). Useful for
  * scripting and for running the pipeline without a display. The brightness and
  * contrast strengths are the {@code BRIGHTNESS_STRENGTH} / {@code CONTRAST_STRENGTH}
@@ -36,7 +36,7 @@ public final class Cli {
         if (args.length == 0) {
             System.err.println(
                     "Usage: allegro-helper --cli "
-                    + "<import|match|whitebalance|brightness|contrast|autocrop|ocr|describe|all> [baseDir]\n"
+                    + "<import|match|whitebalance|brightness|contrast|autocrop|qrcode|ocr|describe|all> [baseDir]\n"
                     + "       (retouch = whitebalance + brightness + contrast)");
             return 2;
         }
@@ -56,11 +56,12 @@ public final class Cli {
             case "retouch" -> List.of(Workflow.Step.WHITE_BALANCE, Workflow.Step.BRIGHTNESS,
                     Workflow.Step.CONTRAST);
             case "autocrop", "auto-crop" -> List.of(Workflow.Step.AUTOCROP);
+            case "qrcode", "qr-code", "qr" -> List.of(Workflow.Step.QR_CODE);
             case "ocr" -> List.of(Workflow.Step.OCR);
             case "describe" -> List.of(Workflow.Step.DESCRIBE);
             case "all" -> List.of(Workflow.Step.IMPORT, Workflow.Step.MATCH,
                     Workflow.Step.WHITE_BALANCE, Workflow.Step.BRIGHTNESS, Workflow.Step.CONTRAST,
-                    Workflow.Step.AUTOCROP, Workflow.Step.OCR, Workflow.Step.DESCRIBE);
+                    Workflow.Step.AUTOCROP, Workflow.Step.QR_CODE, Workflow.Step.OCR, Workflow.Step.DESCRIBE);
             default -> null;
         };
         if (steps == null) {
