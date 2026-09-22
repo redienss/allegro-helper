@@ -2,11 +2,13 @@ package com.allegrohelper.ui;
 
 import com.allegrohelper.core.Config;
 import com.allegrohelper.core.GenerateDescription;
+import com.allegrohelper.core.QrCode;
 import com.allegrohelper.core.SeriesRecognition;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -21,6 +23,7 @@ import javax.swing.JTextField;
 import javax.swing.JFileChooser;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
+import javax.swing.JToggleButton;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
@@ -35,6 +38,7 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.Window;
 import java.awt.event.FocusAdapter;
@@ -44,6 +48,7 @@ import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -79,6 +84,7 @@ final class SettingsDialog extends JDialog {
     private static final String PAGE_LANGUAGE = "Language";
     private static final String PAGE_PHOTOS = "Media";
     private static final String PAGE_OPENAI = "OpenAI API";
+    private static final String PAGE_QR_CODE = "QR Code";
 
     /** Suggestions only — the combo is editable, any model id can be typed. */
     private static final String[] OPENAI_MODELS = {
@@ -102,6 +108,18 @@ final class SettingsDialog extends JDialog {
             "SUBFOLDERS - Each subfolder as a separate item",
             "VIDEO - Extract frames from each video"});
     private final JTextField videoIntervalField = new JTextField();
+    /** Item order mirrors {@link QrCode.LabelPosition#values()} — index maps straight to ordinal, like {@link MainWindow}'s own combo. */
+    private final JTextField qrDefaultUrlField = new JTextField();
+    private final JTextField qrDefaultLabelField = new JTextField();
+    private final JTextField qrDefaultFontSizeField = new JTextField();
+    private final JComboBox<String> qrDefaultLabelPositionCombo = new JComboBox<>(new String[]{
+            "Above the QR code", "Below the QR code"});
+    private final JTextField qrDefaultSizeField = new JTextField();
+    private final JTextField qrDefaultPaddingField = new JTextField();
+    private final JTextField qrDefaultBorderField = new JTextField();
+    private final Map<QrCode.Position, JToggleButton> qrDefaultPositionButtons = new EnumMap<>(QrCode.Position.class);
+    /** Placeholder only — overwritten by {@link #loadQrDefaultsSettings()} before the dialog is shown. */
+    private QrCode.Position qrDefaultSelectedPosition = QrCode.Position.NE;
     private final JPasswordField apiKeyField = new JPasswordField();
     private final JComboBox<String> modelCombo = new JComboBox<>(OPENAI_MODELS);
     private final JTextArea systemPromptArea = new JTextArea();
@@ -138,6 +156,16 @@ final class SettingsDialog extends JDialog {
     /** The base directory as of the last load/save; compared against the field. */
     private String savedBaseDir = "";
 
+    /** The effective QR Code default values as of the last load/save, for the dirty check. */
+    private String savedQrUrl = "";
+    private String savedQrLabel = "";
+    private int savedQrLabelFontSize = Config.DEFAULT_QR_LABEL_FONT_SIZE;
+    private QrCode.LabelPosition savedQrLabelPosition = Config.DEFAULT_QR_LABEL_POSITION;
+    private int savedQrSizePx = Config.DEFAULT_QR_SIZE_PX;
+    private int savedQrPaddingPx = Config.DEFAULT_QR_PADDING_PX;
+    private int savedQrBorderPx = Config.DEFAULT_QR_BORDER_PX;
+    private QrCode.Position savedQrPosition = Config.DEFAULT_QR_POSITION;
+
     /**
      * What an Apply changed, for {@link MainWindow} to adopt into its own
      * controls. A null field means that value did not change — the main window
@@ -168,7 +196,7 @@ final class SettingsDialog extends JDialog {
         setLayout(new BorderLayout());
 
         JList<String> pages = new JList<>(
-                new String[]{PAGE_APPEARANCE, PAGE_LANGUAGE, PAGE_PHOTOS, PAGE_OPENAI});
+                new String[]{PAGE_APPEARANCE, PAGE_LANGUAGE, PAGE_PHOTOS, PAGE_OPENAI, PAGE_QR_CODE});
         pages.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         pages.setSelectedIndex(0);
         pages.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
@@ -190,6 +218,7 @@ final class SettingsDialog extends JDialog {
         content.add(buildPage(PAGE_LANGUAGE, "Language:", languageCombo), PAGE_LANGUAGE);
         content.add(buildPhotosPage(), PAGE_PHOTOS);
         content.add(buildOpenAiPage(), PAGE_OPENAI);
+        content.add(buildQrCodePage(), PAGE_QR_CODE);
         pages.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && pages.getSelectedValue() != null) {
                 cards.show(content, pages.getSelectedValue());
@@ -204,6 +233,7 @@ final class SettingsDialog extends JDialog {
         languageCombo.setSelectedItem(Language.current());
         loadOpenAiSettings();
         loadPhotoSettings();
+        loadQrDefaultsSettings();
         applyButton.setEnabled(false);
         themeCombo.addActionListener(e -> updateApplyEnabled());
         languageCombo.addActionListener(e -> updateApplyEnabled());
@@ -211,6 +241,13 @@ final class SettingsDialog extends JDialog {
         watchDocument(baseDirField);
         watchDocument(photoDirField);
         watchDocument(videoIntervalField);
+        watchDocument(qrDefaultUrlField);
+        watchDocument(qrDefaultLabelField);
+        watchDocument(qrDefaultFontSizeField);
+        watchDocument(qrDefaultSizeField);
+        watchDocument(qrDefaultPaddingField);
+        watchDocument(qrDefaultBorderField);
+        qrDefaultLabelPositionCombo.addActionListener(e -> updateApplyEnabled());
         seriesModeCombo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
@@ -473,6 +510,215 @@ final class SettingsDialog extends JDialog {
     }
 
     /**
+     * The QR Code page: the same fields as the QR Code tab's own form, but as
+     * the tab's <em>starting point</em> for an offer with nothing saved yet —
+     * the built-in values are sized for a 4000x3000px photo, which overshoots
+     * a lower-resolution source (e.g. FHD video frames) badly enough that the
+     * QR code and its label no longer fit the padding around them.
+     */
+    private JPanel buildQrCodePage() {
+        qrDefaultFontSizeField.setColumns(8);
+        qrDefaultSizeField.setColumns(8);
+        qrDefaultPaddingField.setColumns(8);
+        qrDefaultBorderField.setColumns(8);
+        qrDefaultLabelPositionCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Object shown = value == null ? null : I18n.t(value.toString());
+                return super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+            }
+        });
+
+        JPanel page = new JPanel(new GridBagLayout());
+        page.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+        GridBagConstraints c = new GridBagConstraints();
+        c.gridx = 0;
+        c.gridy = 0;
+        c.gridwidth = 2;
+        c.anchor = GridBagConstraints.NORTHWEST;
+        c.insets = new Insets(0, 0, 16, 0);
+        JLabel headerLabel = new JLabel(PAGE_QR_CODE);
+        headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD));
+        page.add(headerLabel, c);
+
+        addRow(page, c, 1, "URL:", qrDefaultUrlField, GridBagConstraints.HORIZONTAL, 0);
+        addRow(page, c, 2, "Label:", qrDefaultLabelField, GridBagConstraints.HORIZONTAL, 0);
+        addRow(page, c, 3, "Label font size (px):", qrDefaultFontSizeField, GridBagConstraints.NONE, 0);
+        addRow(page, c, 4, "Label position:", qrDefaultLabelPositionCombo, GridBagConstraints.NONE, 0);
+        addRow(page, c, 5, "Size (px):", qrDefaultSizeField, GridBagConstraints.NONE, 0);
+        addRow(page, c, 6, "Inner padding (px):", qrDefaultPaddingField, GridBagConstraints.NONE, 0);
+        addRow(page, c, 7, "Outer border (px):", qrDefaultBorderField, GridBagConstraints.NONE, 0);
+
+        c.gridx = 0;
+        c.gridy = 8;
+        c.fill = GridBagConstraints.NONE;
+        c.weightx = 0;
+        c.weighty = 0;
+        c.anchor = GridBagConstraints.NORTHWEST;
+        c.insets = new Insets(0, 0, 0, 8);
+        page.add(new JLabel(I18n.t("Position:")), c);
+        c.gridx = 1;
+        c.anchor = GridBagConstraints.WEST;
+        c.insets = new Insets(0, 0, 0, 0);
+        page.add(qrDefaultPositionGrid(), c);
+
+        // Glue below keeps the rows pinned to the top.
+        c.gridx = 0;
+        c.gridy = 9;
+        c.weighty = 1;
+        page.add(Box.createGlue(), c);
+        return page;
+    }
+
+    /**
+     * The nine-position picker for the QR Code page — the same layout as
+     * {@code MainWindow.qrPositionGrid()}, writing to this dialog's own
+     * selection instead of the QR Code tab's live one.
+     */
+    private JPanel qrDefaultPositionGrid() {
+        JPanel grid = new JPanel(new GridLayout(3, 3, 2, 2));
+        ButtonGroup group = new ButtonGroup();
+        QrCode.Position[] order = {
+            QrCode.Position.NW, QrCode.Position.N, QrCode.Position.NE,
+            QrCode.Position.W, QrCode.Position.CENTER, QrCode.Position.E,
+            QrCode.Position.SW, QrCode.Position.S, QrCode.Position.SE,
+        };
+        String[] symbols = {"↖", "↑", "↗", "←", "•", "→", "↙", "↓", "↘"};
+        String[] tooltips = {
+            "Top-left", "Top", "Top-right", "Left", "Center", "Right", "Bottom-left", "Bottom", "Bottom-right",
+        };
+        for (int i = 0; i < order.length; i++) {
+            QrCode.Position position = order[i];
+            JToggleButton button = new JToggleButton(symbols[i]);
+            button.setToolTipText(I18n.t(tooltips[i]));
+            button.setSelected(position == qrDefaultSelectedPosition);
+            button.addActionListener(e -> {
+                qrDefaultSelectedPosition = position;
+                updateApplyEnabled();
+            });
+            group.add(button);
+            qrDefaultPositionButtons.put(position, button);
+            grid.add(button);
+        }
+        return grid;
+    }
+
+    private void selectQrDefaultPosition(QrCode.Position position) {
+        qrDefaultSelectedPosition = position;
+        JToggleButton button = qrDefaultPositionButtons.get(position);
+        if (button != null) {
+            button.setSelected(true);
+        }
+    }
+
+    /** The label position combo's current selection, translated back from its list index. */
+    private QrCode.LabelPosition selectedQrDefaultLabelPosition() {
+        return QrCode.LabelPosition.values()[qrDefaultLabelPositionCombo.getSelectedIndex()];
+    }
+
+    /**
+     * (Re)loads the QR Code page from the effective configuration and resets
+     * the dirty baseline. Also run after a save, so a value that fell back to
+     * its built-in default (e.g. a cleared URL) reappears as that default.
+     */
+    private void loadQrDefaultsSettings() {
+        Config cfg = Config.forBaseDir(baseDir);
+        savedQrUrl = cfg.qrDefaultUrl;
+        savedQrLabel = cfg.qrDefaultLabel;
+        savedQrLabelFontSize = cfg.qrDefaultLabelFontSize;
+        savedQrLabelPosition = cfg.qrDefaultLabelPosition;
+        savedQrSizePx = cfg.qrDefaultSizePx;
+        savedQrPaddingPx = cfg.qrDefaultPaddingPx;
+        savedQrBorderPx = cfg.qrDefaultBorderPx;
+        savedQrPosition = cfg.qrDefaultPosition;
+        qrDefaultUrlField.setText(savedQrUrl);
+        qrDefaultLabelField.setText(savedQrLabel);
+        qrDefaultFontSizeField.setText(String.valueOf(savedQrLabelFontSize));
+        qrDefaultLabelPositionCombo.setSelectedIndex(savedQrLabelPosition.ordinal());
+        qrDefaultSizeField.setText(String.valueOf(savedQrSizePx));
+        qrDefaultPaddingField.setText(String.valueOf(savedQrPaddingPx));
+        qrDefaultBorderField.setText(String.valueOf(savedQrBorderPx));
+        selectQrDefaultPosition(savedQrPosition);
+    }
+
+    /** Whether anything on the QR Code page differs from what is in effect. */
+    private boolean qrDefaultsDirty() {
+        return !qrDefaultUrlField.getText().strip().equals(savedQrUrl)
+                || !qrDefaultLabelField.getText().strip().equals(savedQrLabel)
+                || !qrDefaultFontSizeField.getText().strip().equals(String.valueOf(savedQrLabelFontSize))
+                || selectedQrDefaultLabelPosition() != savedQrLabelPosition
+                || !qrDefaultSizeField.getText().strip().equals(String.valueOf(savedQrSizePx))
+                || !qrDefaultPaddingField.getText().strip().equals(String.valueOf(savedQrPaddingPx))
+                || !qrDefaultBorderField.getText().strip().equals(String.valueOf(savedQrBorderPx))
+                || qrDefaultSelectedPosition != savedQrPosition;
+    }
+
+    /**
+     * Writes the QR Code defaults to the global settings file. A value equal
+     * to its built-in default (or, for the URL, blank) is removed rather than
+     * written, so {@code .env} only ever carries the overrides — the same
+     * idiom {@link #saveOpenAiSettings()} uses.
+     */
+    private boolean saveQrDefaultsSettings() {
+        String url = qrDefaultUrlField.getText().strip();
+        String label = qrDefaultLabelField.getText().strip();
+        int fontSize = parsePositiveIntOrDefault(
+                qrDefaultFontSizeField.getText(), Config.DEFAULT_QR_LABEL_FONT_SIZE);
+        int sizePx = parsePositiveIntOrDefault(qrDefaultSizeField.getText(), Config.DEFAULT_QR_SIZE_PX);
+        int paddingPx = parseNonNegativeIntOrDefault(
+                qrDefaultPaddingField.getText(), Config.DEFAULT_QR_PADDING_PX);
+        int borderPx = parseNonNegativeIntOrDefault(qrDefaultBorderField.getText(), Config.DEFAULT_QR_BORDER_PX);
+        QrCode.LabelPosition labelPosition = selectedQrDefaultLabelPosition();
+
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("QR_DEFAULT_URL", url.isEmpty() || url.equals(Config.DEFAULT_QR_URL) ? null : url);
+        values.put("QR_DEFAULT_LABEL", label.equals(Config.DEFAULT_QR_LABEL) ? null : label);
+        values.put("QR_DEFAULT_LABEL_FONT_SIZE",
+                fontSize == Config.DEFAULT_QR_LABEL_FONT_SIZE ? null : String.valueOf(fontSize));
+        values.put("QR_DEFAULT_LABEL_POSITION",
+                labelPosition == Config.DEFAULT_QR_LABEL_POSITION ? null : labelPosition.name());
+        values.put("QR_DEFAULT_SIZE_PX", sizePx == Config.DEFAULT_QR_SIZE_PX ? null : String.valueOf(sizePx));
+        values.put("QR_DEFAULT_PADDING_PX",
+                paddingPx == Config.DEFAULT_QR_PADDING_PX ? null : String.valueOf(paddingPx));
+        values.put("QR_DEFAULT_BORDER_PX",
+                borderPx == Config.DEFAULT_QR_BORDER_PX ? null : String.valueOf(borderPx));
+        values.put("QR_DEFAULT_POSITION",
+                qrDefaultSelectedPosition == Config.DEFAULT_QR_POSITION ? null : qrDefaultSelectedPosition.name());
+        try {
+            Config.updateDotenv(values);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this,
+                    I18n.t("Failed to save settings to {0}: {1}",
+                            Config.globalEnvPath(), e.getMessage()),
+                    I18n.t("Settings"), JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+        loadQrDefaultsSettings();
+        return true;
+    }
+
+    /** Tolerant of blank/invalid/non-positive text, like {@code Config}'s own numeric parsing. */
+    private static int parsePositiveIntOrDefault(String typed, int fallback) {
+        try {
+            int value = Integer.parseInt(typed.strip());
+            return value > 0 ? value : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /** Tolerant of blank/invalid/negative text, like {@code Config}'s own numeric parsing. */
+    private static int parseNonNegativeIntOrDefault(String typed, int fallback) {
+        try {
+            int value = Integer.parseInt(typed.strip());
+            return value >= 0 ? value : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /**
      * (Re)loads the OpenAI page from the effective configuration and resets
      * the dirty baseline. Also run after a save, so values that fell back to
      * a default (a cleared prompt) reappear as that default.
@@ -710,7 +956,8 @@ final class SettingsDialog extends JDialog {
         applyButton.setEnabled(themeCombo.getSelectedItem() != Theme.current()
                 || languageCombo.getSelectedItem() != Language.current()
                 || photoSettingsDirty()
-                || openaiDirty());
+                || openaiDirty()
+                || qrDefaultsDirty());
     }
 
     /**
@@ -730,6 +977,9 @@ final class SettingsDialog extends JDialog {
             if (applied != null) {
                 onDefaultsApplied.accept(applied);
             }
+        }
+        if (qrDefaultsDirty()) {
+            saveQrDefaultsSettings();
         }
         if (!themeChanged && !languageChanged) {
             updateApplyEnabled();

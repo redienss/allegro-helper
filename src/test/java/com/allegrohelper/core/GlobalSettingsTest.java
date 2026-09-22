@@ -202,4 +202,48 @@ class GlobalSettingsTest {
         assertNull(Config.migrateLegacyDotenv(tmp.resolve("work")));
         assertNull(Config.migrateLegacyDotenv(tmp.resolve("does-not-exist")));
     }
+
+    // ------------------------------------------------------ QR Code defaults
+
+    @Test
+    void qrDefaultsFallBackToTheBuiltInValuesWhenNothingIsConfigured(@TempDir Path tmp) throws IOException {
+        redirect(tmp);
+
+        Config cfg = Config.forBaseDir(tmp.resolve("work"));
+        assertEquals(Config.DEFAULT_QR_URL, cfg.qrDefaultUrl);
+        assertEquals(Config.DEFAULT_QR_LABEL, cfg.qrDefaultLabel);
+        assertEquals(Config.DEFAULT_QR_LABEL_FONT_SIZE, cfg.qrDefaultLabelFontSize);
+        assertEquals(Config.DEFAULT_QR_LABEL_POSITION, cfg.qrDefaultLabelPosition);
+        assertEquals(Config.DEFAULT_QR_SIZE_PX, cfg.qrDefaultSizePx);
+        assertEquals(Config.DEFAULT_QR_PADDING_PX, cfg.qrDefaultPaddingPx);
+        assertEquals(Config.DEFAULT_QR_BORDER_PX, cfg.qrDefaultBorderPx);
+        assertEquals(Config.DEFAULT_QR_POSITION, cfg.qrDefaultPosition);
+    }
+
+    @Test
+    void qrDefaultPositionsParseFromTheirSavedNames(@TempDir Path tmp) throws IOException {
+        Path config = redirect(tmp);
+        writeEnv(config.resolve(".env"), "QR_DEFAULT_POSITION=SW\nQR_DEFAULT_LABEL_POSITION=ABOVE\n");
+
+        Config cfg = Config.forBaseDir(tmp.resolve("work"));
+        assertEquals(QrCode.Position.SW, cfg.qrDefaultPosition);
+        assertEquals(QrCode.LabelPosition.ABOVE, cfg.qrDefaultLabelPosition);
+    }
+
+    @Test
+    void anUnrecognizedQrDefaultPositionFallsBackRatherThanThrowing(@TempDir Path tmp) throws IOException {
+        Path config = redirect(tmp);
+        writeEnv(config.resolve(".env"), "QR_DEFAULT_POSITION=bogus\n");
+
+        assertEquals(Config.DEFAULT_QR_POSITION, Config.forBaseDir(tmp.resolve("work")).qrDefaultPosition);
+    }
+
+    @Test
+    void savingAQrDefaultRoundTripsThroughTheGlobalFile(@TempDir Path tmp) throws IOException {
+        redirect(tmp);
+
+        Config.updateDotenv(Map.of("QR_DEFAULT_SIZE_PX", "1200"));
+
+        assertEquals(1200, Config.forBaseDir(tmp.resolve("anywhere")).qrDefaultSizePx);
+    }
 }

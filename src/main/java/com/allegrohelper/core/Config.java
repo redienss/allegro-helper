@@ -23,6 +23,29 @@ public final class Config {
     /** {@link SeriesRecognition.Mode#VIDEO}'s default frame-extraction interval. */
     public static final double DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS = 5.0;
 
+    /**
+     * The QR Code tab's built-in starting point for an offer with nothing
+     * saved yet — sized for a 4000x3000px photo. A user working mostly with a
+     * different resolution (e.g. FHD video frames) overrides these via
+     * File &gt; Settings &gt; QR Code; until then, a fresh install behaves
+     * exactly as before this setting existed.
+     */
+    public static final String DEFAULT_QR_URL = "https://www.youtube.com/";
+    /** @see #DEFAULT_QR_URL */
+    public static final String DEFAULT_QR_LABEL = "YouTube 360º video";
+    /** @see #DEFAULT_QR_URL */
+    public static final int DEFAULT_QR_LABEL_FONT_SIZE = 96;
+    /** @see #DEFAULT_QR_URL */
+    public static final QrCode.LabelPosition DEFAULT_QR_LABEL_POSITION = QrCode.LabelPosition.BELOW;
+    /** @see #DEFAULT_QR_URL */
+    public static final int DEFAULT_QR_SIZE_PX = 1000;
+    /** @see #DEFAULT_QR_URL */
+    public static final int DEFAULT_QR_PADDING_PX = 64;
+    /** @see #DEFAULT_QR_URL */
+    public static final int DEFAULT_QR_BORDER_PX = 16;
+    /** @see #DEFAULT_QR_URL */
+    public static final QrCode.Position DEFAULT_QR_POSITION = QrCode.Position.NE;
+
     public final Path baseDir;
     public final Path csvPath;
     public final Path rawPhotosDir;
@@ -45,6 +68,22 @@ public final class Config {
     public final String openaiUserPrompt;
     public final String chromeBin;
     public final Path chromeProfileDir;
+    /** The QR Code tab's starting URL for an offer with no {@code qr.json} yet. */
+    public final String qrDefaultUrl;
+    /** @see #qrDefaultUrl */
+    public final String qrDefaultLabel;
+    /** @see #qrDefaultUrl */
+    public final int qrDefaultLabelFontSize;
+    /** @see #qrDefaultUrl */
+    public final QrCode.LabelPosition qrDefaultLabelPosition;
+    /** @see #qrDefaultUrl */
+    public final int qrDefaultSizePx;
+    /** @see #qrDefaultUrl */
+    public final int qrDefaultPaddingPx;
+    /** @see #qrDefaultUrl */
+    public final int qrDefaultBorderPx;
+    /** @see #qrDefaultUrl */
+    public final QrCode.Position qrDefaultPosition;
 
     /**
      * The phone's photo directory as mounted by gvfs-mtp, for a given user id.
@@ -89,6 +128,16 @@ public final class Config {
         // and the Allegro login session persists in it between runs.
         this.chromeProfileDir =
                 pathOrDefault(env, "CHROME_PROFILE_DIR", baseDir.resolve(".chrome-profile"));
+        this.qrDefaultUrl = stringOrDefault(env, "QR_DEFAULT_URL", DEFAULT_QR_URL);
+        this.qrDefaultLabel = stringOrDefault(env, "QR_DEFAULT_LABEL", DEFAULT_QR_LABEL);
+        this.qrDefaultLabelFontSize =
+                intOrDefault(env, "QR_DEFAULT_LABEL_FONT_SIZE", DEFAULT_QR_LABEL_FONT_SIZE);
+        this.qrDefaultLabelPosition =
+                qrLabelPositionOrDefault(env, "QR_DEFAULT_LABEL_POSITION", DEFAULT_QR_LABEL_POSITION);
+        this.qrDefaultSizePx = intOrDefault(env, "QR_DEFAULT_SIZE_PX", DEFAULT_QR_SIZE_PX);
+        this.qrDefaultPaddingPx = intOrDefault(env, "QR_DEFAULT_PADDING_PX", DEFAULT_QR_PADDING_PX);
+        this.qrDefaultBorderPx = intOrDefault(env, "QR_DEFAULT_BORDER_PX", DEFAULT_QR_BORDER_PX);
+        this.qrDefaultPosition = qrPositionOrDefault(env, "QR_DEFAULT_POSITION", DEFAULT_QR_POSITION);
     }
 
     /** Drops a trailing slash so the endpoint paths can be appended verbatim. */
@@ -411,6 +460,34 @@ public final class Config {
         try {
             return Double.parseDouble(v.strip());
         } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /** The value as a {@link QrCode.LabelPosition}; the fallback if absent, blank or unrecognized. */
+    private static QrCode.LabelPosition qrLabelPositionOrDefault(
+            Map<String, String> env, String key, QrCode.LabelPosition fallback) {
+        String v = env.get(key);
+        if (v == null || v.isBlank()) {
+            return fallback;
+        }
+        try {
+            return QrCode.LabelPosition.valueOf(v.strip());
+        } catch (IllegalArgumentException e) {
+            return fallback;
+        }
+    }
+
+    /** The value as a {@link QrCode.Position}; the fallback if absent, blank or unrecognized. */
+    private static QrCode.Position qrPositionOrDefault(
+            Map<String, String> env, String key, QrCode.Position fallback) {
+        String v = env.get(key);
+        if (v == null || v.isBlank()) {
+            return fallback;
+        }
+        try {
+            return QrCode.Position.valueOf(v.strip());
+        } catch (IllegalArgumentException e) {
             return fallback;
         }
     }

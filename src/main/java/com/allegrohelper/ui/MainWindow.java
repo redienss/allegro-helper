@@ -284,7 +284,8 @@ public final class MainWindow {
     private final JTextField qrPaddingField = new JTextField();
     private final JTextField qrBorderField = new JTextField();
     private final Map<QrCode.Position, JToggleButton> qrPositionButtons = new EnumMap<>(QrCode.Position.class);
-    private QrCode.Position qrSelectedPosition = DEFAULT_QR_POSITION;
+    /** Placeholder only — overwritten by {@link #clearQrFields()}/{@link #loadQrFields} before the window is shown. */
+    private QrCode.Position qrSelectedPosition = QrCode.Position.NE;
     private final ImagePanel qrPreviewPanel = new ImagePanel("");
     private final JButton qrFirstPhotoButton = new JButton("|<");
     private final JButton qrPreviousPhotoButton = new JButton("< Prev");
@@ -1254,29 +1255,6 @@ public final class MainWindow {
     // ------------------------------------------------------------- QR Code tab
 
     /**
-     * The QR Code tab's own starting point for an offer with nothing saved
-     * yet — a convenience for the common case (a YouTube 360° video, top-right
-     * on the photo), not a file-format fallback. Deliberately separate from
-     * {@link QrCode}'s {@code DEFAULT_*} constants, which instead say what a
-     * {@code qr.json} missing a given key means — those must stay put so an
-     * old file's meaning never shifts just because this tab's suggested
-     * starting values change.
-     */
-    private static final String DEFAULT_QR_URL = "https://www.youtube.com/";
-    /** @see #DEFAULT_QR_URL */
-    private static final String DEFAULT_QR_LABEL = "YouTube 360º video";
-    /** @see #DEFAULT_QR_URL */
-    private static final QrCode.Position DEFAULT_QR_POSITION = QrCode.Position.NE;
-    /** @see #DEFAULT_QR_URL */
-    private static final int DEFAULT_QR_SIZE = 1000;
-    /** @see #DEFAULT_QR_URL */
-    private static final int DEFAULT_QR_PADDING = 64;
-    /** @see #DEFAULT_QR_URL */
-    private static final int DEFAULT_QR_BORDER = 16;
-    /** @see #DEFAULT_QR_URL */
-    private static final int DEFAULT_QR_LABEL_FONT_SIZE = 96;
-
-    /**
      * The QR Code tab: one of the offer's photos with a configured QR code
      * stamped on it — a link to a 360° video, an extended photo gallery, or
      * anything else a marketplace's own photo cap leaves out. Rendered by
@@ -1507,16 +1485,21 @@ public final class MainWindow {
         qrPreviewPhotoIndex = settings.photoIndex();
     }
 
-    /** Blanks the form back to defaults — used for "no offer" states and by the Clear button. */
+    /**
+     * Blanks the form back to the user's configured defaults (File &gt;
+     * Settings &gt; QR Code) — used for "no offer" states, by the Clear
+     * button, and after Delete.
+     */
     private void clearQrFields() {
-        qrUrlField.setText(DEFAULT_QR_URL);
-        qrLabelField.setText(DEFAULT_QR_LABEL);
-        qrFontSizeField.setText(String.valueOf(DEFAULT_QR_LABEL_FONT_SIZE));
-        qrLabelPositionCombo.setSelectedIndex(QrCode.DEFAULT_LABEL_POSITION.ordinal());
-        qrSizeField.setText(String.valueOf(DEFAULT_QR_SIZE));
-        qrPaddingField.setText(String.valueOf(DEFAULT_QR_PADDING));
-        qrBorderField.setText(String.valueOf(DEFAULT_QR_BORDER));
-        selectQrPosition(DEFAULT_QR_POSITION);
+        Config cfg = Config.forBaseDir(Path.of(baseDirField.getText().strip()));
+        qrUrlField.setText(cfg.qrDefaultUrl);
+        qrLabelField.setText(cfg.qrDefaultLabel);
+        qrFontSizeField.setText(String.valueOf(cfg.qrDefaultLabelFontSize));
+        qrLabelPositionCombo.setSelectedIndex(cfg.qrDefaultLabelPosition.ordinal());
+        qrSizeField.setText(String.valueOf(cfg.qrDefaultSizePx));
+        qrPaddingField.setText(String.valueOf(cfg.qrDefaultPaddingPx));
+        qrBorderField.setText(String.valueOf(cfg.qrDefaultBorderPx));
+        selectQrPosition(cfg.qrDefaultPosition);
         qrPreviewPhotoIndex = 0;
     }
 
@@ -1661,10 +1644,11 @@ public final class MainWindow {
         }
 
         int photoIndex = qrPreviewPhotoIndex;
+        Config cfg = Config.forBaseDir(Path.of(baseDirField.getText().strip()));
         String url = qrUrlField.getText().strip();
         QrCode.QrSettings liveSettings = url.isEmpty() ? null : new QrCode.QrSettings(
-                url, qrLabelField.getText().strip(), parseQrSizeOrDefault(), parseQrPaddingOrDefault(),
-                parseQrBorderOrDefault(), parseQrFontSizeOrDefault(), selectedQrLabelPosition(),
+                url, qrLabelField.getText().strip(), parseQrSizeOrDefault(cfg), parseQrPaddingOrDefault(cfg),
+                parseQrBorderOrDefault(cfg), parseQrFontSizeOrDefault(cfg), selectedQrLabelPosition(),
                 qrSelectedPosition, photoIndex);
         qrPreviewPanel.setStatus(I18n.t("Rendering the preview…"));
         qrPreviewLoader.submit(() -> {
@@ -1706,43 +1690,43 @@ public final class MainWindow {
         return QrCode.LabelPosition.values()[qrLabelPositionCombo.getSelectedIndex()];
     }
 
-    /** The size field's value, or the default when it is not (yet) a valid positive integer. */
-    private int parseQrSizeOrDefault() {
+    /** The size field's value, or the configured default when it is not (yet) a valid positive integer. */
+    private int parseQrSizeOrDefault(Config cfg) {
         try {
             int value = Integer.parseInt(qrSizeField.getText().strip());
-            return value > 0 ? value : DEFAULT_QR_SIZE;
+            return value > 0 ? value : cfg.qrDefaultSizePx;
         } catch (NumberFormatException e) {
-            return DEFAULT_QR_SIZE;
+            return cfg.qrDefaultSizePx;
         }
     }
 
-    /** The label font size field's value, or the default when it is not (yet) a valid positive integer. */
-    private int parseQrFontSizeOrDefault() {
+    /** The label font size field's value, or the configured default when it is not (yet) a valid positive integer. */
+    private int parseQrFontSizeOrDefault(Config cfg) {
         try {
             int value = Integer.parseInt(qrFontSizeField.getText().strip());
-            return value > 0 ? value : DEFAULT_QR_LABEL_FONT_SIZE;
+            return value > 0 ? value : cfg.qrDefaultLabelFontSize;
         } catch (NumberFormatException e) {
-            return DEFAULT_QR_LABEL_FONT_SIZE;
+            return cfg.qrDefaultLabelFontSize;
         }
     }
 
-    /** The inner padding field's value, or the default when it is not (yet) a valid non-negative integer — 0 is valid, meaning no quiet zone. */
-    private int parseQrPaddingOrDefault() {
+    /** The inner padding field's value, or the configured default when it is not (yet) a valid non-negative integer — 0 is valid, meaning no quiet zone. */
+    private int parseQrPaddingOrDefault(Config cfg) {
         try {
             int value = Integer.parseInt(qrPaddingField.getText().strip());
-            return value >= 0 ? value : DEFAULT_QR_PADDING;
+            return value >= 0 ? value : cfg.qrDefaultPaddingPx;
         } catch (NumberFormatException e) {
-            return DEFAULT_QR_PADDING;
+            return cfg.qrDefaultPaddingPx;
         }
     }
 
-    /** The outer border field's value, or the default when it is not (yet) a valid non-negative integer — 0 is valid, meaning no border. */
-    private int parseQrBorderOrDefault() {
+    /** The outer border field's value, or the configured default when it is not (yet) a valid non-negative integer — 0 is valid, meaning no border. */
+    private int parseQrBorderOrDefault(Config cfg) {
         try {
             int value = Integer.parseInt(qrBorderField.getText().strip());
-            return value >= 0 ? value : DEFAULT_QR_BORDER;
+            return value >= 0 ? value : cfg.qrDefaultBorderPx;
         } catch (NumberFormatException e) {
-            return DEFAULT_QR_BORDER;
+            return cfg.qrDefaultBorderPx;
         }
     }
 
