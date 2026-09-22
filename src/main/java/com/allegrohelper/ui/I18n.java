@@ -233,6 +233,14 @@ final class I18n {
         put("Delete this file? This cannot be undone.\n\n{0}",
                 "Usunąć ten plik? Tej operacji nie można cofnąć.\n\n{0}");
         put("Delete file", "Usuwanie pliku");
+        put("Delete selected", "Usuń wybrane");
+        put("Delete the selected photos (the Del key does the same)",
+                "Usuń wybrane zdjęcia (klawisz Del robi to samo)");
+        put("Delete photos", "Usuwanie zdjęć");
+        put("Delete {0} selected photo(s)? This cannot be undone.",
+                "Usunąć {0} wybranych zdjęć? Tej operacji nie można cofnąć.");
+        put("Select one or more photos first.", "Najpierw wybierz co najmniej jedno zdjęcie.");
+        put("Failed to delete: {0}", "Nie udało się usunąć: {0}");
         put("Failed to delete {0}: {1}", "Nie udało się usunąć {0}: {1}");
         put("Failed to save {0}: {1}", "Nie udało się zapisać {0}: {1}");
         put("Loading {0} thumbnails…", "Wczytywanie {0} miniatur…");

@@ -86,9 +86,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -312,6 +314,7 @@ public final class MainWindow {
     private JButton clearButton;
     private JButton saveButton;
     private JButton openPhotoDirButton;
+    private JButton deleteSelectedButton;
     /** The clickable Allegro form URL; its color is re-picked on a theme change. */
     private JLabel formUrlLink;
     /** Bottom bar swapped per tab: editor buttons vs. the photo-gallery button. */
@@ -472,6 +475,7 @@ public final class MainWindow {
 
         setWindowIcon();
         installSaveShortcut();
+        installDeleteShortcut();
 
         // Translate the built (English) texts before measuring; a no-op under English.
         I18n.retranslate(frame);
@@ -506,6 +510,26 @@ public final class MainWindow {
             @Override
             public void actionPerformed(ActionEvent e) {
                 saveActiveTab();
+            }
+        });
+    }
+
+    /**
+     * Binds the Del key to "Delete selected" on the Photos (Input)/(Output)
+     * galleries. {@code WHEN_IN_FOCUSED_WINDOW} is the lowest-priority binding
+     * scope, so it never overrides a text component's own, more specific
+     * delete-next-char binding — typing in any text field elsewhere in the
+     * window is unaffected. On any other tab {@link #deleteSelectedPhotos()}
+     * is a no-op, the same shape {@link #saveActiveTab()} has for Ctrl+S.
+     */
+    private void installDeleteShortcut() {
+        KeyStroke deleteKey = KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0);
+        JRootPane root = frame.getRootPane();
+        root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(deleteKey, "delete-selected-photos");
+        root.getActionMap().put("delete-selected-photos", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                deleteSelectedPhotos();
             }
         });
     }
@@ -936,12 +960,22 @@ public final class MainWindow {
         editorButtonBar.add(leftButtons, BorderLayout.WEST);
         editorButtonBar.add(rightButtons, BorderLayout.EAST);
 
-        // Photos tabs: a single button in the lower-right corner.
+        // Photos tabs: "Open photo dir" in the lower-right, and — on Photos
+        // (Input)/(Output) only — "Delete selected" in the lower-left, away
+        // from it, the same reasoning as the editor tabs' Delete/Save split.
         openPhotoDirButton = new JButton("Open photo dir");
         openPhotoDirButton.addActionListener(e -> openActivePhotoDir());
         JPanel openRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
         openRow.add(openPhotoDirButton);
+
+        deleteSelectedButton = new JButton("Delete selected");
+        deleteSelectedButton.setToolTipText("Delete the selected photos (the Del key does the same)");
+        deleteSelectedButton.addActionListener(e -> deleteSelectedPhotos());
+        JPanel deleteSelectedRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        deleteSelectedRow.add(deleteSelectedButton);
+
         JPanel photoButtonBar = new JPanel(new BorderLayout());
+        photoButtonBar.add(deleteSelectedRow, BorderLayout.WEST);
         photoButtonBar.add(openRow, BorderLayout.EAST);
 
         // QR Code tab: the same Delete/Clear/Save vocabulary as the editor tabs,
@@ -1863,12 +1897,19 @@ public final class MainWindow {
         if (bottomBars == null) {
             return;
         }
+        int tab = rightTabs.getSelectedIndex();
         String card = isEditorTab() ? CARD_EDITOR
-                : rightTabs.getSelectedIndex() == TAB_QR_CODE ? CARD_QR
+                : tab == TAB_QR_CODE ? CARD_QR
                 : CARD_PHOTOS;
         ((CardLayout) bottomBars.getLayout()).show(bottomBars, card);
         if (openPhotoDirButton != null) {
             openPhotoDirButton.setEnabled(activePhotoDir() != null);
+        }
+        if (deleteSelectedButton != null) {
+            // Retouch Preview and the Allegro Form tab share this card but have
+            // no selectable-to-prune gallery of their own — the button applies
+            // only to Photos (Input) and Photos (Output).
+            deleteSelectedButton.setVisible(tab == TAB_PHOTOS_INPUT || tab == TAB_PHOTOS_OUTPUT);
         }
     }
 
@@ -2249,6 +2290,62 @@ public final class MainWindow {
         } catch (IOException e) {
             error(I18n.t("Failed to delete {0}: {1}", target, e.getMessage()));
         }
+    }
+
+    /** The gallery "Delete selected" and the Del key apply to on the active tab, or null elsewhere. */
+    private Gallery activeDeletableGallery() {
+        int tab = rightTabs.getSelectedIndex();
+        if (tab == TAB_PHOTOS_INPUT) {
+            return photosInputGallery;
+        }
+        if (tab == TAB_PHOTOS_OUTPUT) {
+            return photosOutputGallery;
+        }
+        return null;
+    }
+
+    /**
+     * Deletes the active gallery's selected photos, after confirmation. A
+     * "photo" is a file name, and the delete removes that name from every
+     * stage directory of the offer that currently has it — not just the one
+     * the active tab shows — via {@link OfferFiles#deletePhotos}; see that
+     * method's javadoc for why (a partial delete would get redone, and
+     * un-deleted, by the next run of a retouching/crop/QR step).
+     */
+    private void deleteSelectedPhotos() {
+        Gallery gallery = activeDeletableGallery();
+        if (gallery == null || currentOfferDir == null) {
+            return;
+        }
+        List<Path> selected = gallery.selectedFiles();
+        if (selected.isEmpty()) {
+            error(I18n.t("Select one or more photos first."));
+            return;
+        }
+        int choice = JOptionPane.showConfirmDialog(frame,
+                I18n.t("Delete {0} selected photo(s)? This cannot be undone.", selected.size()),
+                I18n.t("Delete photos"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+        Set<String> names = new HashSet<>();
+        for (Path p : selected) {
+            names.add(p.getFileName().toString());
+        }
+        try {
+            OfferFiles.deletePhotos(currentOfferDir, names);
+            appendLog("Deleted " + names.size() + " photo(s) from " + currentOfferDir.getFileName() + ".");
+        } catch (IOException e) {
+            error(I18n.t("Failed to delete: {0}", e.getMessage()));
+        }
+        // Re-show every gallery backed by this offer, not just the active
+        // tab's — otherwise Retouch Preview / Allegro Form would silently
+        // keep showing a photo that is now gone from disk.
+        photosInputGallery.show(currentOfferDir.resolve("photos"));
+        photosOutputGallery.show(OfferFiles.outputPhotoDir(currentOfferDir));
+        formGallery.show(OfferFiles.outputPhotoDir(currentOfferDir));
+        refreshRetouchPreview();
+        refreshQrPreview();
     }
 
     /** Opens the directory backing the active Photos tab in the system file manager. */

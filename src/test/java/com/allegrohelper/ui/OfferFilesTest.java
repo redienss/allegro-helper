@@ -1,6 +1,7 @@
 package com.allegrohelper.ui;
 
 import com.allegrohelper.core.Config;
+import com.allegrohelper.util.Json;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -8,6 +9,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -282,5 +286,75 @@ class OfferFilesTest {
     void plainTextLeavesAlreadyPlainTextAlone() {
         String plain = "Stan: uzywany\n- Technicznie sprawny w 100%\n- Cena: 2500 zl";
         assertEquals(plain, OfferFiles.toPlainText(plain));
+    }
+
+    // ------------------------------------------------------------ deletePhotos
+
+    @Test
+    void deletePhotosRemovesTheNameFromEveryStageDirectoryThatHasIt() throws IOException {
+        mkdirs("photos", "white_balanced", "cropped", "qr_coded");
+        Files.writeString(dir.resolve("photos/a.jpg"), "x");
+        Files.writeString(dir.resolve("white_balanced/a.jpg"), "x");
+        Files.writeString(dir.resolve("cropped/a.jpg"), "x");
+        Files.writeString(dir.resolve("qr_coded/a.jpg"), "x");
+        // A second photo that must be left alone.
+        Files.writeString(dir.resolve("photos/b.jpg"), "x");
+
+        int deleted = OfferFiles.deletePhotos(dir, Set.of("a.jpg"));
+
+        assertEquals(4, deleted);
+        assertFalse(Files.exists(dir.resolve("photos/a.jpg")));
+        assertFalse(Files.exists(dir.resolve("white_balanced/a.jpg")));
+        assertFalse(Files.exists(dir.resolve("cropped/a.jpg")));
+        assertFalse(Files.exists(dir.resolve("qr_coded/a.jpg")));
+        assertTrue(Files.exists(dir.resolve("photos/b.jpg")), "an unselected photo must survive");
+    }
+
+    @Test
+    void deletePhotosIgnoresStageDirectoriesThatDoNotHaveTheName() throws IOException {
+        mkdirs("photos", "cropped");
+        Files.writeString(dir.resolve("photos/a.jpg"), "x");
+        // "cropped" exists but was never given a.jpg — e.g. auto-crop declined.
+
+        int deleted = OfferFiles.deletePhotos(dir, Set.of("a.jpg"));
+
+        assertEquals(1, deleted);
+    }
+
+    @Test
+    void deletePhotosUpdatesTheDataJsonPhotoListAndCount() throws IOException {
+        mkdirs("photos");
+        Files.writeString(dir.resolve("photos/a.jpg"), "x");
+        Files.writeString(dir.resolve("photos/b.jpg"), "x");
+        Files.writeString(dir.resolve("data.json"),
+                "{\"name\": \"Kettle\", \"photo_count\": 2, \"photos\": [\"a.jpg\", \"b.jpg\"]}");
+
+        OfferFiles.deletePhotos(dir, Set.of("a.jpg"));
+
+        Map<String, Object> data = Json.parseObject(Files.readString(dir.resolve("data.json")));
+        assertEquals(List.of("b.jpg"), data.get("photos"));
+        assertEquals(1.0, data.get("photo_count"));
+        assertEquals("Kettle", data.get("name"), "unrelated fields must survive the round trip");
+    }
+
+    @Test
+    void deletePhotosIsANoOpWhenDataJsonIsMissingOrHasNoPhotosField() throws IOException {
+        mkdirs("photos");
+        Files.writeString(dir.resolve("photos/a.jpg"), "x");
+
+        // No data.json at all.
+        assertEquals(1, OfferFiles.deletePhotos(dir, Set.of("a.jpg")));
+
+        // A data.json without a "photos" field.
+        mkdirs("photos");
+        Files.writeString(dir.resolve("photos/a.jpg"), "x");
+        Files.writeString(dir.resolve("data.json"), "{\"name\": \"Kettle\"}");
+        assertEquals(1, OfferFiles.deletePhotos(dir, Set.of("a.jpg")));
+    }
+
+    @Test
+    void deletePhotosReturnsZeroWhenTheNameIsNowhereToBeFound() throws IOException {
+        mkdirs("photos");
+        assertEquals(0, OfferFiles.deletePhotos(dir, Set.of("does-not-exist.jpg")));
     }
 }

@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Locating and reading the files behind an offer, for the UI.
@@ -214,6 +215,67 @@ final class OfferFiles {
             for (Path p : stream.sorted(Comparator.reverseOrder()).toList()) {
                 Files.delete(p);
             }
+        }
+    }
+
+    /**
+     * Every per-photo directory a pipeline step might have written a copy
+     * into, root first. {@code core/Retouch}, {@code core/AutoCrop} and
+     * {@code core/QrCode} all write their output under the source photo's own
+     * file name, so the same name can exist in several of these at once.
+     */
+    private static final String[] PHOTO_STAGE_DIRS = {
+            "photos", "white_balanced", "brightened", "contrasted", "cropped", "qr_coded", "retouched"};
+
+    /**
+     * Deletes {@code fileNames} from every stage directory of {@code offerDir}
+     * that currently holds them, not just the one the caller found them in —
+     * otherwise a step's own idempotence check (output count vs. its input's)
+     * would read the mismatch as unfinished and redo it, resurrecting exactly
+     * what was just deleted. Also drops the names from {@code data.json}'s
+     * {@code photos} list, best-effort. Returns how many files were removed.
+     */
+    static int deletePhotos(Path offerDir, Set<String> fileNames) throws IOException {
+        int deleted = 0;
+        for (String dirName : PHOTO_STAGE_DIRS) {
+            Path dir = offerDir.resolve(dirName);
+            for (String fileName : fileNames) {
+                if (Files.deleteIfExists(dir.resolve(fileName))) {
+                    deleted++;
+                }
+            }
+        }
+        updatePhotoList(offerDir, fileNames);
+        return deleted;
+    }
+
+    /**
+     * Drops {@code removedNames} from {@code data.json}'s {@code photos} list
+     * and updates {@code photo_count} to match. Nothing downstream currently
+     * reads either field back, so this is bookkeeping, not correctness — a
+     * failure here must not be treated as undoing the deletion that already
+     * happened on disk.
+     */
+    private static void updatePhotoList(Path offerDir, Set<String> removedNames) {
+        Path dataPath = offerDir.resolve("data.json");
+        if (!Files.isRegularFile(dataPath)) {
+            return;
+        }
+        try {
+            Map<String, Object> data = Json.parseObject(Files.readString(dataPath, StandardCharsets.UTF_8));
+            if (data.get("photos") instanceof List<?> photos) {
+                List<Object> kept = new ArrayList<>();
+                for (Object o : photos) {
+                    if (!removedNames.contains(String.valueOf(o))) {
+                        kept.add(o);
+                    }
+                }
+                data.put("photos", kept);
+                data.put("photo_count", kept.size());
+                Files.writeString(dataPath, Json.write(data, true), StandardCharsets.UTF_8);
+            }
+        } catch (IOException | RuntimeException e) {
+            // Bookkeeping only — the photo files themselves are already gone.
         }
     }
 }
