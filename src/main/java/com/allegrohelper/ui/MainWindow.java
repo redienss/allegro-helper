@@ -328,16 +328,18 @@ public final class MainWindow {
     private Path ocrTarget;
 
     /**
-     * Which editor tabs hold edits not yet written to their file, indexed by
-     * {@code TAB_*}. Only the three editor tabs are ever set. A run reloads the
-     * editors from disk, so without the marker an unsaved description vanished
-     * on Start with nothing having warned about it.
+     * Which tabs hold edits not yet written to their file, indexed by
+     * {@code TAB_*}. Set for the three text-editor tabs and, separately, for
+     * {@link #TAB_QR_CODE} (its own Save button, not {@link #saveTab}). A run
+     * reloads the editors from disk, so without the marker an unsaved
+     * description — or an unsaved QR setting — vanished on Start with nothing
+     * having warned about it.
      */
     private final boolean[] editorDirty = new boolean[8];
 
     /**
-     * Set while the editors are being filled from disk, so the document
-     * listeners can tell a programmatic reload from the user typing.
+     * Set while the editors (and the QR form) are being filled from disk, so
+     * their listeners can tell a programmatic reload from the user editing.
      */
     private boolean loadingEditors;
 
@@ -1197,6 +1199,11 @@ public final class MainWindow {
      * Code checkbox only gates whether the step runs at all in a given Start;
      * an offer with nothing saved here is simply skipped, the same as an
      * auto-crop that declines a series.
+     *
+     * <p>Editing any field — including the stepper's target photo and the
+     * position grid — marks the tab dirty ({@link #markQrDirty}) the same way
+     * the three text-editor tabs are, since a run's reload would otherwise
+     * silently drop an unsaved change here too.
      */
     private JComponent buildQrCodeTab() {
         qrFieldSettle.setRepeats(false); // one render per pause in typing, not one per keystroke
@@ -1233,6 +1240,7 @@ public final class MainWindow {
             return;
         }
         qrPreviewPhotoIndex = index;
+        markQrDirty();
         showQrPhotoIndex();
         refreshQrPreview();
     }
@@ -1280,7 +1288,10 @@ public final class MainWindow {
                 return c;
             }
         });
-        qrLabelPositionCombo.addActionListener(e -> refreshQrPreview());
+        qrLabelPositionCombo.addActionListener(e -> {
+            markQrDirty();
+            refreshQrPreview();
+        });
         qrSizeField.setToolTipText(
                 I18n.t("The QR code's own size, in pixels (not counting its white margin)."));
         qrSizeField.setColumns(8);
@@ -1308,11 +1319,13 @@ public final class MainWindow {
             @Override
             public void insertUpdate(DocumentEvent e) {
                 qrFieldSettle.restart();
+                markQrDirty();
             }
 
             @Override
             public void removeUpdate(DocumentEvent e) {
                 qrFieldSettle.restart();
+                markQrDirty();
             }
 
             @Override
@@ -1365,6 +1378,7 @@ public final class MainWindow {
             button.setSelected(position == qrSelectedPosition);
             button.addActionListener(e -> {
                 qrSelectedPosition = position;
+                markQrDirty();
                 refreshQrPreview();
             });
             group.add(button);
@@ -1456,6 +1470,7 @@ public final class MainWindow {
         Path target = currentOfferDir.resolve("qr.json");
         try {
             QrCode.writeSettings(currentOfferDir, settings);
+            setEditorDirty(TAB_QR_CODE, false);
             appendLog("Saved " + target);
         } catch (IOException e) {
             error(I18n.t("Failed to save {0}: {1}", target, e.getMessage()));
@@ -1483,6 +1498,8 @@ public final class MainWindow {
         try {
             Files.delete(target);
             clearQrFields();
+            // The file is gone and the form matches it: nothing left unsaved.
+            setEditorDirty(TAB_QR_CODE, false);
             refreshQrPreview();
             appendLog("Deleted " + target);
         } catch (IOException e) {
@@ -1880,6 +1897,19 @@ public final class MainWindow {
     private void clearAllEditorDirty() {
         Arrays.fill(editorDirty, false);
         updateTabStyles();
+    }
+
+    /**
+     * Flags the QR Code tab as holding unsaved edits, same idea as {@link
+     * #installDirtyTracking} but for the form's mixed widgets (text fields, a
+     * combo box, toggle buttons) rather than one text pane. Muted by {@link
+     * #loadingEditors} so loading an offer's saved {@code qr.json} — or an
+     * offer with none — doesn't itself read as an edit.
+     */
+    private void markQrDirty() {
+        if (!loadingEditors) {
+            setEditorDirty(TAB_QR_CODE, true);
+        }
     }
 
     /**
