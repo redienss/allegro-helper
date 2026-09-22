@@ -315,6 +315,8 @@ public final class MainWindow {
     private JButton saveButton;
     private JButton openPhotoDirButton;
     private JButton deleteSelectedButton;
+    /** How many photos are in the active Photos tab's gallery — between its two buttons. */
+    private JLabel photoCountLabel;
     /** The clickable Allegro form URL; its color is re-picked on a theme change. */
     private JLabel formUrlLink;
     /** Bottom bar swapped per tab: editor buttons vs. the photo-gallery button. */
@@ -974,8 +976,15 @@ public final class MainWindow {
         JPanel deleteSelectedRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
         deleteSelectedRow.add(deleteSelectedButton);
 
+        // Centered between the two buttons so it reads at a glance against
+        // a marketplace's photo cap (16 on Allegro Lokalnie, 8 on OLX)
+        // while pruning a gallery — no more counting thumbnails by eye.
+        photoCountLabel = new JLabel();
+        photoCountLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
         JPanel photoButtonBar = new JPanel(new BorderLayout());
         photoButtonBar.add(deleteSelectedRow, BorderLayout.WEST);
+        photoButtonBar.add(photoCountLabel, BorderLayout.CENTER);
         photoButtonBar.add(openRow, BorderLayout.EAST);
 
         // QR Code tab: the same Delete/Clear/Save vocabulary as the editor tabs,
@@ -1907,9 +1916,13 @@ public final class MainWindow {
         }
         if (deleteSelectedButton != null) {
             // Retouch Preview and the Allegro Form tab share this card but have
-            // no selectable-to-prune gallery of their own — the button applies
-            // only to Photos (Input) and Photos (Output).
-            deleteSelectedButton.setVisible(tab == TAB_PHOTOS_INPUT || tab == TAB_PHOTOS_OUTPUT);
+            // no selectable-to-prune gallery of their own — the button (and the
+            // photo count next to it) applies only to Photos (Input)/(Output).
+            boolean deletable = tab == TAB_PHOTOS_INPUT || tab == TAB_PHOTOS_OUTPUT;
+            deleteSelectedButton.setVisible(deletable);
+            Gallery gallery = activeDeletableGallery();
+            photoCountLabel.setText(gallery == null ? "" : I18n.t("{0} photos", gallery.photoCount()));
+            photoCountLabel.setVisible(deletable);
         }
     }
 
@@ -2346,6 +2359,7 @@ public final class MainWindow {
         formGallery.show(OfferFiles.outputPhotoDir(currentOfferDir));
         refreshRetouchPreview();
         refreshQrPreview();
+        updateBottomBar(); // the photo count next to the button just changed
     }
 
     /** Opens the directory backing the active Photos tab in the system file manager. */

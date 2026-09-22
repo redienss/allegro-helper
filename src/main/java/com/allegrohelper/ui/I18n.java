@@ -243,6 +243,7 @@ final class I18n {
         put("Failed to delete: {0}", "Nie udało się usunąć: {0}");
         put("Failed to delete {0}: {1}", "Nie udało się usunąć {0}: {1}");
         put("Failed to save {0}: {1}", "Nie udało się zapisać {0}: {1}");
+        put("{0} photos", "{0} zdjęć");
         put("Loading {0} thumbnails…", "Wczytywanie {0} miniatur…");
         put("Could not read {0}: {1}", "Nie można odczytać {0}: {1}");
         put("Could not open {0}: {1}", "Nie można otworzyć {0}: {1}");

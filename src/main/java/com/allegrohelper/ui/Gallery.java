@@ -42,6 +42,13 @@ final class Gallery {
     private final AtomicInteger token = new AtomicInteger();
     /** Files behind the thumbnails, kept index-aligned with {@link #model}. */
     private final List<Path> loadedFiles = new ArrayList<>();
+    /**
+     * How many photos {@link #show} found, set synchronously from the
+     * directory listing rather than {@code loadedFiles.size()} — which fills
+     * in progressively as thumbnails decode on the loader thread, so it would
+     * read low (often 0) for a moment after every call.
+     */
+    private int totalCount;
     private final int thumbSize;
     /** When > 0, the first this-many thumbnails are selected after each load. */
     private final int preselect;
@@ -118,11 +125,17 @@ final class Gallery {
         return files;
     }
 
+    /** How many photos the last {@link #show} found — see {@link #totalCount}. */
+    int photoCount() {
+        return totalCount;
+    }
+
     /** Shows a single status line instead of thumbnails. */
     void message(String text) {
         token.incrementAndGet();
         model.clear();
         loadedFiles.clear();
+        totalCount = 0;
         model.addElement(text);
     }
 
@@ -131,6 +144,7 @@ final class Gallery {
         int my = token.incrementAndGet();
         model.clear();
         loadedFiles.clear();
+        totalCount = 0;
         if (dir == null || !Files.isDirectory(dir)) {
             model.addElement(I18n.t("Not available yet."));
             return;
@@ -148,6 +162,7 @@ final class Gallery {
             model.addElement(I18n.t("No photos."));
             return;
         }
+        totalCount = files.size();
         model.addElement(I18n.t("Loading {0} thumbnails…", files.size()));
         loader.submit(() -> {
             boolean[] cleared = {false};
