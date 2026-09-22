@@ -279,7 +279,7 @@ public final class MainWindow {
     private final JTextField qrPaddingField = new JTextField();
     private final JTextField qrBorderField = new JTextField();
     private final Map<QrCode.Position, JToggleButton> qrPositionButtons = new EnumMap<>(QrCode.Position.class);
-    private QrCode.Position qrSelectedPosition = QrCode.Position.SE;
+    private QrCode.Position qrSelectedPosition = DEFAULT_QR_POSITION;
     private final ImagePanel qrPreviewPanel = new ImagePanel("");
     private final JButton qrFirstPhotoButton = new JButton("|<");
     private final JButton qrPreviousPhotoButton = new JButton("< Prev");
@@ -1182,14 +1182,28 @@ public final class MainWindow {
 
     // ------------------------------------------------------------- QR Code tab
 
-    /** The QR code's default module size until an offer's saved settings say otherwise. */
-    private static final int DEFAULT_QR_SIZE = 300;
-    /** The plate's default inner padding (the quiet zone around the QR code) until an offer's saved settings say otherwise. */
-    private static final int DEFAULT_QR_PADDING = QrCode.DEFAULT_PADDING_PX;
-    /** The backing plate's default outer border thickness until an offer's saved settings say otherwise. */
-    private static final int DEFAULT_QR_BORDER = QrCode.DEFAULT_BORDER_PX;
-    /** The label's default font size until an offer's saved settings say otherwise. */
-    private static final int DEFAULT_QR_LABEL_FONT_SIZE = QrCode.DEFAULT_LABEL_FONT_SIZE;
+    /**
+     * The QR Code tab's own starting point for an offer with nothing saved
+     * yet — a convenience for the common case (a YouTube 360° video, top-right
+     * on the photo), not a file-format fallback. Deliberately separate from
+     * {@link QrCode}'s {@code DEFAULT_*} constants, which instead say what a
+     * {@code qr.json} missing a given key means — those must stay put so an
+     * old file's meaning never shifts just because this tab's suggested
+     * starting values change.
+     */
+    private static final String DEFAULT_QR_URL = "https://www.youtube.com/";
+    /** @see #DEFAULT_QR_URL */
+    private static final String DEFAULT_QR_LABEL = "YouTube 360º video";
+    /** @see #DEFAULT_QR_URL */
+    private static final QrCode.Position DEFAULT_QR_POSITION = QrCode.Position.NE;
+    /** @see #DEFAULT_QR_URL */
+    private static final int DEFAULT_QR_SIZE = 1000;
+    /** @see #DEFAULT_QR_URL */
+    private static final int DEFAULT_QR_PADDING = 64;
+    /** @see #DEFAULT_QR_URL */
+    private static final int DEFAULT_QR_BORDER = 16;
+    /** @see #DEFAULT_QR_URL */
+    private static final int DEFAULT_QR_LABEL_FONT_SIZE = 96;
 
     /**
      * The QR Code tab: one of the offer's photos with a configured QR code
@@ -1424,14 +1438,14 @@ public final class MainWindow {
 
     /** Blanks the form back to defaults — used for "no offer" states and by the Clear button. */
     private void clearQrFields() {
-        qrUrlField.setText("");
-        qrLabelField.setText("");
+        qrUrlField.setText(DEFAULT_QR_URL);
+        qrLabelField.setText(DEFAULT_QR_LABEL);
         qrFontSizeField.setText(String.valueOf(DEFAULT_QR_LABEL_FONT_SIZE));
         qrLabelPositionCombo.setSelectedIndex(QrCode.DEFAULT_LABEL_POSITION.ordinal());
         qrSizeField.setText(String.valueOf(DEFAULT_QR_SIZE));
         qrPaddingField.setText(String.valueOf(DEFAULT_QR_PADDING));
         qrBorderField.setText(String.valueOf(DEFAULT_QR_BORDER));
-        selectQrPosition(QrCode.Position.SE);
+        selectQrPosition(DEFAULT_QR_POSITION);
         qrPreviewPhotoIndex = 0;
     }
 
