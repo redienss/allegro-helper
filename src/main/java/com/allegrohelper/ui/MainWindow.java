@@ -1261,10 +1261,13 @@ public final class MainWindow {
         qrFontSizeField.setColumns(8);
         qrLabelPositionCombo.setToolTipText(I18n.t("Where the caption is drawn relative to the QR code."));
         // Nimbus indents a combo box's own text less than a text field's, so
-        // without this the two visibly don't line up in the form; match the
-        // text field's left inset instead of guessing a pixel count.
+        // without this the two visibly don't line up in the form. Starting
+        // from the text field's own left inset gets close but still reads a
+        // few pixels short next to the fields above and below — the combo's
+        // own arrow-button chrome eats into it — so a small extra nudge is
+        // added on top.
         Insets textFieldInsets = UIManager.getInsets("TextField.contentMargins");
-        int qrComboLeftPad = textFieldInsets != null ? textFieldInsets.left : 6;
+        int qrComboLeftPad = (textFieldInsets != null ? textFieldInsets.left : 6) + 4;
         qrLabelPositionCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
