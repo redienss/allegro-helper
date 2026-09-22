@@ -299,6 +299,15 @@ public final class QrCode {
      * stroked centered on the plate's own edge (inset by half its width) so
      * it stays inside the bounds the rest of this method already clamps to,
      * rather than needing its own accounting in the shrink-to-fit loop.
+     *
+     * <p>The plate, border and label are drawn antialiased; the QR modules are
+     * not. A hard-edged rounded corner or diagonal — the default for
+     * {@code Graphics2D} shapes — comes out a jagged staircase that a JPEG
+     * re-encode then rings around, a scatter of stray light pixels right at
+     * the edge; antialiasing softens the edge enough that the ringing all but
+     * disappears. The modules stay unblended because that softening would
+     * work against them: a scanner reads a sharp black/white boundary, not a
+     * gray one.
      */
     public static BufferedImage composite(BufferedImage img, QrSettings settings) {
         boolean[][] modules = QrEncoder.encode(settings.url());
@@ -330,6 +339,15 @@ public final class QrCode {
         px = Math.max(0, Math.min(px, img.getWidth() - plate.width));
         py = Math.max(0, Math.min(py, img.getHeight() - plate.height));
 
+        // Antialiased for the plate/border/label: their curved or diagonal
+        // edges render as a hard, jagged staircase without it, which a JPEG
+        // re-encode then rings around (stray light pixels right at the edge,
+        // worst at the rounded corners). Switched off again before the QR
+        // modules themselves, which need crisp, unblended edges to scan
+        // reliably — softening a module boundary risks it misreading.
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
+
         g.setColor(Color.WHITE);
         int radius = Math.max(2, moduleSize);
         g.fillRoundRect(px, py, plate.width, plate.height, radius, radius);
@@ -337,13 +355,20 @@ public final class QrCode {
         if (settings.borderPx() > 0) {
             float stroke = settings.borderPx();
             float inset = stroke / 2f;
+            // A rounded rect's corners are true offset curves of each other only
+            // when the arc shrinks along with the bounds — shrinking the bounds
+            // by `stroke` but reusing `radius` over-rounds this smaller rect, and
+            // its corner then cuts inward past the plate's own corner, leaving a
+            // sliver of the white plate visible outside the black stroke.
+            float borderArc = Math.max(0f, radius - stroke);
             g.setColor(Color.BLACK);
             g.setStroke(new BasicStroke(stroke));
             g.draw(new RoundRectangle2D.Float(px + inset, py + inset,
-                    plate.width - stroke, plate.height - stroke, radius, radius));
+                    plate.width - stroke, plate.height - stroke, borderArc, borderArc));
             g.setStroke(new BasicStroke(1f));
         }
 
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         g.setColor(Color.BLACK);
         int quiet = paddingPx;
         int qrOriginX = px + quiet;
@@ -357,6 +382,7 @@ public final class QrCode {
         }
 
         if (!label.isEmpty()) {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setFont(plate.font);
             FontMetrics fm = g.getFontMetrics();
             int textY = settings.labelPosition() == LabelPosition.ABOVE

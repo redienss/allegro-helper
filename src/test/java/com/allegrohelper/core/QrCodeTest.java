@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * The QR Code step: idempotence, the "no {@code qr.json} means nothing to do"
@@ -327,6 +328,43 @@ class QrCodeTest {
         assertTrue(withBorderBlack[1] < noBorderBlack[1],
                 "an outer border must put black pixels closer to the plate's top edge than the QR modules alone, "
                         + "which sit behind the (unchanged) inner padding");
+    }
+
+    /**
+     * Regression test: the border's rounded rect used to reuse the plate's
+     * own corner radius on its own (smaller, inset) bounds, which over-rounds
+     * that smaller rect and pulls its corner in past the plate's own — a
+     * sliver of the white plate then shows outside the black stroke, right at
+     * the rounded corner. Anchored to {@code NW} so the plate's top-left true
+     * corner sits exactly on the diagonal scanned below.
+     *
+     * <p>Checks the transition trends toward black rather than requiring it
+     * to land on pure black: the plate/border edges are antialiased (see
+     * {@link QrCode#composite}), so the first pixel past the background is a
+     * blend, not a flat color — but a blend leaking white in would read
+     * lighter than the (mid-gray) background, never darker.
+     */
+    @Test
+    void borderFullyEnclosesTheRoundedCornerWithNoWhiteGapAtTheDiagonal() {
+        BufferedImage photo = plainPhoto(800, 600, new Color(128, 128, 128));
+        QrCode.QrSettings settings = new QrCode.QrSettings(
+                "https://e.co", "", 600, 40, 12, 24, QrCode.LabelPosition.BELOW, QrCode.Position.NW, 0);
+
+        BufferedImage result = QrCode.composite(photo, settings);
+
+        int background = new Color(128, 128, 128).getRGB() & 0xFFFFFF;
+        for (int i = 0; i < Math.min(result.getWidth(), result.getHeight()); i++) {
+            int rgb = result.getRGB(i, i) & 0xFFFFFF;
+            if (rgb != background) {
+                int red = (rgb >> 16) & 0xFF;
+                assertTrue(red <= 128,
+                        "the first pixel reached along the diagonal into the plate's rounded corner must trend "
+                                + "toward the black border, not the white plate leaking out past it (red=" + red
+                                + ")");
+                return;
+            }
+        }
+        fail("the diagonal scan never left the photo's background color before reaching the image edge");
     }
 
     /**
