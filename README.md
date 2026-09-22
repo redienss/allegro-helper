@@ -53,7 +53,15 @@ marketplace.
    processed photos available — contrasted, brightened, white-balanced, or the
    originals when no retouching step has run. Results go to `cropped/`; the
    input photos are left untouched.
-8. **OCR** — the text visible on the item and its packaging (labels,
+8. **QR code** *(optional, unchecked by default)* — stamps one photo of the
+   offer with a scannable QR code, for anything that doesn't fit in a
+   marketplace's own photo cap (16 on Allegro Lokalnie, 8 on OLX) — a link to a
+   360° turntable video, an extended photo gallery, anything else. Unlike every
+   other step, this one is configured **per offer**, on the QR Code tab (see
+   below); an offer with nothing saved there is left untouched, the same as an
+   Auto-crop decline, so downstream steps just work from the cropped photos as
+   before.
+9. **OCR** — the text visible on the item and its packaging (labels,
    nameplates, model numbers) is read off the finished photos into `ocr.txt`,
    using the [tesseract](https://github.com/tesseract-ocr/tesseract) CLI —
    free and local, no API cost. Tesseract expects scans rather than photos, so
@@ -62,11 +70,11 @@ marketplace.
    reading wins, and low-confidence noise is dropped. Results are logged and
    appended to `ocr.txt` photo by photo, so the log always shows what is being
    worked on.
-9. **Describe** — an offer description is generated per offer via the OpenAI
+10. **Describe** — an offer description is generated per offer via the OpenAI
    API, including the price taken directly from the CSV. The recognized OCR
    text rides along in the request, so exact model designations and nameplate
    parameters make it into the description.
-10. The offer is then created on Allegro Lokalnie by hand, using the cropped
+11. The offer is then created on Allegro Lokalnie by hand, using the finished
    photos and the generated description.
 
 Every step is safe to re-run — already processed offers and photos are skipped.
@@ -174,9 +182,10 @@ selected offer on the right.
   **Reload CSV** (re-reads the file from disk after such an external edit), and
   add/remove rows.
 - **Workflow** — checkboxes `Import`, `Match`, `White balance`, `Brightness`,
-  `Contrast`, `Auto-crop`, `OCR`, `Describe` (all checked by default), so any
-  subset of the pipeline — including a single retouching step on its own — can
-  be run.
+  `Contrast`, `Auto-crop`, `QR Code`, `OCR`, `Describe` (all checked by
+  default except `QR Code`, since stamping a code needs per-offer settings
+  saved on the QR Code tab first), so any subset of the pipeline — including a
+  single retouching step on its own — can be run.
 - **Start** — runs the selected steps in order. If `Match` is selected, the grid
   is written to `offers.csv` first (that step's input).
 - **Delete Output Files** / **Clean & Restart** — delete everything under
@@ -190,7 +199,7 @@ selected offer on the right.
 ### Right: the selected offer
 
 Clicking a row in the grid shows that offer (resolved by matching the row's name
-to each offer's `data.json`, falling back to row position) in seven tabs:
+to each offer's `data.json`, falling back to row position) in eight tabs:
 
 - **Description (Input)** — editor for `more_data_<N>.txt` next to `offers.csv`
   (N = the row's 1-based number): extra free-form notes folded into the
@@ -226,9 +235,23 @@ to each offer's `data.json`, falling back to row position) in seven tabs:
   for crushed shadows. It is off by default — the marks cover the photo they are
   diagnosing, so they are a thing to reach for when a histogram looks piled
   against an edge.
+- **QR Code** — stamps a scannable QR code onto one photo of the offer, for
+  anything that doesn't fit in a marketplace's own photo cap (16 on Allegro
+  Lokalnie, 8 on OLX) — a link to a 360° turntable video, an extended photo
+  gallery, anything else. Unlike every other tab, these settings are **per
+  offer**: the link (URL), an optional caption drawn next to the code (its own
+  font size, and above/below position), the code's own size, its white *inner
+  padding* and black *outer border* (two separate settings, so both can be
+  dialled independently), one of nine anchor positions on the photo (a 3×3
+  grid of buttons), and which photo of the series gets stamped. The stepper
+  and preview work exactly like Retouch Preview's, showing exactly what a run
+  would produce; **Save** / **Delete** / **Clear** write the settings to a
+  `qr.json` sidecar next to the offer's photos. The `QR Code` checkbox in the
+  Workflow section only decides whether a run actually stamps anything — an
+  offer with nothing saved here is left untouched.
 - **Photos (Output)** — thumbnail gallery of the finished photos: the output of
-  the latest step that has run — `offers/<id>/cropped/`, else `contrasted/`,
-  else `brightened/`, else `white_balanced/`.
+  the latest step that has run — `offers/<id>/qr_coded/`, else `cropped/`, else
+  `contrasted/`, else `brightened/`, else `white_balanced/`.
 - **OCR** — editor for `ocr.txt` in the offer directory: the text the OCR step
   read off the photos, one block per photo that had any. Fix a misread model
   number here and save before running Describe, and the correction flows into
@@ -273,6 +296,17 @@ what a run *might* do — it is the pipeline's own code, on the real photo, and 
 run then uses exactly the slider values shown here.
 
 ![The Retouch Preview tab, with Show clipping on](screenshots/004.png)
+
+The QR Code tab works the same way for the QR step: the settings on the right
+— a YouTube link, a caption, and a bottom-right position — are rendered live
+onto photo 16 of 16, with a `20260921_1355: stamped a QR code onto photo #16 of
+16.` line in the log after running the workflow with only `QR Code` ticked.
+
+![The QR Code tab, with a link and caption stamped onto a photo](screenshots/010.png)
+
+Because it stamps the real photo, that is exactly what ends up in the listing:
+
+![One of the finished photos, with the QR code and caption in the corner](screenshots/011.jpg)
 
 Comparing the two galleries shows what Auto-crop did: the same series, framed to
 the item.
@@ -390,7 +424,7 @@ repo path and quietly overrode that setting.
 The same pipeline runs without a UI:
 
 ```bash
-./run.sh --cli import      # or match | whitebalance | brightness | contrast | autocrop | ocr | describe | all
+./run.sh --cli import      # or match | whitebalance | brightness | contrast | autocrop | qrcode | ocr | describe | all
 ./run.sh --cli retouch     # alias: whitebalance + brightness + contrast
 ./run.sh --cli all /path/to/base-dir
 ```
@@ -475,6 +509,9 @@ offers/20260708_0340/
   brightened/      # photos after the Brightness step
   contrasted/      # photos after the Contrast step
   cropped/         # retouched photos cropped to the item (Auto-crop)
+  qr.json          # optional per-offer QR code settings (URL, label, size,
+                    # padding, border, position), from the QR Code tab
+  qr_coded/        # one photo stamped with the QR code (QR code step, only if qr.json exists)
   more_data.txt    # optional, copied from more_data_<N>.txt if present
   ocr.txt          # text read off the photos (OCR), editable in the OCR tab
   description.txt  # generated description + price (from the CSV)
