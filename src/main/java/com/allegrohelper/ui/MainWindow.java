@@ -159,7 +159,10 @@ public final class MainWindow {
     private final JComboBox<String> seriesModeCombo = new JComboBox<>(new String[]{
             "AUTO - Auto detect photo series",
             "SINGLE - All photos in the directory as one item",
-            "SUBFOLDERS - Each subfolder as a separate item"});
+            "SUBFOLDERS - Each subfolder as a separate item",
+            "VIDEO - Extract frames from each video"});
+    /** Only meaningful in {@link SeriesRecognition.Mode#VIDEO}; read by {@link #currentConfig()}. */
+    private final JTextField videoIntervalField = new JTextField(4);
     private final DefaultListModel<String> photosModel = new DefaultListModel<>();
     private final OfferTableModel offerModel = new OfferTableModel();
     private final JTable offerTable = new JTable(offerModel);
@@ -361,14 +364,15 @@ public final class MainWindow {
         Config initial = Config.forBaseDir(initialBaseDir);
         photoDirField.setText(initial.mtpGlobPattern);
         seriesModeCombo.setSelectedIndex(initial.seriesRecognition.ordinal());
+        videoIntervalField.setText(String.valueOf(initial.videoFrameIntervalSeconds));
         build();
         loadOffersFromBaseDir();
     }
 
-    /** Shows the window and scans the phone once, so Photos is populated without a first click. */
+    /** Shows the window and scans the phone once, so Media is populated without a first click. */
     public void show() {
         frame.setVisible(true);
-        // Scan the phone on launch so the Photos section is populated without
+        // Scan the phone on launch so the Media section is populated without
         // the user having to click Refresh the first time.
         refreshPhotos();
     }
@@ -397,6 +401,9 @@ public final class MainWindow {
         }
         if (applied.photoDir() != null) {
             photoDirField.setText(applied.photoDir());
+        }
+        if (applied.videoFrameInterval() != null) {
+            videoIntervalField.setText(String.valueOf(applied.videoFrameInterval()));
         }
         if (applied.seriesMode() != null) {
             seriesModeCombo.setSelectedIndex(applied.seriesMode().ordinal());
@@ -433,7 +440,7 @@ public final class MainWindow {
         JPanel progressPanel = buildProgressPanel();
 
         // Top area: the application logo in the upper-left corner, with the base
-        // directory and Photos section shifted to its right.
+        // directory and Media section shifted to its right.
         JPanel topRight = new JPanel();
         topRight.setLayout(new BoxLayout(topRight, BoxLayout.Y_AXIS));
         dirsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -587,12 +594,12 @@ public final class MainWindow {
         frame.setIconImages(images);
     }
 
-    /** Base + photo directory rows; GridBagLayout keeps their labels and fields aligned. */
+    /** Base + media directory rows; GridBagLayout keeps their labels and fields aligned. */
     private JPanel buildDirsPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 0, 8));
         addDirRow(panel, 0, "Base directory:", baseDirField, e -> chooseBaseDir(), null);
-        addDirRow(panel, 1, "Photo directory:", photoDirField, e -> choosePhotoDir(),
+        addDirRow(panel, 1, "Media directory:", photoDirField, e -> choosePhotoDir(),
                 e -> resetPhotoDir());
         return panel;
     }
@@ -636,7 +643,7 @@ public final class MainWindow {
                     return d;
                 }
             };
-            resetButton.setToolTipText("Restore the default photo directory");
+            resetButton.setToolTipText("Restore the default media directory");
             resetButton.setMargin(new Insets(2, 6, 2, 6));
             resetButton.addActionListener(reset);
             panel.add(resetButton, c);
@@ -646,12 +653,15 @@ public final class MainWindow {
     }
 
     /**
-     * The Photos section: the detected series awaiting import, plus Refresh and
-     * the recognition-mode combo. Changing the mode re-scans, so the list always
-     * previews what the match step would actually do.
+     * The Media section: the detected series (or videos) awaiting import, plus
+     * Refresh and the recognition-mode combo. Changing the mode re-scans, so the
+     * list always previews what the match step would actually do. The frame
+     * interval field only matters in {@link SeriesRecognition.Mode#VIDEO}; it
+     * doesn't trigger a re-scan on its own, since editing it never changes which
+     * videos are detected — only how many frames each will yield.
      */
     private JPanel buildPhotosPanel() {
-        JPanel panel = UiStyle.titled("Photos");
+        JPanel panel = UiStyle.titled("Media");
         panel.setLayout(new BorderLayout(6, 6));
 
         JList<String> list = new JList<>(photosModel);
@@ -659,9 +669,17 @@ public final class MainWindow {
         scroll.setPreferredSize(new Dimension(880, 84));
         panel.add(scroll, BorderLayout.CENTER);
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        // Two explicit rows, not one FlowLayout row left to wrap: a wrapped row's
+        // real height differs from a FlowLayout's own (always single-row)
+        // preferred height, and UiStyle.capHeight below reads that preferred
+        // height to cap the section — a wrapped second row would then render
+        // clipped instead of simply widening the panel.
+        JPanel rows = new JPanel();
+        rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
+
+        JPanel modeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         refreshPhotosButton.addActionListener(e -> refreshPhotos());
-        buttons.add(refreshPhotosButton);
+        modeRow.add(refreshPhotosButton);
         // Changing the recognition mode re-scans, so the list always previews
         // what the match step would do with the current settings.
         seriesModeCombo.addActionListener(e -> refreshPhotos());
@@ -673,8 +691,18 @@ public final class MainWindow {
                 return super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
             }
         });
-        buttons.add(seriesModeCombo);
-        panel.add(buttons, BorderLayout.SOUTH);
+        modeRow.add(seriesModeCombo);
+        modeRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rows.add(modeRow);
+
+        JPanel intervalRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        intervalRow.add(new JLabel("Frame interval (s):"));
+        videoIntervalField.setCaretColor(UiStyle.caretColor());
+        intervalRow.add(videoIntervalField);
+        intervalRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rows.add(intervalRow);
+
+        panel.add(rows, BorderLayout.SOUTH);
         return panel;
     }
 
@@ -2377,11 +2405,13 @@ public final class MainWindow {
     }
 
     /**
-     * Re-scans the photo source and lists the series waiting to be imported.
-     * Off the EDT: the scan reaches over MTP to the phone, which can stall.
+     * Re-scans the media source and lists the series (or videos) waiting to be
+     * imported. Off the EDT: the scan reaches over MTP to the phone, which can
+     * stall.
      */
     private void refreshPhotos() {
         Config cfg = currentConfig();
+        boolean video = cfg.seriesRecognition == SeriesRecognition.Mode.VIDEO;
         refreshPhotosButton.setEnabled(false);
         photosModel.clear();
         photosModel.addElement(I18n.t("Scanning phone…"));
@@ -2391,11 +2421,15 @@ public final class MainWindow {
             try {
                 PhoneScan.Result result = PhoneScan.scan(cfg);
                 if (result.series().isEmpty()) {
-                    message = I18n.t("No photo series found in {0}", result.sourceDir());
+                    message = video
+                            ? I18n.t("No videos found in {0}", result.sourceDir())
+                            : I18n.t("No photo series found in {0}", result.sourceDir());
                 } else {
                     message = null;
                     for (PhotoSeries s : result.series()) {
-                        entries.add(I18n.t("{0} | {1}x series of photos to import", s.label(), s.count()));
+                        entries.add(video
+                                ? I18n.t("{0} | video to extract frames from", s.label())
+                                : I18n.t("{0} | {1}x series of photos to import", s.label(), s.count()));
                     }
                 }
             } catch (IOException e) {
@@ -2635,12 +2669,12 @@ public final class MainWindow {
     }
 
     /**
-     * The config for the current base directory, with the photo directory, the
-     * recognition mode and the two retouch strengths the user set in the UI
-     * overriding {@code .env} and the environment — they are UI controls, so what is
-     * on screen must win. The strengths in particular are the ones the Retouch
-     * Preview rendered, so a run reproduces the preview rather than some other
-     * value.
+     * The config for the current base directory, with the media directory, the
+     * recognition mode, the video frame interval and the two retouch strengths
+     * the user set in the UI overriding {@code .env} and the environment — they
+     * are UI controls, so what is on screen must win. The strengths in
+     * particular are the ones the Retouch Preview rendered, so a run reproduces
+     * the preview rather than some other value.
      */
     private Config currentConfig() {
         Map<String, String> overrides = new HashMap<>();
@@ -2650,6 +2684,10 @@ public final class MainWindow {
         }
         overrides.put("SERIES_RECOGNITION",
                 SeriesRecognition.Mode.values()[seriesModeCombo.getSelectedIndex()].key);
+        String interval = videoIntervalField.getText().strip();
+        if (!interval.isEmpty()) {
+            overrides.put("VIDEO_FRAME_INTERVAL_SECONDS", interval);
+        }
         overrides.put("BRIGHTNESS_STRENGTH", String.valueOf(brightnessDial.strength()));
         overrides.put("CONTRAST_STRENGTH", String.valueOf(contrastDial.strength()));
         return Config.forBaseDir(Path.of(baseDirField.getText().strip()), overrides);

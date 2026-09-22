@@ -52,7 +52,7 @@ import java.util.function.Consumer;
  * The File &gt; Settings dialog: a PhpStorm-style two-pane layout — the page
  * list on the left, the selected page's card on the right, OK/Cancel/Apply
  * below. Pages: Appearance ({@link Theme}), Language ({@link Language}),
- * Photos (the default series recognition mode) and OpenAI API (API key, model
+ * Media (the default series recognition mode) and OpenAI API (API key, model
  * and the description prompts).
  *
  * <p>Apply (and OK) takes effect immediately: it installs the look and feel
@@ -77,7 +77,7 @@ final class SettingsDialog extends JDialog {
 
     private static final String PAGE_APPEARANCE = "Appearance";
     private static final String PAGE_LANGUAGE = "Language";
-    private static final String PAGE_PHOTOS = "Photos";
+    private static final String PAGE_PHOTOS = "Media";
     private static final String PAGE_OPENAI = "OpenAI API";
 
     /** Suggestions only — the combo is editable, any model id can be typed. */
@@ -99,7 +99,9 @@ final class SettingsDialog extends JDialog {
     private final JComboBox<String> seriesModeCombo = new JComboBox<>(new String[]{
             "AUTO - Auto detect photo series",
             "SINGLE - All photos in the directory as one item",
-            "SUBFOLDERS - Each subfolder as a separate item"});
+            "SUBFOLDERS - Each subfolder as a separate item",
+            "VIDEO - Extract frames from each video"});
+    private final JTextField videoIntervalField = new JTextField();
     private final JPasswordField apiKeyField = new JPasswordField();
     private final JComboBox<String> modelCombo = new JComboBox<>(OPENAI_MODELS);
     private final JTextArea systemPromptArea = new JTextArea();
@@ -130,6 +132,9 @@ final class SettingsDialog extends JDialog {
     /** The effective photo directory as of the last load/save, for the dirty check. */
     private String savedPhotoDir = "";
 
+    /** The effective video frame interval as of the last load/save, for the dirty check. */
+    private double savedVideoFrameInterval = Config.DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS;
+
     /** The base directory as of the last load/save; compared against the field. */
     private String savedBaseDir = "";
 
@@ -139,7 +144,8 @@ final class SettingsDialog extends JDialog {
      * must not have a setting it did not touch reset underneath it just because
      * someone opened this dialog to change the theme.
      */
-    record Applied(Path baseDir, String photoDir, SeriesRecognition.Mode seriesMode) {
+    record Applied(Path baseDir, String photoDir, SeriesRecognition.Mode seriesMode,
+                   Double videoFrameInterval) {
     }
 
     /**
@@ -204,6 +210,7 @@ final class SettingsDialog extends JDialog {
         seriesModeCombo.addActionListener(e -> updateApplyEnabled());
         watchDocument(baseDirField);
         watchDocument(photoDirField);
+        watchDocument(videoIntervalField);
         seriesModeCombo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
@@ -261,12 +268,13 @@ final class SettingsDialog extends JDialog {
     }
 
     /**
-     * The Photos page: where the app starts (base directory), where photos come
-     * from (the MTP glob) and how they are grouped into offers.
+     * The Media page: where the app starts (base directory), where media comes
+     * from (the MTP glob), how it is grouped into offers, and — in video mode —
+     * how far apart extracted frames are.
      *
-     * <p>These are the same three controls the main window carries at the top —
-     * here they are the <em>defaults</em> those controls start from, so the
-     * values a user works with every day stop being a per-launch chore.
+     * <p>These are the same controls the main window carries at the top — here
+     * they are the <em>defaults</em> those controls start from, so the values a
+     * user works with every day stop being a per-launch chore.
      */
     private JPanel buildPhotosPage() {
         JPanel page = new JPanel(new GridBagLayout());
@@ -282,7 +290,7 @@ final class SettingsDialog extends JDialog {
         page.add(headerLabel, c);
 
         addDirRow(page, 1, "Base directory:", baseDirField, e -> chooseBaseDir());
-        addDirRow(page, 2, "Photo directory:", photoDirField, e -> choosePhotoDir());
+        addDirRow(page, 2, "Media directory:", photoDirField, e -> choosePhotoDir());
 
         c.gridy = 3;
         c.gridwidth = 1;
@@ -297,15 +305,29 @@ final class SettingsDialog extends JDialog {
         c.insets = new Insets(10, 0, 0, 0);
         page.add(seriesModeCombo, c);
 
-        // Glue below keeps the rows pinned to the top.
         c.gridx = 0;
         c.gridy = 4;
+        c.gridwidth = 1;
+        c.fill = GridBagConstraints.NONE;
+        c.weightx = 0;
+        c.insets = new Insets(6, 0, 0, 8);
+        page.add(new JLabel("Frame interval (s):"), c);
+        c.gridx = 1;
+        c.gridwidth = 2;
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 1;
+        c.insets = new Insets(6, 0, 0, 0);
+        page.add(videoIntervalField, c);
+
+        // Glue below keeps the rows pinned to the top.
+        c.gridx = 0;
+        c.gridy = 5;
         c.weighty = 1;
         page.add(Box.createGlue(), c);
         return page;
     }
 
-    /** One directory row on the Photos page: label, field, Browse. */
+    /** One directory row on the Media page: label, field, Browse. */
     private static void addDirRow(JPanel page, int row, String label, JTextField field,
                                   java.awt.event.ActionListener browse) {
         GridBagConstraints c = new GridBagConstraints();
@@ -470,7 +492,7 @@ final class SettingsDialog extends JDialog {
     }
 
     /**
-     * Fills the Photos page from the effective configuration, so a real
+     * Fills the Media page from the effective configuration, so a real
      * environment variable (which outranks {@code .env}) shows up here and
      * keeps winning after a save, exactly like the OpenAI page.
      */
@@ -481,9 +503,11 @@ final class SettingsDialog extends JDialog {
         savedBaseDir = Config.savedBaseDir(baseDir).toString();
         savedPhotoDir = cfg.mtpGlobPattern;
         savedSeriesMode = cfg.seriesRecognition;
+        savedVideoFrameInterval = cfg.videoFrameIntervalSeconds;
         baseDirField.setText(savedBaseDir);
         photoDirField.setText(savedPhotoDir);
         seriesModeCombo.setSelectedIndex(savedSeriesMode.ordinal());
+        videoIntervalField.setText(String.valueOf(savedVideoFrameInterval));
     }
 
     /** The mode the combo is showing; index and ordinal are the same order. */
@@ -493,7 +517,7 @@ final class SettingsDialog extends JDialog {
     }
 
     /**
-     * Persists the Photos page: the base directory as a user preference, the
+     * Persists the Media page: the base directory as a user preference, the
      * other two into that directory's {@code .env}. A value equal to its
      * built-in default is removed rather than written, so {@code .env} carries
      * only the overrides.
@@ -504,9 +528,11 @@ final class SettingsDialog extends JDialog {
         SeriesRecognition.Mode mode = selectedSeriesMode();
         String photoDir = photoDirField.getText().strip();
         String typedBaseDir = baseDirField.getText().strip();
+        double interval = parseIntervalOrDefault(videoIntervalField.getText());
         boolean baseDirChanged = !typedBaseDir.equals(savedBaseDir);
         boolean photoDirChanged = !photoDir.equals(savedPhotoDir);
         boolean modeChanged = mode != savedSeriesMode;
+        boolean intervalChanged = interval != savedVideoFrameInterval;
 
         Map<String, String> values = new LinkedHashMap<>();
         if (baseDirChanged) {
@@ -528,6 +554,11 @@ final class SettingsDialog extends JDialog {
         if (modeChanged) {
             values.put("SERIES_RECOGNITION", mode == SeriesRecognition.Mode.AUTO ? null : mode.key);
         }
+        if (intervalChanged) {
+            values.put("VIDEO_FRAME_INTERVAL_SECONDS",
+                    interval == Config.DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS
+                            ? null : String.valueOf(interval));
+        }
         try {
             if (!values.isEmpty()) {
                 Config.updateDotenv(values);
@@ -547,7 +578,21 @@ final class SettingsDialog extends JDialog {
         // will use.
         return new Applied(newBaseDir,
                 photoDirChanged ? savedPhotoDir : null,
-                modeChanged ? savedSeriesMode : null);
+                modeChanged ? savedSeriesMode : null,
+                intervalChanged ? savedVideoFrameInterval : null);
+    }
+
+    /** Tolerant of blank/invalid text, like {@code Config}'s own numeric parsing. */
+    private static double parseIntervalOrDefault(String typed) {
+        String text = typed.strip();
+        if (text.isEmpty()) {
+            return Config.DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS;
+        }
+        try {
+            return Double.parseDouble(text);
+        } catch (NumberFormatException e) {
+            return Config.DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS;
+        }
     }
 
     /** The typed path when it names a real directory, else null. */
@@ -563,11 +608,12 @@ final class SettingsDialog extends JDialog {
         }
     }
 
-    /** Whether anything on the Photos page differs from what is in effect. */
+    /** Whether anything on the Media page differs from what is in effect. */
     private boolean photoSettingsDirty() {
         return selectedSeriesMode() != savedSeriesMode
                 || !photoDirField.getText().strip().equals(savedPhotoDir)
-                || !baseDirField.getText().strip().equals(savedBaseDir);
+                || !baseDirField.getText().strip().equals(savedBaseDir)
+                || parseIntervalOrDefault(videoIntervalField.getText()) != savedVideoFrameInterval;
     }
 
     /** The model id as typed, not just as last committed by the editable combo. */

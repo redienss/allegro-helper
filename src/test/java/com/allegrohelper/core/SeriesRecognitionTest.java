@@ -106,11 +106,36 @@ class SeriesRecognitionTest {
     }
 
     @Test
+    void videoModeMakesEachVideoFileOneOfferInNameOrder() throws IOException {
+        // No real video content is needed: recognize()'s VIDEO arm only lists
+        // files and builds a PhotoSeries from their paths, never opens them.
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve("20260916_194910.mp4"), "not a real video");
+        Files.writeString(dir.resolve("20260917_101500.mp4"), "not a real video either");
+        Files.writeString(dir.resolve("readme.txt"), "not a video at all");
+
+        List<PhotoSeries> series = SeriesRecognition.recognize(
+                SeriesRecognition.Mode.VIDEO, dir, Duration.ofSeconds(60));
+
+        assertEquals(List.of("20260916_194910", "20260917_101500"),
+                series.stream().map(PhotoSeries::label).toList(),
+                "label is the video's file name without its extension, name order");
+        assertEquals(1, series.get(0).count(), "photos() is a one-entry placeholder for the video");
+    }
+
+    @Test
+    void videoModeOnAnEmptyDirectoryYieldsNoOffers() throws IOException {
+        assertTrue(SeriesRecognition.recognize(
+                SeriesRecognition.Mode.VIDEO, dir, Duration.ofSeconds(60)).isEmpty());
+    }
+
+    @Test
     void modeParsesFromItsConfigKey() {
         assertEquals(SeriesRecognition.Mode.AUTO, SeriesRecognition.Mode.parse("auto"));
         assertEquals(SeriesRecognition.Mode.SINGLE_ITEM, SeriesRecognition.Mode.parse("single"));
         assertEquals(SeriesRecognition.Mode.SUBFOLDERS, SeriesRecognition.Mode.parse("subfolders"));
         assertEquals(SeriesRecognition.Mode.SUBFOLDERS, SeriesRecognition.Mode.parse("  SubFolders "));
+        assertEquals(SeriesRecognition.Mode.VIDEO, SeriesRecognition.Mode.parse("video"));
     }
 
     @Test

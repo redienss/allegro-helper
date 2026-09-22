@@ -66,24 +66,29 @@ final class I18n {
 
         // Directories
         put("Base directory:", "Katalog bazowy:");
-        put("Photo directory:", "Katalog zdjęć:");
+        put("Media directory:", "Katalog mediów:");
         put("Browse…", "Przeglądaj…");
-        put("Restore the default photo directory", "Przywróć domyślny katalog zdjęć");
+        put("Restore the default media directory", "Przywróć domyślny katalog mediów");
 
-        // Photos section
-        put("Photos", "Zdjęcia");
+        // Media section
+        put("Media", "Multimedia");
         put("Refresh", "Odśwież");
         put("AUTO - Auto detect photo series",
                 "AUTO - Automatyczne wykrywanie serii zdjęć");
         // No longer than its English key: the longest item sets the combo width,
-        // and a wider combo wraps out of the height-capped Photos row.
+        // and a wider combo wraps out of the height-capped Media row.
         put("SINGLE - All photos in the directory as one item",
                 "SINGLE - Cały katalog zdjęć jako jeden przedmiot");
         put("SUBFOLDERS - Each subfolder as a separate item",
                 "SUBFOLDERS - Każdy podkatalog jako osobny przedmiot");
+        put("VIDEO - Extract frames from each video",
+                "VIDEO - Wyodrębnianie kadrów z wideo");
+        put("Frame interval (s):", "Interwał kadrów (s):");
         put("Scanning phone…", "Skanowanie telefonu…");
         put("No photo series found in {0}", "Nie znaleziono serii zdjęć w {0}");
+        put("No videos found in {0}", "Nie znaleziono wideo w {0}");
         put("{0} | {1}x series of photos to import", "{0} | seria {1} zdjęć do importu");
+        put("{0} | video to extract frames from", "{0} | wideo do wyodrębnienia kadrów");
 
         // Offer data grid
         put("Offer Data", "Dane ofert");
@@ -283,10 +288,11 @@ final class I18n {
         put("Language", "Język");
         put("Theme:", "Motyw:");
         put("Language:", "Język:");
-        // The Photos page reuses the "Photos" entry above as its name and header.
+        // The Media page reuses the "Media" entry above as its name and header.
         put("Series recognition:", "Rozpoznawanie serii:");
-        // "Base directory:", "Photo directory:" and "Browse…" are already
-        // translated for the main window's rows above; the Photos page reuses them.
+        // "Base directory:", "Media directory:", "Frame interval (s):" and
+        // "Browse…" are already translated for the main window's rows above;
+        // the Media page reuses them.
         put("Cancel", "Anuluj");
         put("Apply", "Zastosuj");
         put("System", "Systemowy");

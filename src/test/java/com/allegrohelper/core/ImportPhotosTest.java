@@ -112,6 +112,43 @@ class ImportPhotosTest {
     }
 
     @Test
+    void videoModeCopiesVideoFilesFlatIntoRawPhotos(@TempDir Path tmp) throws IOException {
+        photo(tmp.resolve("phone"), "20260916_194910.mp4");
+        photo(tmp.resolve("phone"), "20260917_101500.mp4");
+        photo(tmp.resolve("phone"), "not_a_video.txt");
+
+        Config cfg = Config.forBaseDir(tmp, Map.of(
+                "MTP_GLOB_PATTERN", tmp.resolve("phone").toString(),
+                "RAW_PHOTOS_DIR", tmp.resolve("raw_photos").toString(),
+                "OFFERS_DIR", tmp.resolve("offers").toString(),
+                "SERIES_RECOGNITION", "video"));
+        Log log = new Log();
+        ImportPhotos.run(cfg, log);
+
+        assertEquals(List.of("20260916_194910.mp4", "20260917_101500.mp4"),
+                names(tmp.resolve("raw_photos")));
+        assertTrue(log.text().contains("copied 2"), log.text());
+    }
+
+    @Test
+    void videoModeSkipsReCopyingAVideoAlreadyExtractedIntoAnOffer(@TempDir Path tmp) throws IOException {
+        photo(tmp.resolve("phone"), "20260916_194910.mp4");
+        Files.createDirectories(tmp.resolve("offers/20260916_194910/photos"));
+
+        Config cfg = Config.forBaseDir(tmp, Map.of(
+                "MTP_GLOB_PATTERN", tmp.resolve("phone").toString(),
+                "RAW_PHOTOS_DIR", tmp.resolve("raw_photos").toString(),
+                "OFFERS_DIR", tmp.resolve("offers").toString(),
+                "SERIES_RECOGNITION", "video"));
+        Log log = new Log();
+        ImportPhotos.run(cfg, log);
+
+        assertTrue(names(tmp.resolve("raw_photos")).isEmpty(),
+                "a video whose offer directory already exists must not be re-copied");
+        assertTrue(log.text().contains("skipped (already in an offer) 1"), log.text());
+    }
+
+    @Test
     void matchedNamesIgnoreAnOfferWithoutAPhotosDirectory(@TempDir Path tmp) throws IOException {
         Files.createDirectories(tmp.resolve("offers/20260715_1637"));
         photo(tmp.resolve("offers/20260719_1459/photos"), "20260719_145955.jpg");

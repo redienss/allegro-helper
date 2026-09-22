@@ -20,6 +20,8 @@ import java.util.Map;
 public final class Config {
 
     public static final String DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+    /** {@link SeriesRecognition.Mode#VIDEO}'s default frame-extraction interval. */
+    public static final double DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS = 5.0;
 
     public final Path baseDir;
     public final Path csvPath;
@@ -29,6 +31,8 @@ public final class Config {
     public final String mtpGlobPattern;
     public final int seriesGapThresholdSeconds;
     public final SeriesRecognition.Mode seriesRecognition;
+    /** How far apart (in seconds) extracted video frames are, in {@link SeriesRecognition.Mode#VIDEO}. */
+    public final double videoFrameIntervalSeconds;
     /** The brightness step's strength dial; see {@link Retouch#DEFAULT_BRIGHTNESS}. */
     public final double brightnessStrength;
     /** The contrast step's strength dial; see {@link Retouch#DEFAULT_CONTRAST}. */
@@ -64,6 +68,8 @@ public final class Config {
         this.mtpGlobPattern = env.getOrDefault("MTP_GLOB_PATTERN", defaultMtpGlobPattern(mtpUid));
         this.seriesGapThresholdSeconds = intOrDefault(env, "SERIES_GAP_THRESHOLD_SECONDS", 60);
         this.seriesRecognition = SeriesRecognition.Mode.parse(env.get("SERIES_RECOGNITION"));
+        this.videoFrameIntervalSeconds = doubleOrDefault(
+                env, "VIDEO_FRAME_INTERVAL_SECONDS", DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS);
         this.brightnessStrength = Retouch.clampStrength(
                 doubleOrDefault(env, "BRIGHTNESS_STRENGTH", Retouch.DEFAULT_BRIGHTNESS));
         this.contrastStrength = Retouch.clampStrength(

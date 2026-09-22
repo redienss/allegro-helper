@@ -64,9 +64,11 @@ public final class ImportPhotos {
         Path sourceDir = findSourceDir(cfg, reporter);
         Files.createDirectories(cfg.rawPhotosDir);
 
-        // Source -> destination, resolved up front so both layouts share one
+        // Source -> destination, resolved up front so every layout shares one
         // copy loop. In subfolder mode the structure is the series grouping,
-        // so it must survive the trip into raw_photos.
+        // so it must survive the trip into raw_photos. In video mode each
+        // video file is one offer, so it is copied flat, the same as a plain
+        // photo, and extracted into frames later by the match step.
         Map<Path, Path> photos = new LinkedHashMap<>();
         if (cfg.seriesRecognition == SeriesRecognition.Mode.SUBFOLDERS) {
             for (Path sub : SeriesRecognition.listSubdirs(sourceDir)) {
@@ -75,6 +77,10 @@ public final class ImportPhotos {
                     photos.put(src, destDir.resolve(src.getFileName().toString()));
                 }
             }
+        } else if (cfg.seriesRecognition == SeriesRecognition.Mode.VIDEO) {
+            for (Path src : listVideos(sourceDir)) {
+                photos.put(src, cfg.rawPhotosDir.resolve(src.getFileName().toString()));
+            }
         } else {
             for (Path src : listJpegs(sourceDir)) {
                 photos.put(src, cfg.rawPhotosDir.resolve(src.getFileName().toString()));
@@ -82,7 +88,8 @@ public final class ImportPhotos {
         }
 
         if (photos.isEmpty()) {
-            reporter.log("No photos to import in " + sourceDir
+            reporter.log("No " + (cfg.seriesRecognition == SeriesRecognition.Mode.VIDEO ? "videos" : "photos")
+                    + " to import in " + sourceDir
                     + (cfg.seriesRecognition == SeriesRecognition.Mode.SUBFOLDERS
                             ? " (series recognition is per-subfolder, so only its subfolders were searched)."
                             : "."));
@@ -90,6 +97,16 @@ public final class ImportPhotos {
             return;
         }
 
+        // A video's file name never appears inside any offer's photos/ (only
+        // its extracted frames, under generic names, do), so matchedPhotoNames
+        // cannot recognize an already-consumed video. Checking for an existing
+        // offer directory named after it instead avoids re-copying a
+        // multi-hundred-megabyte file over MTP for nothing; without this check
+        // it would still just be skipped by Match's own idempotence, the same
+        // as any other already-matched input, only slower.
+        Set<String> alreadyMatchedVideoStems = cfg.seriesRecognition == SeriesRecognition.Mode.VIDEO
+                ? matchedVideoStems(cfg.offersDir)
+                : Set.of();
         Set<String> alreadyMatched = matchedPhotoNames(cfg.offersDir);
 
         int copied = 0;
@@ -102,7 +119,8 @@ public final class ImportPhotos {
             Path src = entry.getKey();
             Path dest = entry.getValue();
             try {
-                if (alreadyMatched.contains(src.getFileName().toString())) {
+                if (alreadyMatched.contains(src.getFileName().toString())
+                        || alreadyMatchedVideoStems.contains(stem(src.getFileName().toString()))) {
                     matched++;
                     reporter.stepProgress((double) (++index) / total);
                     continue;
@@ -175,5 +193,51 @@ public final class ImportPhotos {
     static boolean isJpeg(Path p) {
         String name = p.getFileName().toString().toLowerCase();
         return name.endsWith(".jpg") || name.endsWith(".jpeg");
+    }
+
+    /** The video files directly in {@code dir}, sorted by name; empty if it is not a directory. */
+    static List<Path> listVideos(Path dir) throws IOException {
+        List<Path> videos = new ArrayList<>();
+        if (!Files.isDirectory(dir)) {
+            return videos;
+        }
+        try (var stream = Files.list(dir)) {
+            stream.filter(ImportPhotos::isVideo).forEach(videos::add);
+        }
+        videos.sort(Comparator.comparing(p -> p.getFileName().toString()));
+        return videos;
+    }
+
+    /** Whether the file name ends in a recognized video extension (case-insensitive). */
+    static boolean isVideo(Path p) {
+        String name = p.getFileName().toString().toLowerCase();
+        return name.endsWith(".mp4") || name.endsWith(".mov") || name.endsWith(".mkv")
+                || name.endsWith(".avi") || name.endsWith(".webm");
+    }
+
+    /** The file name without its extension, i.e. the offer label a video would produce. */
+    static String stem(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        return dot > 0 ? fileName.substring(0, dot) : fileName;
+    }
+
+    /**
+     * The offer directory names (video-mode labels) that already exist under
+     * {@code offersDir} — used only in video mode to skip re-copying a video
+     * whose frames have already been extracted into an offer, without which
+     * checking a video's own file name against {@link #matchedPhotoNames}
+     * would never match (only its extracted frames land there, not the video
+     * itself).
+     */
+    static Set<String> matchedVideoStems(Path offersDir) throws IOException {
+        Set<String> stems = new HashSet<>();
+        if (!Files.isDirectory(offersDir)) {
+            return stems;
+        }
+        try (var offers = Files.list(offersDir)) {
+            offers.filter(Files::isDirectory)
+                    .forEach(offer -> stems.add(offer.getFileName().toString()));
+        }
+        return stems;
     }
 }

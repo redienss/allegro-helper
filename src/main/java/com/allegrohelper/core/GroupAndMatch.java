@@ -11,6 +11,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,12 +55,15 @@ public final class GroupAndMatch {
             return;
         }
 
+        boolean video = cfg.seriesRecognition == SeriesRecognition.Mode.VIDEO;
         if (clusters.size() != offers.size()) {
             boolean subfolders = cfg.seriesRecognition == SeriesRecognition.Mode.SUBFOLDERS;
             StringBuilder sb = new StringBuilder();
             sb.append(subfolders
                             ? "The number of photo subfolders ("
-                            : "The number of detected photo series (")
+                            : video
+                                    ? "The number of video files found ("
+                                    : "The number of detected photo series (")
                     .append(clusters.size())
                     .append(") does not match the number of rows in ").append(cfg.csvPath)
                     .append(" (").append(offers.size()).append("). Nothing was moved.\n")
@@ -67,21 +71,27 @@ public final class GroupAndMatch {
             int i = 1;
             for (PhotoSeries c : clusters) {
                 sb.append("  series ").append(i++).append(" (").append(c.label()).append("): ")
-                        .append(c.count()).append(" photos, ")
+                        .append(c.count()).append(video ? " video" : " photos").append(", ")
                         .append(c.start()).append(" -> ").append(c.end())
                         .append('\n');
             }
             sb.append(subfolders
                     ? "Check the subfolders in " + cfg.rawPhotosDir
                             + " or the order/count of rows in the CSV."
-                    : "Check SERIES_GAP_THRESHOLD_SECONDS (currently "
-                            + cfg.seriesGapThresholdSeconds
-                            + "s) or the order/count of rows in the CSV.");
+                    : video
+                            ? "Check the video files in " + cfg.rawPhotosDir
+                                    + " or the order/count of rows in the CSV."
+                            : "Check SERIES_GAP_THRESHOLD_SECONDS (currently "
+                                    + cfg.seriesGapThresholdSeconds
+                                    + "s) or the order/count of rows in the CSV.");
             reporter.log(sb.toString());
             throw new PipelineException("Photo series / CSV row count mismatch; nothing was moved.");
         }
 
         Files.createDirectories(cfg.offersDir);
+        if (video) {
+            VideoFrames.requireFfmpeg();
+        }
 
         int total = offers.size();
         for (int index = 0; index < total; index++) {
@@ -90,25 +100,55 @@ public final class GroupAndMatch {
 
             String offerDirName = cluster.label();
             Path offerDir = cfg.offersDir.resolve(offerDirName);
+            // Written before extraction, removed only on success — a run
+            // interrupted mid-extraction (missing ffmpeg, killed process, a
+            // corrupt video) must not leave a half-populated offer that the
+            // exists-check below silently treats as finished.
+            Path extractMarker = offerDir.resolve(".video-extract-in-progress");
+            boolean interrupted = video && Files.exists(offerDir) && Files.exists(extractMarker);
 
-            if (Files.exists(offerDir)) {
-                // The photos stay in raw_photos/, where the next run will group
-                // them with whatever else is there — that is how photos of a
-                // previous listing end up inside a new offer. Say so, rather
-                // than let it be discovered in the finished offer.
+            if (Files.exists(offerDir) && !interrupted) {
+                // The source stays in raw_photos/, where the next run will
+                // group it with whatever else is there — that is how photos
+                // (or a video) of a previous listing end up inside a new
+                // offer. Say so, rather than let it be discovered later.
                 reporter.log("Directory " + offerDir
                         + " already exists, skipping (assuming already processed). Its "
-                        + cluster.count() + " photos stay in " + cfg.rawPhotosDir
+                        + cluster.count() + (video ? " source video stays in " : " photos stay in ")
+                        + cfg.rawPhotosDir
                         + " and will be grouped with the next import unless removed.");
                 reporter.stepProgress((double) (index + 1) / total);
                 continue;
             }
 
             Path photosDir = offerDir.resolve("photos");
+            if (interrupted) {
+                reporter.log(offerDirName + ": a previous frame extraction was interrupted,"
+                        + " redoing it.");
+                deleteRecursively(photosDir);
+            }
             Files.createDirectories(photosDir);
 
-            for (Path photo : cluster.photos()) {
-                Files.move(photo, photosDir.resolve(photo.getFileName().toString()));
+            List<String> photoNames;
+            if (video) {
+                Path sourceVideo = cluster.photos().get(0);
+                Files.writeString(extractMarker, "", StandardCharsets.UTF_8);
+                VideoFrames.extract(sourceVideo, photosDir, cfg.videoFrameIntervalSeconds, reporter);
+                Files.delete(extractMarker);
+                // Consumed: only the local raw_photos/ copy is removed, never
+                // the phone's original, which Import only ever copies from.
+                Files.delete(sourceVideo);
+                List<Path> frames = ImportPhotos.listJpegs(photosDir);
+                photoNames = new ArrayList<>();
+                for (Path frame : frames) {
+                    photoNames.add(frame.getFileName().toString());
+                }
+            } else {
+                photoNames = new ArrayList<>();
+                for (Path photo : cluster.photos()) {
+                    Files.move(photo, photosDir.resolve(photo.getFileName().toString()));
+                    photoNames.add(photo.getFileName().toString());
+                }
             }
 
             Path moreDataSrc = cfg.csvPath.getParent() == null
@@ -121,11 +161,29 @@ public final class GroupAndMatch {
                         + offerDirName + "/more_data.txt");
             }
 
-            writeDataJson(offerDir.resolve("data.json"), offer, cluster);
+            writeDataJson(offerDir.resolve("data.json"), offer, photoNames);
 
-            reporter.log("Created offer " + offerDirName + " (" + cluster.count()
+            reporter.log("Created offer " + offerDirName + " (" + photoNames.size()
                     + " photos) for '" + offer.getOrDefault("name", "") + "'.");
             reporter.stepProgress((double) (index + 1) / total);
+        }
+    }
+
+    /** Deletes {@code dir} and everything under it; a missing directory is a no-op. */
+    private static void deleteRecursively(Path dir) throws IOException {
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try (var stream = Files.walk(dir)) {
+            stream.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.delete(p);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            });
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
         }
     }
 
@@ -150,16 +208,16 @@ public final class GroupAndMatch {
      * Writes the offer's {@code data.json}: every CSV column of the row, plus
      * the photo count, the photo file names and a creation timestamp. This file
      * is what every later step reads the offer's facts from.
+     *
+     * <p>Takes the final photo file names rather than the {@link PhotoSeries}
+     * itself: in video mode {@code cluster.photos()} holds the source video, a
+     * placeholder for what {@link VideoFrames#extract} actually wrote.
      */
-    private static void writeDataJson(Path path, Map<String, String> offer, PhotoSeries cluster)
+    private static void writeDataJson(Path path, Map<String, String> offer, List<String> photoNames)
             throws IOException {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>(offer);
-        data.put("photo_count", cluster.count());
-        List<String> names = new ArrayList<>();
-        for (Path p : cluster.photos()) {
-            names.add(p.getFileName().toString());
-        }
-        data.put("photos", names);
+        data.put("photo_count", photoNames.size());
+        data.put("photos", photoNames);
         data.put("created_at", LocalDateTime.now().withNano(0).toString());
         Files.writeString(path, Json.write(data, true), StandardCharsets.UTF_8);
     }

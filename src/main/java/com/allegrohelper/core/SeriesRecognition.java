@@ -11,24 +11,33 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Turns the photo directory's contents into {@link PhotoSeries} according to
+ * Turns the media directory's contents into {@link PhotoSeries} according to
  * the user-selected recognition mode. {@link Mode#AUTO} is the original
  * turntable workflow (cluster by the timestamps encoded in OpenCamera
- * filenames). The other two modes exist for photos that were <em>not</em>
- * taken in one sitting — different cameras, times of day, or no turntable —
- * whose filenames may carry no parseable timestamp at all, so they derive the
- * series start/end from file modification times instead of filenames.
+ * filenames). {@link Mode#SINGLE_ITEM} and {@link Mode#SUBFOLDERS} exist for
+ * photos that were <em>not</em> taken in one sitting — different cameras,
+ * times of day, or no turntable — whose filenames may carry no parseable
+ * timestamp at all, so they derive the series start/end from file
+ * modification times instead of filenames. {@link Mode#VIDEO} groups by video
+ * file instead of photo: recognition itself stays a pure directory listing
+ * (one series per video, holding the video's own path as a placeholder,
+ * frame extraction happens later, in the match step) so that {@link
+ * PhoneScan}'s preview — which calls this same method on the un-imported
+ * source directory — never has to shell out to ffmpeg just to show what a run
+ * would do.
  */
 public final class SeriesRecognition {
 
-    /** How the photos in the photo directory are grouped into offers. */
+    /** How the media directory's contents are grouped into offers. */
     public enum Mode {
         /** Cluster by filename timestamps; a time gap starts a new series. */
         AUTO("auto"),
         /** Every photo in the directory is one offer (only the first CSV row is used). */
         SINGLE_ITEM("single"),
         /** Each subfolder holds one offer's photos; subfolders in name order match CSV rows. */
-        SUBFOLDERS("subfolders");
+        SUBFOLDERS("subfolders"),
+        /** Each video file is one offer; frames are extracted from it by the match step. */
+        VIDEO("video");
 
         /** The value used in {@code SERIES_RECOGNITION} (env var / .env). */
         public final String key;
@@ -79,6 +88,16 @@ public final class SeriesRecognition {
                     if (!photos.isEmpty()) {
                         series.add(mtimeSeries(sub.getFileName().toString(), photos));
                     }
+                }
+                yield series;
+            }
+            case VIDEO -> {
+                List<PhotoSeries> series = new ArrayList<>();
+                for (Path video : ImportPhotos.listVideos(dir)) {
+                    // photos() holds the video itself as a placeholder — not
+                    // photos yet. GroupAndMatch extracts frames from it.
+                    series.add(mtimeSeries(
+                            ImportPhotos.stem(video.getFileName().toString()), List.of(video)));
                 }
                 yield series;
             }
