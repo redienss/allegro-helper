@@ -4,11 +4,13 @@ import com.allegrohelper.util.Json;
 import com.allegrohelper.util.QrEncoder;
 
 import javax.imageio.ImageIO;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -59,6 +61,23 @@ public final class QrCode {
     public static final int DEFAULT_LABEL_FONT_SIZE = 24;
 
     /**
+     * The backing plate's border thickness when an offer's {@code qr.json}
+     * does not say otherwise, or predates this setting — no border, matching
+     * this step's look before borders existed.
+     */
+    public static final int DEFAULT_BORDER_PX = 0;
+
+    /**
+     * The white quiet zone between the QR code and the plate's edge (or its
+     * border, when one is set) when an offer's {@code qr.json} does not say
+     * otherwise. Before this was its own setting, that space was always four
+     * QR modules; this approximates the look of a typically-sized code at
+     * that ratio, now as a flat pixel count independent of module size, the
+     * same way {@link #DEFAULT_BORDER_PX} is.
+     */
+    public static final int DEFAULT_PADDING_PX = 40;
+
+    /**
      * Where the label caption sits relative to the QR code on the backing
      * plate. Declared {@code ABOVE} before {@code BELOW} — the reverse of
      * which one is the default — because the UI's dropdown lists them in
@@ -76,7 +95,14 @@ public final class QrCode {
      * One offer's QR configuration, as saved to {@code qr.json}.
      *
      * @param sizePx        the QR code's own module area, in pixels — the quiet
-     *                      zone and any label sit outside this
+     *                      zone, any border and any label sit outside this
+     * @param paddingPx     the white quiet zone between the QR code and the
+     *                      plate's edge (or its border), in pixels — the
+     *                      <em>inner</em> border, distinct from {@code borderPx}
+     * @param borderPx      the backing plate's border stroke thickness, in
+     *                      pixels — the <em>outer</em> border, drawn at the
+     *                      plate's edge, outside {@code paddingPx}; 0 draws no
+     *                      border, same as an offer with no setting at all
      * @param labelFontSize the label caption's font size, in pixels — independent
      *                      of {@code sizePx}, so a small QR code can still carry
      *                      a readable label
@@ -84,8 +110,8 @@ public final class QrCode {
      * @param photoIndex    which photo of the offer's series (in the same order
      *                      {@link ImportPhotos#listJpegs} lists them) gets stamped
      */
-    public record QrSettings(String url, String label, int sizePx, int labelFontSize, LabelPosition labelPosition,
-                              Position position, int photoIndex) {
+    public record QrSettings(String url, String label, int sizePx, int paddingPx, int borderPx, int labelFontSize,
+                              LabelPosition labelPosition, Position position, int photoIndex) {
     }
 
     // ------------------------------------------------------------- pipeline step
@@ -230,13 +256,16 @@ public final class QrCode {
             String url = String.valueOf(data.getOrDefault("url", ""));
             String label = String.valueOf(data.getOrDefault("label", ""));
             int sizePx = ((Number) data.getOrDefault("sizePx", 300.0)).intValue();
+            int paddingPx = ((Number) data.getOrDefault("paddingPx", (double) DEFAULT_PADDING_PX)).intValue();
+            int borderPx = ((Number) data.getOrDefault("borderPx", (double) DEFAULT_BORDER_PX)).intValue();
             int labelFontSize = ((Number) data.getOrDefault("labelFontSize", (double) DEFAULT_LABEL_FONT_SIZE))
                     .intValue();
             LabelPosition labelPosition = LabelPosition.valueOf(
                     String.valueOf(data.getOrDefault("labelPosition", DEFAULT_LABEL_POSITION.name())));
             Position position = Position.valueOf(String.valueOf(data.getOrDefault("position", "SE")));
             int photoIndex = ((Number) data.getOrDefault("photoIndex", 0.0)).intValue();
-            return new QrSettings(url, label, sizePx, labelFontSize, labelPosition, position, photoIndex);
+            return new QrSettings(url, label, sizePx, paddingPx, borderPx, labelFontSize, labelPosition, position,
+                    photoIndex);
         } catch (IOException | RuntimeException e) {
             return null;
         }
@@ -248,6 +277,8 @@ public final class QrCode {
         data.put("url", settings.url());
         data.put("label", settings.label());
         data.put("sizePx", settings.sizePx());
+        data.put("paddingPx", settings.paddingPx());
+        data.put("borderPx", settings.borderPx());
         data.put("labelFontSize", settings.labelFontSize());
         data.put("labelPosition", settings.labelPosition().name());
         data.put("position", settings.position().name());
@@ -258,10 +289,16 @@ public final class QrCode {
     // ------------------------------------------------------------- compositing
 
     /**
-     * Draws {@code settings}'s QR code (plus a white backing plate, quiet
-     * zone and optional label caption) onto a copy of {@code img}. Never
-     * mutates {@code img}; never draws outside its bounds — the plate shrinks
-     * to fit rather than overflow a photo too small for the requested size.
+     * Draws {@code settings}'s QR code (plus a white backing plate, an inner
+     * quiet zone, an optional outer border and an optional label caption)
+     * onto a copy of {@code img}. Never mutates {@code img}; never draws
+     * outside its bounds — the plate shrinks to fit rather than overflow a
+     * photo too small for the requested size, though {@code paddingPx} and
+     * {@code borderPx} themselves do not shrink with it, being literal pixel
+     * settings the same way {@code sizePx} is. The border, when requested, is
+     * stroked centered on the plate's own edge (inset by half its width) so
+     * it stays inside the bounds the rest of this method already clamps to,
+     * rather than needing its own accounting in the shrink-to-fit loop.
      */
     public static BufferedImage composite(BufferedImage img, QrSettings settings) {
         boolean[][] modules = QrEncoder.encode(settings.url());
@@ -273,11 +310,12 @@ public final class QrCode {
         int maxH = Math.max(4 * n, img.getHeight() - 2 * marginPx);
 
         int fontSize = Math.max(1, settings.labelFontSize());
+        int paddingPx = Math.max(0, settings.paddingPx());
         int moduleSize = Math.max(1, settings.sizePx() / n);
-        Plate plate = layoutPlate(n, moduleSize, label, fontSize, settings.labelPosition());
+        Plate plate = layoutPlate(n, moduleSize, paddingPx, label, fontSize, settings.labelPosition());
         while ((plate.width > maxW || plate.height > maxH) && moduleSize > 1) {
             moduleSize--;
-            plate = layoutPlate(n, moduleSize, label, fontSize, settings.labelPosition());
+            plate = layoutPlate(n, moduleSize, paddingPx, label, fontSize, settings.labelPosition());
         }
 
         BufferedImage out = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_RGB);
@@ -296,8 +334,18 @@ public final class QrCode {
         int radius = Math.max(2, moduleSize);
         g.fillRoundRect(px, py, plate.width, plate.height, radius, radius);
 
+        if (settings.borderPx() > 0) {
+            float stroke = settings.borderPx();
+            float inset = stroke / 2f;
+            g.setColor(Color.BLACK);
+            g.setStroke(new BasicStroke(stroke));
+            g.draw(new RoundRectangle2D.Float(px + inset, py + inset,
+                    plate.width - stroke, plate.height - stroke, radius, radius));
+            g.setStroke(new BasicStroke(1f));
+        }
+
         g.setColor(Color.BLACK);
-        int quiet = moduleSize * 4;
+        int quiet = paddingPx;
         int qrOriginX = px + quiet;
         int qrOriginY = py + plate.qrOffsetY;
         for (int r = 0; r < n; r++) {
@@ -331,9 +379,9 @@ public final class QrCode {
     private record Plate(int width, int height, int qrPx, int qrOffsetY, Font font) {
     }
 
-    private static Plate layoutPlate(int n, int moduleSize, String label, int fontSize,
+    private static Plate layoutPlate(int n, int moduleSize, int paddingPx, String label, int fontSize,
                                       LabelPosition labelPosition) {
-        int quiet = moduleSize * 4;
+        int quiet = paddingPx;
         int qrPx = moduleSize * n;
         int width = qrPx + quiet * 2;
         int height = qrPx + quiet * 2;

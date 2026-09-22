@@ -276,6 +276,8 @@ public final class MainWindow {
     private final JComboBox<String> qrLabelPositionCombo = new JComboBox<>(new String[]{
             "Above the QR code", "Below the QR code"});
     private final JTextField qrSizeField = new JTextField();
+    private final JTextField qrPaddingField = new JTextField();
+    private final JTextField qrBorderField = new JTextField();
     private final Map<QrCode.Position, JToggleButton> qrPositionButtons = new EnumMap<>(QrCode.Position.class);
     private QrCode.Position qrSelectedPosition = QrCode.Position.SE;
     private final ImagePanel qrPreviewPanel = new ImagePanel("");
@@ -1182,6 +1184,10 @@ public final class MainWindow {
 
     /** The QR code's default module size until an offer's saved settings say otherwise. */
     private static final int DEFAULT_QR_SIZE = 300;
+    /** The plate's default inner padding (the quiet zone around the QR code) until an offer's saved settings say otherwise. */
+    private static final int DEFAULT_QR_PADDING = QrCode.DEFAULT_PADDING_PX;
+    /** The backing plate's default outer border thickness until an offer's saved settings say otherwise. */
+    private static final int DEFAULT_QR_BORDER = QrCode.DEFAULT_BORDER_PX;
     /** The label's default font size until an offer's saved settings say otherwise. */
     private static final int DEFAULT_QR_LABEL_FONT_SIZE = QrCode.DEFAULT_LABEL_FONT_SIZE;
 
@@ -1295,6 +1301,13 @@ public final class MainWindow {
         qrSizeField.setToolTipText(
                 I18n.t("The QR code's own size, in pixels (not counting its white margin)."));
         qrSizeField.setColumns(8);
+        qrPaddingField.setToolTipText(I18n.t(
+                "The white space between the QR code and its edge — or its outer border, if it has one. "
+                        + "The inner border."));
+        qrPaddingField.setColumns(8);
+        qrBorderField.setToolTipText(I18n.t(
+                "The backing plate's own frame, drawn at its outer edge. The outer border. 0 draws none."));
+        qrBorderField.setColumns(8);
 
         JPanel form = new JPanel(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
@@ -1304,9 +1317,11 @@ public final class MainWindow {
         addQrFormRow(form, c, 2, "Label font size (px):", qrFontSizeField, 0.0);
         addQrFormRow(form, c, 3, "Label position:", qrLabelPositionCombo, 0.0);
         addQrFormRow(form, c, 4, "Size (px):", qrSizeField, 0.0);
+        addQrFormRow(form, c, 5, "Inner padding (px):", qrPaddingField, 0.0);
+        addQrFormRow(form, c, 6, "Outer border (px):", qrBorderField, 0.0);
 
         c.gridx = 0;
-        c.gridy = 5;
+        c.gridy = 7;
         c.weightx = 0;
         c.fill = GridBagConstraints.NONE;
         c.anchor = GridBagConstraints.NORTHWEST;
@@ -1332,7 +1347,8 @@ public final class MainWindow {
             public void changedUpdate(DocumentEvent e) {
             }
         };
-        for (JTextField field : new JTextField[]{qrUrlField, qrLabelField, qrFontSizeField, qrSizeField}) {
+        for (JTextField field : new JTextField[]{
+                qrUrlField, qrLabelField, qrFontSizeField, qrSizeField, qrPaddingField, qrBorderField}) {
             field.getDocument().addDocumentListener(settleOnEdit);
             field.setCaretColor(UiStyle.caretColor());
         }
@@ -1400,6 +1416,8 @@ public final class MainWindow {
         qrFontSizeField.setText(String.valueOf(settings.labelFontSize()));
         qrLabelPositionCombo.setSelectedIndex(settings.labelPosition().ordinal());
         qrSizeField.setText(String.valueOf(settings.sizePx()));
+        qrPaddingField.setText(String.valueOf(settings.paddingPx()));
+        qrBorderField.setText(String.valueOf(settings.borderPx()));
         selectQrPosition(settings.position());
         qrPreviewPhotoIndex = settings.photoIndex();
     }
@@ -1411,6 +1429,8 @@ public final class MainWindow {
         qrFontSizeField.setText(String.valueOf(DEFAULT_QR_LABEL_FONT_SIZE));
         qrLabelPositionCombo.setSelectedIndex(QrCode.DEFAULT_LABEL_POSITION.ordinal());
         qrSizeField.setText(String.valueOf(DEFAULT_QR_SIZE));
+        qrPaddingField.setText(String.valueOf(DEFAULT_QR_PADDING));
+        qrBorderField.setText(String.valueOf(DEFAULT_QR_BORDER));
         selectQrPosition(QrCode.Position.SE);
         qrPreviewPhotoIndex = 0;
     }
@@ -1464,9 +1484,29 @@ public final class MainWindow {
             error(I18n.t("Label font size (px) must be a positive whole number."));
             return;
         }
+        int paddingPx;
+        try {
+            paddingPx = Integer.parseInt(qrPaddingField.getText().strip());
+            if (paddingPx < 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            error(I18n.t("Inner padding (px) must be a whole number of 0 or more."));
+            return;
+        }
+        int borderPx;
+        try {
+            borderPx = Integer.parseInt(qrBorderField.getText().strip());
+            if (borderPx < 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            error(I18n.t("Outer border (px) must be a whole number of 0 or more."));
+            return;
+        }
         QrCode.QrSettings settings = new QrCode.QrSettings(
-                url, qrLabelField.getText().strip(), sizePx, fontSize, selectedQrLabelPosition(),
-                qrSelectedPosition, qrPreviewPhotoIndex);
+                url, qrLabelField.getText().strip(), sizePx, paddingPx, borderPx, fontSize,
+                selectedQrLabelPosition(), qrSelectedPosition, qrPreviewPhotoIndex);
         Path target = currentOfferDir.resolve("qr.json");
         try {
             QrCode.writeSettings(currentOfferDir, settings);
@@ -1538,8 +1578,9 @@ public final class MainWindow {
         int photoIndex = qrPreviewPhotoIndex;
         String url = qrUrlField.getText().strip();
         QrCode.QrSettings liveSettings = url.isEmpty() ? null : new QrCode.QrSettings(
-                url, qrLabelField.getText().strip(), parseQrSizeOrDefault(), parseQrFontSizeOrDefault(),
-                selectedQrLabelPosition(), qrSelectedPosition, photoIndex);
+                url, qrLabelField.getText().strip(), parseQrSizeOrDefault(), parseQrPaddingOrDefault(),
+                parseQrBorderOrDefault(), parseQrFontSizeOrDefault(), selectedQrLabelPosition(),
+                qrSelectedPosition, photoIndex);
         qrPreviewPanel.setStatus(I18n.t("Rendering the preview…"));
         qrPreviewLoader.submit(() -> {
             String failure = null;
@@ -1597,6 +1638,26 @@ public final class MainWindow {
             return value > 0 ? value : DEFAULT_QR_LABEL_FONT_SIZE;
         } catch (NumberFormatException e) {
             return DEFAULT_QR_LABEL_FONT_SIZE;
+        }
+    }
+
+    /** The inner padding field's value, or the default when it is not (yet) a valid non-negative integer — 0 is valid, meaning no quiet zone. */
+    private int parseQrPaddingOrDefault() {
+        try {
+            int value = Integer.parseInt(qrPaddingField.getText().strip());
+            return value >= 0 ? value : DEFAULT_QR_PADDING;
+        } catch (NumberFormatException e) {
+            return DEFAULT_QR_PADDING;
+        }
+    }
+
+    /** The outer border field's value, or the default when it is not (yet) a valid non-negative integer — 0 is valid, meaning no border. */
+    private int parseQrBorderOrDefault() {
+        try {
+            int value = Integer.parseInt(qrBorderField.getText().strip());
+            return value >= 0 ? value : DEFAULT_QR_BORDER;
+        } catch (NumberFormatException e) {
+            return DEFAULT_QR_BORDER;
         }
     }
 
