@@ -45,6 +45,7 @@ import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.ListSelectionModel;
 import javax.swing.Timer;
+import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.AbstractDocument;
@@ -1259,12 +1260,21 @@ public final class MainWindow {
         qrFontSizeField.setToolTipText(I18n.t("The label caption's font size, in pixels."));
         qrFontSizeField.setColumns(8);
         qrLabelPositionCombo.setToolTipText(I18n.t("Where the caption is drawn relative to the QR code."));
+        // Nimbus indents a combo box's own text less than a text field's, so
+        // without this the two visibly don't line up in the form; match the
+        // text field's left inset instead of guessing a pixel count.
+        Insets textFieldInsets = UIManager.getInsets("TextField.contentMargins");
+        int qrComboLeftPad = textFieldInsets != null ? textFieldInsets.left : 6;
         qrLabelPositionCombo.setRenderer(new javax.swing.DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                           boolean isSelected, boolean cellHasFocus) {
                 Object shown = value == null ? null : I18n.t(value.toString());
-                return super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+                Component c = super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+                if (c instanceof JComponent jc) {
+                    jc.setBorder(BorderFactory.createEmptyBorder(0, qrComboLeftPad, 0, 0));
+                }
+                return c;
             }
         });
         qrLabelPositionCombo.addActionListener(e -> refreshQrPreview());
