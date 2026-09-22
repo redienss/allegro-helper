@@ -12,6 +12,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -26,6 +27,7 @@ import javax.swing.JTextArea;
 import javax.swing.JToggleButton;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.JTextComponent;
@@ -521,12 +523,21 @@ final class SettingsDialog extends JDialog {
         qrDefaultSizeField.setColumns(8);
         qrDefaultPaddingField.setColumns(8);
         qrDefaultBorderField.setColumns(8);
+        // Nimbus indents a combo box's own text less than a text field's, so
+        // without this the two visibly don't line up in the form — the same
+        // fix the QR Code tab's own label-position combo uses.
+        Insets textFieldInsets = UIManager.getInsets("TextField.contentMargins");
+        int qrComboLeftPad = (textFieldInsets != null ? textFieldInsets.left : 6) + 4;
         qrDefaultLabelPositionCombo.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                                                           boolean isSelected, boolean cellHasFocus) {
                 Object shown = value == null ? null : I18n.t(value.toString());
-                return super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+                Component c = super.getListCellRendererComponent(list, shown, index, isSelected, cellHasFocus);
+                if (c instanceof JComponent jc) {
+                    jc.setBorder(BorderFactory.createEmptyBorder(0, qrComboLeftPad, 0, 0));
+                }
+                return c;
             }
         });
 
