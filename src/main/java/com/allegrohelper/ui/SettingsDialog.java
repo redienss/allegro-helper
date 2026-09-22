@@ -542,6 +542,7 @@ final class SettingsDialog extends JDialog {
         headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD));
         page.add(headerLabel, c);
 
+        c.gridwidth = 1; // each field row below is only its own column, not the header's span
         addRow(page, c, 1, "URL:", qrDefaultUrlField, GridBagConstraints.HORIZONTAL, 0);
         addRow(page, c, 2, "Label:", qrDefaultLabelField, GridBagConstraints.HORIZONTAL, 0);
         addRow(page, c, 3, "Label font size (px):", qrDefaultFontSizeField, GridBagConstraints.NONE, 0);
